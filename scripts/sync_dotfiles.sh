@@ -88,10 +88,17 @@ check_git_changes() {
         log_info "変更が検出されました:"
         git status --short
 
-        # 自動コミットする場合は以下をコメント解除
-        # git add -A
-        # git commit -m "chore: auto-sync dotfiles at $(date '+%Y-%m-%d %H:%M:%S')"
-        # log_success "変更を自動コミットしました"
+        # 自動コミット・プッシュ
+        git add -A
+        git commit -m "chore: auto-sync dotfiles at $(date '+%Y-%m-%d %H:%M:%S')"
+
+        # GitHubにプッシュ
+        if git push origin main 2>&1; then
+            log_success "変更を自動コミット・プッシュしました"
+        else
+            log_error "プッシュに失敗しました"
+            return 1
+        fi
 
         return 0
     else
