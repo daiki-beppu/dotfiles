@@ -21,6 +21,10 @@ log_error() {
     echo "\033[0;31m[ERROR]\033[0m $1"
 }
 
+log_warning() {
+    echo "\033[0;33m[WARNING]\033[0m $1"
+}
+
 # 設定ファイルを同期
 sync_config_files() {
     log_info "設定ファイルを同期中..."
@@ -80,6 +84,152 @@ update_brewfile() {
     fi
 }
 
+# 機密情報パターンのチェック
+check_sensitive_patterns() {
+    log_info "機密情報パターンをチェック中..."
+
+    cd "$DOTFILES_DIR"
+
+    # 機密情報の可能性があるパターン
+    local patterns=(
+        "password\s*=\s*['\"].*['\"]"
+        "api[_-]?key\s*=\s*['\"].*['\"]"
+        "secret\s*=\s*['\"].*['\"]"
+        "token\s*=\s*['\"].*['\"]"
+        "private[_-]?key"
+        "-----BEGIN.*PRIVATE KEY-----"
+        "ghp_[a-zA-Z0-9]{36}"  # GitHub Personal Access Token
+        "sk-[a-zA-Z0-9]{48}"   # OpenAI API Key
+        "AKIA[0-9A-Z]{16}"     # AWS Access Key
+    )
+
+    # ステージングされたファイルの内容をチェック
+    local changed_files=$(git diff --cached --name-only 2>/dev/null)
+
+    if [ -z "$changed_files" ]; then
+        # ステージングされていなければ、変更されたファイルをチェック
+        changed_files=$(git diff --name-only 2>/dev/null)
+    fi
+
+    for file in $changed_files; do
+        if [ -f "$file" ]; then
+            for pattern in "${patterns[@]}"; do
+                if grep -iE "$pattern" "$file" > /dev/null 2>&1; then
+                    log_error "機密情報の可能性があるパターンを検出: $file"
+                    log_warning "パターン: $pattern"
+                    log_warning "ファイルを確認して、機密情報が含まれていないことを確認してください"
+                    return 1
+                fi
+            done
+        fi
+    done
+
+    log_success "機密情報パターンのチェック: OK"
+    return 0
+}
+
+# リポジトリがプライベートか確認
+check_repository_visibility() {
+    log_info "リポジトリの公開設定をチェック中..."
+
+    cd "$DOTFILES_DIR"
+
+    # リモートURLを取得
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+
+    if [ -z "$remote_url" ]; then
+        log_warning "リモートリポジトリが設定されていません"
+        return 1
+    fi
+
+    # GitHub URLからリポジトリ情報を抽出
+    if [[ "$remote_url" =~ github\.com[:/]([^/]+)/([^/\.]+) ]]; then
+        local owner="${BASH_REMATCH[1]}"
+        local repo="${BASH_REMATCH[2]}"
+
+        # GitHub APIでリポジトリ情報を取得
+        local api_response=$(curl -s "https://api.github.com/repos/$owner/$repo")
+
+        if echo "$api_response" | grep -q '"private": true'; then
+            log_success "リポジトリはプライベートです: OK"
+            return 0
+        elif echo "$api_response" | grep -q '"private": false'; then
+            log_warning "リポジトリは公開されています"
+            log_warning "機密情報が含まれていないか、十分に注意してください"
+            # 公開リポジトリでも継続可能だが、警告は出す
+            return 0
+        else
+            log_warning "リポジトリの公開設定を確認できませんでした"
+            log_info "GitHub APIのレート制限に達している可能性があります"
+            # 確認できない場合は安全側に倒して継続
+            return 0
+        fi
+    else
+        log_warning "GitHub以外のリポジトリです。手動で公開設定を確認してください"
+        return 0
+    fi
+}
+
+# .gitignoreに適切な除外設定があるかチェック
+check_gitignore_patterns() {
+    log_info ".gitignoreの設定をチェック中..."
+
+    local gitignore="$DOTFILES_DIR/.gitignore"
+
+    if [ ! -f "$gitignore" ]; then
+        log_warning ".gitignoreファイルが存在しません"
+        return 0
+    fi
+
+    # 推奨される除外パターン
+    local recommended_patterns=(
+        "*.env"
+        "*.key"
+        "*.pem"
+        "*secret*"
+        "*credentials*"
+    )
+
+    local missing_patterns=()
+
+    for pattern in "${recommended_patterns[@]}"; do
+        if ! grep -q "^$pattern" "$gitignore" 2>/dev/null; then
+            missing_patterns+=("$pattern")
+        fi
+    done
+
+    if [ ${#missing_patterns[@]} -gt 0 ]; then
+        log_warning ".gitignoreに以下のパターンを追加することを推奨します:"
+        for pattern in "${missing_patterns[@]}"; do
+            echo "  - $pattern"
+        done
+    fi
+
+    log_success ".gitignoreの設定: OK"
+    return 0
+}
+
+# セキュリティチェック統合
+run_security_checks() {
+    log_info "=== セキュリティチェック開始 ==="
+
+    # 1. 機密情報パターンチェック（必須）
+    if ! check_sensitive_patterns; then
+        log_error "機密情報パターンチェックに失敗しました"
+        log_error "自動pushを中止します"
+        return 1
+    fi
+
+    # 2. リポジトリ公開設定チェック（警告のみ）
+    check_repository_visibility
+
+    # 3. .gitignoreチェック（警告のみ）
+    check_gitignore_patterns
+
+    log_success "=== セキュリティチェック完了 ==="
+    return 0
+}
+
 # Git変更を確認
 check_git_changes() {
     cd "$DOTFILES_DIR"
@@ -90,6 +240,18 @@ check_git_changes() {
 
         # 自動コミット・プッシュ
         git add -A
+
+        # セキュリティチェックを実行
+        if ! run_security_checks; then
+            log_error "セキュリティチェックに失敗しました"
+            log_error "変更はステージングされていますが、コミット・プッシュは中止されました"
+            log_info "問題を修正した後、手動でコミット・プッシュしてください"
+            # ステージングを取り消す
+            git reset HEAD > /dev/null 2>&1
+            return 1
+        fi
+
+        # セキュリティチェックOKの場合、コミット
         git commit -m "chore: auto-sync dotfiles at $(date '+%Y-%m-%d %H:%M:%S')"
 
         # GitHubにプッシュ
