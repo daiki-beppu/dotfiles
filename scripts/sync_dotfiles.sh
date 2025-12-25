@@ -25,6 +25,22 @@ log_warning() {
     echo "\033[0;33m[WARNING]\033[0m $1"
 }
 
+# macOS通知を送信
+send_notification() {
+    local title="$1"
+    local message="$2"
+    local sound="${3:-default}"
+
+    # osascriptでmacOSの通知センターに通知を送る
+    osascript -e "display notification \"$message\" with title \"$title\" sound name \"$sound\"" 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        log_info "通知を送信しました: $title"
+    else
+        log_warning "通知の送信に失敗しました"
+    fi
+}
+
 # 設定ファイルを同期
 sync_config_files() {
     log_info "設定ファイルを同期中..."
@@ -246,6 +262,7 @@ check_git_changes() {
             log_error "セキュリティチェックに失敗しました"
             log_error "変更はステージングされていますが、コミット・プッシュは中止されました"
             log_info "問題を修正した後、手動でコミット・プッシュしてください"
+            send_notification "dotfiles セキュリティ警告" "機密情報の可能性があるパターンを検出しました。ファイルを確認してください。" "Basso"
             # ステージングを取り消す
             git reset HEAD > /dev/null 2>&1
             return 1
@@ -259,6 +276,7 @@ check_git_changes() {
             log_success "変更を自動コミット・プッシュしました"
         else
             log_error "プッシュに失敗しました"
+            send_notification "dotfiles 同期エラー" "GitHubへのプッシュに失敗しました。ネットワーク接続または認証情報を確認してください。" "Basso"
             return 1
         fi
 
