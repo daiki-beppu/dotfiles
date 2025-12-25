@@ -1,13 +1,5 @@
 [user]
-    name = daiki-beppu
-    email = beppu.engineer@gmail.com
-
-[core]
-    editor = code --wait
-    excludesfile = ~/.gitignore_global
-
+	name = daiki-beppu
+	email = beppu.engineer@gmail.com
 [init]
-    defaultBranch = main
-
-[pull]
-    rebase = false
+	defaultBranch = main
