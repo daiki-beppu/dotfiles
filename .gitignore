@@ -1,1 +1,9 @@
+# macOS
 .DS_Store
+
+# 機密情報ファイル
+*.env           # 環境変数ファイル
+*.key           # 秘密鍵ファイル
+*.pem           # 証明書ファイル
+*secret*        # "secret"を含むファイル
+*credentials*   # 認証情報ファイル
