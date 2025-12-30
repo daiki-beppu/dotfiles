@@ -1,7 +1,13 @@
+# PATH configuration
+export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
-# proto
-export PROTO_HOME="$HOME/.proto";
-export PATH="$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH";
-# Added by Antigravity
-export PATH="/Users/mba/.antigravity/antigravity/bin:$PATH"
-export PATH="$HOME/.local/bin:$PATH"
+# Oh My Zsh installation
+export ZSH="$HOME/.oh-my-zsh"
+
+# Theme
+ZSH_THEME="eastwood"
+
+# Plugins
+plugins=(git)
+
+source $ZSH/oh-my-zsh.sh
