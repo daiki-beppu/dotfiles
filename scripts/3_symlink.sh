@@ -30,5 +30,6 @@ create_symlink "$CONFIG_DIR/.zshrc" "$HOME/.zshrc"
 create_symlink "$CONFIG_DIR/.zprofile" "$HOME/.zprofile"
 create_symlink "$CONFIG_DIR/.gitconfig" "$HOME/.gitconfig"
 create_symlink "$CONFIG_DIR/.gitignore_global" "$HOME/.gitignore_global"
+create_symlink "$CONFIG_DIR/.tmux.conf" "$HOME/.tmux.conf"
 
 echo "🎉 シンボリックリンクの作成完了！"
