@@ -20,11 +20,21 @@ dotfilesの自動同期機能の詳細な使用方法とカスタマイズガイ
 
 デフォルトで以下のファイルが同期対象です：
 
+**ホームディレクトリの設定ファイル：**
 - `~/.zshrc`
 - `~/.zprofile`
 - `~/.gitconfig`
 - `~/.gitignore_global`
 - `Brewfile`（Homebrewパッケージリスト）
+
+**~/.config ディレクトリの設定：**
+- `~/.config/alacritty/alacritty.toml` - ターミナルエミュレータ設定
+- `~/.config/alacritty/themes/` - Alacrittyテーマ
+- `~/.config/gh/config.yml` - GitHub CLI設定
+- `~/.config/gh/hosts.yml` - GitHub CLIホスト設定
+- `~/.config/git/ignore` - グローバルgitignore設定
+
+> **注意:** `~/.config/raycast/` は機密情報（トークン）を含むため、`.gitignore`で除外されています。
 
 ### 3つの同期方法
 
@@ -188,7 +198,9 @@ kill <プロセスID>
 
 ### 同期対象ファイルの追加
 
-`scripts/sync_dotfiles.sh` を編集：
+#### ホームディレクトリの設定ファイルを追加
+
+`scripts/sync_dotfiles.sh` の `sync_config_files()` 関数を編集：
 
 ```bash
 # 同期する設定ファイルのリスト
@@ -201,6 +213,26 @@ local files=(
     ".tmux.conf"       # 追加
 )
 ```
+
+#### ~/.config ディレクトリの設定ファイルを追加
+
+`scripts/sync_dotfiles.sh` の `sync_dot_config_files()` 関数を編集：
+
+```bash
+# 例：neovim設定を追加
+if [ -d "$HOME/.config/nvim" ]; then
+    local dest_dir="$DOT_CONFIG_DIR/nvim"
+    mkdir -p "$dest_dir"
+
+    # ディレクトリ全体を同期
+    if rsync -a --delete "$HOME/.config/nvim/" "$dest_dir/" | grep -q .; then
+        log_success "更新: .config/nvim/"
+        updated=true
+    fi
+fi
+```
+
+> **ヒント:** 機密情報を含むファイルは必ず `.gitignore` に追加してください。
 
 ### リアルタイム監視の対象追加
 

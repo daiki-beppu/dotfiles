@@ -7,6 +7,7 @@ set -e
 
 DOTFILES_DIR="$HOME/01-dev/dotfiles"
 CONFIG_DIR="$DOTFILES_DIR/config"
+DOT_CONFIG_DIR="$DOTFILES_DIR/.config"
 
 # 色付きログ
 log_info() {
@@ -71,6 +72,70 @@ sync_config_files() {
 
     if [ "$updated" = false ]; then
         log_info "設定ファイルに変更はありません"
+    fi
+
+    return 0
+}
+
+# .configディレクトリを同期
+sync_dot_config_files() {
+    log_info ".configディレクトリを同期中..."
+
+    local updated=false
+
+    # alacritty設定を同期
+    if [ -f "$HOME/.config/alacritty/alacritty.toml" ]; then
+        local dest_dir="$DOT_CONFIG_DIR/alacritty"
+        mkdir -p "$dest_dir"
+
+        if ! cmp -s "$HOME/.config/alacritty/alacritty.toml" "$dest_dir/alacritty.toml" 2>/dev/null; then
+            cp "$HOME/.config/alacritty/alacritty.toml" "$dest_dir/"
+            log_success "更新: .config/alacritty/alacritty.toml"
+            updated=true
+        fi
+    fi
+
+    # alacrittyテーマを同期
+    if [ -d "$HOME/.config/alacritty/themes" ]; then
+        local dest_dir="$DOT_CONFIG_DIR/alacritty/themes"
+        mkdir -p "$dest_dir"
+
+        # rsyncを使用してディレクトリを同期
+        if rsync -a --delete "$HOME/.config/alacritty/themes/" "$dest_dir/" | grep -q .; then
+            log_success "更新: .config/alacritty/themes/"
+            updated=true
+        fi
+    fi
+
+    # gh設定を同期
+    local gh_files=("config.yml" "hosts.yml")
+    for file in "${gh_files[@]}"; do
+        if [ -f "$HOME/.config/gh/$file" ]; then
+            local dest_dir="$DOT_CONFIG_DIR/gh"
+            mkdir -p "$dest_dir"
+
+            if ! cmp -s "$HOME/.config/gh/$file" "$dest_dir/$file" 2>/dev/null; then
+                cp "$HOME/.config/gh/$file" "$dest_dir/"
+                log_success "更新: .config/gh/$file"
+                updated=true
+            fi
+        fi
+    done
+
+    # git ignore設定を同期
+    if [ -f "$HOME/.config/git/ignore" ]; then
+        local dest_dir="$DOT_CONFIG_DIR/git"
+        mkdir -p "$dest_dir"
+
+        if ! cmp -s "$HOME/.config/git/ignore" "$dest_dir/ignore" 2>/dev/null; then
+            cp "$HOME/.config/git/ignore" "$dest_dir/"
+            log_success "更新: .config/git/ignore"
+            updated=true
+        fi
+    fi
+
+    if [ "$updated" = false ]; then
+        log_info ".configディレクトリに変更はありません"
     fi
 
     return 0
@@ -293,6 +358,9 @@ main() {
 
     # 設定ファイルを同期
     sync_config_files
+
+    # .configディレクトリを同期
+    sync_dot_config_files
 
     # Brewfileを更新（オプション）
     if [ "$1" = "--with-brew" ]; then

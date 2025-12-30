@@ -7,3 +7,6 @@
 *.pem           # 証明書ファイル
 *secret*        # "secret"を含むファイル
 *credentials*   # 認証情報ファイル
+
+# .config 関連の除外
+.config/raycast/  # Raycast設定（トークン含む）
