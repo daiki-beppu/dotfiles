@@ -95,17 +95,10 @@ sync_dot_config_files() {
         fi
     fi
 
-    # alacrittyテーマを同期
-    if [ -d "$HOME/.config/alacritty/themes" ]; then
-        local dest_dir="$DOT_CONFIG_DIR/alacritty/themes"
-        mkdir -p "$dest_dir"
-
-        # rsyncを使用してディレクトリを同期
-        if rsync -a --delete "$HOME/.config/alacritty/themes/" "$dest_dir/" | grep -q .; then
-            log_success "更新: .config/alacritty/themes/"
-            updated=true
-        fi
-    fi
+    # alacrittyテーマはGitサブモジュールとして管理されるため、
+    # 自動同期の対象外とする
+    # テーマを更新したい場合は以下のコマンドを実行：
+    # cd ~/01-dev/dotfiles && git submodule update --remote .config/alacritty/themes
 
     # gh設定を同期
     local gh_files=("config.yml" "hosts.yml")

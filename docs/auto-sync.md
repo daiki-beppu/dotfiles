@@ -29,12 +29,14 @@ dotfilesの自動同期機能の詳細な使用方法とカスタマイズガイ
 
 **~/.config ディレクトリの設定：**
 - `~/.config/alacritty/alacritty.toml` - ターミナルエミュレータ設定
-- `~/.config/alacritty/themes/` - Alacrittyテーマ
+- `~/.config/alacritty/themes/` - Alacrittyテーマ（Gitサブモジュールとして管理）
 - `~/.config/gh/config.yml` - GitHub CLI設定
 - `~/.config/gh/hosts.yml` - GitHub CLIホスト設定
 - `~/.config/git/ignore` - グローバルgitignore設定
 
-> **注意:** `~/.config/raycast/` は機密情報（トークン）を含むため、`.gitignore`で除外されています。
+> **注意:**
+> - `~/.config/raycast/` は機密情報（トークン）を含むため、`.gitignore`で除外されています。
+> - Alacrittyテーマは[公式リポジトリ](https://github.com/alacritty/alacritty-theme)からGitサブモジュールとして管理されています。
 
 ### 3つの同期方法
 
@@ -505,6 +507,38 @@ echo "config/.gitconfig.local" >> .gitignore
 ```
 
 また、機密情報は環境変数や別の設定ファイルに分離することを推奨します。
+
+### Q: Alacrittyテーマを最新版に更新するには？
+
+**A:** Alacrittyテーマはサブモジュールとして管理されています：
+
+```bash
+# テーマリポジトリを最新版に更新
+cd ~/01-dev/dotfiles
+git submodule update --remote .config/alacritty/themes
+
+# 変更をコミット
+git add .config/alacritty/themes
+git commit -m "Update alacritty themes to latest version"
+git push
+```
+
+### Q: 他のMacでサブモジュールを初期化するには？
+
+**A:** リポジトリをクローンした後、サブモジュールを初期化：
+
+```bash
+# リポジトリをクローン
+git clone <your-repo-url> ~/01-dev/dotfiles
+cd ~/01-dev/dotfiles
+
+# サブモジュールを初期化・取得
+git submodule init
+git submodule update
+
+# または、クローン時に --recurse-submodules オプションを使用
+git clone --recurse-submodules <your-repo-url> ~/01-dev/dotfiles
+```
 
 ## 関連ファイル
 
