@@ -11,3 +11,19 @@ ZSH_THEME="eastwood"
 plugins=(git)
 
 source $ZSH/oh-my-zsh.sh
+
+# WezTerm タブタイトルの自動設定
+precmd() {
+  # カレントディレクトリを取得（ホームディレクトリは~に短縮）
+  local dir="${PWD/#$HOME/~}"
+
+  # gitブランチ名を取得
+  local branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+  # タイトルを設定
+  if [[ -n "$branch" ]]; then
+    print -Pn "\e]2;[${branch}][${dir}]\a"
+  else
+    print -Pn "\e]2;[${dir}]\a"
+  fi
+}
