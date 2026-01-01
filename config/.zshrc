@@ -27,3 +27,7 @@ precmd() {
     print -Pn "\e]2;[${dir}]\a"
   fi
 }
+
+# proto
+export PROTO_HOME="$HOME/.proto";
+export PATH="$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH";
