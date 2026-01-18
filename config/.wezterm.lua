@@ -34,7 +34,8 @@ config.keys = {
 -- 設定ファイルの自動リロードを有効化
 config.automatically_reload_config = true
 
--- フォントサイズ
+-- フォント設定
+config.font = wezterm.font('HackGen')
 config.font_size = 11.0
 
 -- 日本語入力（IME）を有効化
