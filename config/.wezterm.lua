@@ -36,13 +36,13 @@ config.automatically_reload_config = true
 
 -- フォント設定
 config.font = wezterm.font('HackGen')
-config.font_size = 11.0
+config.font_size = 12.0
 
 -- 日本語入力（IME）を有効化
 config.use_ime = true
 
 -- ウィンドウの背景透明度（0.0〜1.0）
-config.window_background_opacity = 0.85
+config.window_background_opacity = 0.55
 
 config.macos_window_background_blur = 20
 
