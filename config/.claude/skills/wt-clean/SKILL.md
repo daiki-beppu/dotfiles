@@ -1,5 +1,5 @@
 ---
-name: worktree-clean
+name: wt-clean
 description: Use when 孤立した worktree ブランチの一括クリーンアップが必要なとき。「ブランチ整理」「古いブランチ削除」「worktree 掃除」など、不要ブランチの整理に関わる場面で使用すること
 ---
 
