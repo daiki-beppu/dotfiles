@@ -32,4 +32,15 @@ create_symlink "$CONFIG_DIR/.gitconfig" "$HOME/.gitconfig"
 create_symlink "$CONFIG_DIR/.gitignore_global" "$HOME/.gitignore_global"
 create_symlink "$CONFIG_DIR/.tmux.conf" "$HOME/.tmux.conf"
 
+# Claude Code 設定をリンク
+CLAUDE_DIR="$HOME/.claude"
+CLAUDE_CONFIG_DIR="$CONFIG_DIR/.claude"
+mkdir -p "$CLAUDE_DIR"
+
+create_symlink "$CLAUDE_CONFIG_DIR/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
+create_symlink "$CLAUDE_CONFIG_DIR/settings.json" "$CLAUDE_DIR/settings.json"
+create_symlink "$CLAUDE_CONFIG_DIR/statusline-command.sh" "$CLAUDE_DIR/statusline-command.sh"
+create_symlink "$CLAUDE_CONFIG_DIR/hooks" "$CLAUDE_DIR/hooks"
+create_symlink "$CLAUDE_CONFIG_DIR/skills" "$CLAUDE_DIR/skills"
+
 echo "🎉 シンボリックリンクの作成完了！"

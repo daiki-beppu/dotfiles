@@ -1,0 +1,101 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Task",
+      "NotebookEdit",
+      "mcp__*",
+      "mcp__plugin_context7_context7__*",
+      "mcp__filesystem__*",
+      "Bash(rm *)",
+      "Bash(mv *)",
+      "Bash(chmod *)"
+    ],
+    "defaultMode": "plan"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/copy-env.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/playwright-cleanup.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/playwright-cleanup.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claudeが許可を待っています\" with title \"Claude Code\" sound name \"default\"'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claudeが作業を完了しました\" with title \"Claude Code\" sound name \"default\"'"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash ~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "example-skills@anthropic-agent-skills": false,
+    "context7@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": false,
+    "code-review@claude-plugins-official": false,
+    "feature-dev@claude-plugins-official": false,
+    "playwright@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": false,
+    "supabase@claude-plugins-official": false,
+    "Notion@claude-plugins-official": false,
+    "document-skills@anthropic-agent-skills": false,
+    "learning-output-style@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": false,
+    "pr-review-toolkit@claude-plugins-official": false,
+    "explanatory-output-style@claude-plugins-official": true,
+    "vercel@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": true,
+    "qodo-skills@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true
+  },
+  "language": "Japanese"
+}
