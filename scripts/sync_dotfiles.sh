@@ -83,23 +83,6 @@ sync_dot_config_files() {
 
     local updated=false
 
-    # alacritty設定を同期
-    if [ -f "$HOME/.config/alacritty/alacritty.toml" ]; then
-        local dest_dir="$DOT_CONFIG_DIR/alacritty"
-        mkdir -p "$dest_dir"
-
-        if ! cmp -s "$HOME/.config/alacritty/alacritty.toml" "$dest_dir/alacritty.toml" 2>/dev/null; then
-            cp "$HOME/.config/alacritty/alacritty.toml" "$dest_dir/"
-            log_success "更新: .config/alacritty/alacritty.toml"
-            updated=true
-        fi
-    fi
-
-    # alacrittyテーマはGitサブモジュールとして管理されるため、
-    # 自動同期の対象外とする
-    # テーマを更新したい場合は以下のコマンドを実行：
-    # cd ~/01-dev/dotfiles && git submodule update --remote .config/alacritty/themes
-
     # gh設定を同期
     local gh_files=("config.yml" "hosts.yml")
     for file in "${gh_files[@]}"; do
