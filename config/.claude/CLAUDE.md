@@ -16,4 +16,9 @@
 
 詳細は `/skills commit-convention` を参照
 
+## dotfiles 管理
 
+- **実体**: `~/01-dev/dotfiles/config/.claude/`（git 管理）
+- **シンボリックリンク**: `~/.dotfiles` → `~/01-dev/dotfiles`
+- `~/.claude/` 配下（CLAUDE.md, skills/, hooks/, settings.json, statusline-command.sh）は `~/.dotfiles/config/.claude/` へのシンボリックリンク
+- スキルや設定の編集は dotfiles リポジトリ側で行い、コミット＆プッシュで反映
