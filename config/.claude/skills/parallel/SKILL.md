@@ -65,12 +65,14 @@ cd "$REPO_ROOT/.worktrees/<name>" &&
 if [ -f package.json ]; then ni; \
 elif [ -f Cargo.toml ]; then cargo build; \
 elif [ -f requirements.txt ]; then pip install -r requirements.txt; \
+elif [ -f pyproject.toml ]; then pip install -e .; \
 elif [ -f go.mod ]; then go mod download; \
 fi
 ```
 
 - `<name>` はタスク名を英数字・ハイフンにサニタイズしたもの（例: "ユーザー認証" → "user-auth"）
 - Node.js プロジェクトでは `ni` を使う（CLAUDE.md の方針）
+- Python プロジェクトは requirements.txt 優先、なければ pyproject.toml から `pip install -e .`
 - .env ファイルは既存の copy-env.sh SessionStart フックが自動コピーする
 
 ## Step 5: cmux ペイン起動
@@ -89,41 +91,44 @@ fi
 └──────────────┴──────────────┘
 ```
 
-- 1つ目のタスク: `cmux new-split right` で右にペイン分割
-- 2つ目以降: `cmux new-split down` で新しいペインを下に分割
+### 実行手順
 
-### 実行手順（各タスク）
+**cmux コマンドの仕様:**
+- `cmux new-split right` → `OK surface:<id> workspace:<id>` を返す（サーフェスIDを出力からパースする）
+- `cmux send --surface surface:<id> "text\n"` → 指定サーフェスにテキスト送信（`\n` で Enter）
+- 2つ目以降のペインは最初に作った**サーフェスから** `down` で分割する
 
-```bash
-# ペイン分割（1つ目は right、2つ目以降は down）
-cmux new-split <direction>
-```
-
-分割後、新しいペインに Claude セッションを起動:
+**各タスクの起動（Bash で実行）:**
 
 ```bash
-cmux send "cd <absolute_worktree_path> && claude\n"
-```
+# --- タスク1: 右に分割 ---
+SURFACE1=$(cmux new-split right 2>&1 | awk '{print $2}')
+cmux send --surface "$SURFACE1" "cd <absolute_worktree_path_1> && claude\n"
 
-Claude が起動するまで数秒待つ:
-
-```bash
 sleep 5
-```
 
-タスクプロンプトを送信:
+# タスクプロンプトを送信
+cmux send --surface "$SURFACE1" "<タスク1の指示>\n"
+```
 
 ```bash
-cmux send "<タスクの指示内容>\n"
-```
+# --- タスク2: タスク1のサーフェスから下に分割 ---
+SURFACE2=$(cmux new-split down --surface "$SURFACE1" 2>&1 | awk '{print $2}')
+cmux send --surface "$SURFACE2" "cd <absolute_worktree_path_2> && claude\n"
 
-送信後、元のペインにフォーカスを戻す:
+sleep 5
+
+cmux send --surface "$SURFACE2" "<タスク2の指示>\n"
+```
 
 ```bash
-cmux focus-pane --pane <original_pane_id>
+# --- タスク3以降: 同様に直前のサーフェスから下に分割 ---
+SURFACE_N=$(cmux new-split down --surface "$SURFACE_PREV" 2>&1 | awk '{print $2}')
+# ... 同じパターン
 ```
 
-次のタスクのペイン分割に進む前に、直前に作成したペインの surface を確認して正しいペインに送信していることを確認する。
+各タスクの起動後に `sleep 5` で Claude の起動を待つ。
+これは Claude CLI の初期化時間を考慮したもので、早すぎるとプロンプトが空のシェルに送られてしまう。
 
 ## Step 6: サマリー表示
 
@@ -148,6 +153,7 @@ cmux focus-pane --pane <original_pane_id>
 
 - 元のペイン（呼び出し元）は分割するだけで、そこでは Claude セッションを起動しない
 - worktree パスは絶対パスで `cmux send` に渡す（相対パスだと新しいペインの作業ディレクトリに依存してしまう）
-- ブランチ名は `worktree-` プレフィックスで統一する（wt-clean 等との互換性）
+- ブランチ名は `worktree-` プレフィックスで統一する
 - 依存関係インストールは worktree 作成時に一度だけ行う（Claude セッション側では不要）
 - 各セッションは完全に独立しており、セッション間の通信やファイル共有は想定しない
+- サーフェスIDは `cmux new-split` の出力から `awk '{print $2}'` でパースする
