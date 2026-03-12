@@ -132,6 +132,7 @@
                 "google-chrome"
                 "google-drive"
                 "gyazo"
+                "nani"
                 "notion"
                 "nvidia-geforce-now"
                 "obsidian"

@@ -49,7 +49,6 @@ dotfiles/
 ├── config/
 │   ├── .zshrc             # zsh 設定
 │   ├── .zprofile          # PATH 設定（Homebrew + Nix）
-│   ├── .wezterm.lua       # WezTerm 設定
 │   └── .claude/           # Claude Code 設定
 │       ├── CLAUDE.md
 │       ├── settings.json
@@ -57,8 +56,6 @@ dotfiles/
 │       ├── hooks/
 │       └── skills/
 ├── Brewfile               # Homebrew パッケージ一覧（参考用）
-├── scripts/
-│   └── 2_homebrew.sh      # Homebrew 初期インストール
 └── docs/
     └── manual-setup.md    # 手動設定ガイド
 ```
