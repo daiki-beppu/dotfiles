@@ -62,6 +62,12 @@ if [ -n "$branch" ]; then
         fi
         [ -n "$parts" ] && git_stat=$(printf " | 📝 Changes %s" "$parts")
     fi
+    # Worktree 判定
+    git_dir=$(GIT_OPTIONAL_LOCKS=0 git rev-parse --git-dir 2>/dev/null)
+    if echo "$git_dir" | grep -q '/worktrees/'; then
+        wt_name=$(basename "$git_dir")
+        git_stat="${git_stat}$(printf " | ${YELLOW}🌳 Worktree${RESET} (%s)" "$wt_name")"
+    fi
 fi
 
 # プログレスバーを生成する関数（10マス）
