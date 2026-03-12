@@ -85,6 +85,10 @@ in
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
 
+    # ブラウザ振り分けスクリプト
+    mkdir -p "$HOME/.local/bin"
+    link_force "${dotfilesDir}/.local/bin/open-browser" "$HOME/.local/bin/open-browser"
+
     # Claude Code
     mkdir -p "$HOME/.claude"
     link_force "${dotfilesDir}/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"

@@ -40,6 +40,9 @@ precmd() {
   fi
 }
 
+# ターミナルからの URL オープン時の振り分け（認証系 → Chrome、その他 → cmux）
+export BROWSER="$HOME/.local/bin/open-browser"
+
 # proto
 export PROTO_HOME="$HOME/.proto";
 export PATH="$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH";

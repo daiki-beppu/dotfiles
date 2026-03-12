@@ -1,0 +1,39 @@
+#!/bin/bash
+# URL パターンで Chrome / cmux 内蔵ブラウザを振り分けるスクリプト
+url="$1"
+
+# 認証系 URL は Chrome で開く
+case "$url" in
+  *npmjs.org* | *npmjs.com* | \
+  *github.com/login* | *github.com/sessions* | \
+  *accounts.google.com* | \
+  *login.microsoftonline.com* | \
+  *auth0.com* | \
+  *oauth* | *authorize* | *callback*)
+    open -a "Google Chrome" "$url"
+    ;;
+  *)
+    # cmux 内蔵ブラウザで開く
+    # 全ペインからブラウザ surface を探す
+    browser_surface=""
+    while IFS= read -r pane_line; do
+      pane_id=$(echo "$pane_line" | grep -oE 'pane:[0-9]+')
+      [ -z "$pane_id" ] && continue
+      while IFS= read -r surf_line; do
+        sid=$(echo "$surf_line" | grep -oE 'surface:[0-9]+')
+        if [ -n "$sid" ] && cmux browser --surface "$sid" identify &>/dev/null; then
+          browser_surface="$sid"
+          break 2
+        fi
+      done < <(cmux list-pane-surfaces --pane "$pane_id" 2>/dev/null)
+    done < <(cmux list-panes 2>/dev/null)
+
+    if [ -n "$browser_surface" ]; then
+      # 既存ブラウザで navigate（画面分割しない）
+      cmux browser --surface "$browser_surface" navigate "$url"
+    else
+      # ブラウザなし → 新規作成（右に分割）
+      cmux browser open "$url"
+    fi
+    ;;
+esac
