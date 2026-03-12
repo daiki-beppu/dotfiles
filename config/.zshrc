@@ -34,3 +34,6 @@ export PATH="$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH";
 
 # Claude Code のエイリアス
 alias cc='claude'
+
+# Ghostty CLI
+alias ghostty='/Applications/Ghostty.app/Contents/MacOS/ghostty'

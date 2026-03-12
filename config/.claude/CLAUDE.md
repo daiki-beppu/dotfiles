@@ -1,16 +1,22 @@
 # Claude Code 設定
 
-## 利用可能なツール
+## 応答言語
 
-- **ni** (`@antfu/ni`) - パッケージマネージャーラッパー
-- **gh** - GitHub CLI
+日本語で応答すること
 
-## プロジェクト方針
+## ツール制約
 
-### Node.js プロジェクト
-- **必須**: すべての Node.js プロジェクトで `ni` を使用すること
-- npm、yarn、pnpm コマンドを直接使用せず、ni 経由で実行してください
-- 詳細な使い方は `/skills using-ni` を参照
+### ni（必須）
+npm, yarn, pnpm コマンドを直接実行してはならない。必ず ni 経由で実行すること
+- `npm install` → `ni`
+- `npm run <script>` → `nr <script>`
+- `npm install <pkg>` → `ni <pkg>`
+- `npm install -D <pkg>` → `ni -D <pkg>`
+- `npx <cmd>` → `nlx <cmd>`
+- 詳細は `/skills using-ni` を参照
+
+### gh
+GitHub CLI。PR・Issue 操作に使用
 
 ## コミットメッセージ
 
@@ -18,7 +24,6 @@
 
 ## dotfiles 管理
 
-- **実体**: `~/01-dev/dotfiles/config/.claude/`（git 管理）
-- **シンボリックリンク**: `~/.dotfiles` → `~/01-dev/dotfiles`
-- `~/.claude/` 配下（CLAUDE.md, skills/, hooks/, settings.json, statusline-command.sh）は `~/.dotfiles/config/.claude/` へのシンボリックリンク
-- スキルや設定の編集は dotfiles リポジトリ側で行い、コミット＆プッシュで反映
+- 実体: `~/01-dev/dotfiles/config/.claude/`（git 管理）
+- `~/.claude/` 配下は `~/.dotfiles/config/.claude/` へのシンボリックリンク
+- スキルや設定の編集は dotfiles リポジトリ側で行うこと

@@ -46,6 +46,24 @@ fi
 # モデル名部分（マゼンタ + アイコン）
 model_part=$(printf "${MAGENTA}🤖 %s${RESET}" "$model")
 
+# Git diff stat（GitHub 風: +追加 -削除）
+RED='\033[31m'
+git_stat=""
+if [ -n "$branch" ]; then
+    diff_output=$(GIT_OPTIONAL_LOCKS=0 git diff --numstat HEAD 2>/dev/null)
+    if [ -n "$diff_output" ]; then
+        added=$(echo "$diff_output" | awk '{s+=$1} END {printf "%d", s}')
+        deleted=$(echo "$diff_output" | awk '{s+=$2} END {printf "%d", s}')
+        parts=""
+        [ "$added" -gt 0 ] && parts=$(printf "${GREEN}+%d${RESET}" "$added")
+        if [ "$deleted" -gt 0 ]; then
+            [ -n "$parts" ] && parts="${parts} "
+            parts="${parts}$(printf "${RED}-%d${RESET}" "$deleted")"
+        fi
+        [ -n "$parts" ] && git_stat=$(printf " | 📝 Changes %s" "$parts")
+    fi
+fi
+
 # プログレスバーを生成する関数（10マス）
 make_bar() {
     local pct=$1
@@ -69,9 +87,9 @@ if [ -n "$used" ]; then
     else
         BAR_COLOR='\033[32m'  # 緑
     fi
-    context_part=$(printf "📊 ${BAR_COLOR}%s${RESET} %.1f%%" "$bar" "$used")
+    context_part=$(printf "📊 Context ${BAR_COLOR}%s${RESET} %.1f%%" "$bar" "$used")
 else
-    context_part=$(printf "📊 ${YELLOW}░░░░░░░░░░${RESET} N/A")
+    context_part=$(printf "📊 Context ${YELLOW}░░░░░░░░░░${RESET} N/A")
 fi
 
 # トークン内訳部分（白 + アイコン）
@@ -85,5 +103,77 @@ else
     tokens_part=""
 fi
 
-# 全体を結合して出力
-printf "%s %s %s %s" "$prefix" "$model_part" "$context_part" "$tokens_part"
+# レートリミット情報を取得（キャッシュ付き）
+CACHE_FILE="/tmp/claude-usage-cache.json"
+CACHE_TTL=360
+
+fetch_usage() {
+    # キャッシュが有効ならそれを使う
+    if [ -f "$CACHE_FILE" ]; then
+        cache_age=$(( $(date +%s) - $(stat -f %m "$CACHE_FILE") ))
+        if [ "$cache_age" -lt "$CACHE_TTL" ]; then
+            cat "$CACHE_FILE"
+            return
+        fi
+    fi
+    # Keychain からトークン取得
+    local cred
+    cred=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) || return
+    local token
+    token=$(echo "$cred" | jq -r '.claudeAiOauth.accessToken // .accessToken // .access_token // empty') || return
+    [ -z "$token" ] && return
+    # API 呼び出し
+    local resp
+    resp=$(curl -sf --max-time 5 \
+        -H "Authorization: Bearer ${token}" \
+        -H "anthropic-beta: oauth-2025-04-20" \
+        "https://api.anthropic.com/api/oauth/usage" 2>/dev/null) || return
+    echo "$resp" > "$CACHE_FILE"
+    echo "$resp"
+}
+
+# レートリミット表示部分を生成
+make_rate_part() {
+    local label=$1 pct=$2
+    if [ -z "$pct" ]; then
+        return
+    fi
+    local bar
+    bar=$(make_bar "$pct")
+    local color
+    if [ "$(echo "$pct >= 80" | bc)" -eq 1 ]; then
+        color='\033[31m'  # 赤
+    elif [ "$(echo "$pct >= 50" | bc)" -eq 1 ]; then
+        color='\033[33m'  # 黄
+    else
+        color='\033[32m'  # 緑
+    fi
+    printf "⏱ %s Limit ${color}%s${RESET} %.0f%%" "$label" "$bar" "$pct"
+}
+
+usage_json=$(fetch_usage)
+rate_5h=""
+rate_7d=""
+if [ -n "$usage_json" ]; then
+    util_5h=$(echo "$usage_json" | jq -r '.five_hour.utilization // empty')
+    util_7d=$(echo "$usage_json" | jq -r '.seven_day.utilization // empty')
+    rate_5h=$(make_rate_part "5h" "$util_5h")
+    rate_7d=$(make_rate_part "7d" "$util_7d")
+fi
+
+# レートリミット部分を結合
+rate_part=""
+if [ -n "$rate_5h" ] && [ -n "$rate_7d" ]; then
+    rate_part=$(printf "%s | %s" "$rate_5h" "$rate_7d")
+elif [ -n "$rate_5h" ]; then
+    rate_part="$rate_5h"
+elif [ -n "$rate_7d" ]; then
+    rate_part="$rate_7d"
+fi
+
+# 全体を結合して出力（1行目: ブランチ+ディレクトリ+モデル、2行目: バー類）
+bar_line="$context_part"
+if [ -n "$rate_part" ]; then
+    bar_line=$(printf "%s | %s" "$context_part" "$rate_part")
+fi
+printf "%s | %s%s\n%s %s" "$prefix" "$model_part" "$git_stat" "$bar_line" "$tokens_part"

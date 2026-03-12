@@ -1,12 +1,1 @@
-# カラースキーム
-theme = catppuccin-mocha
-
-# 背景透過（WezTermの0.55に合わせる）
-background-opacity = 0.55
-
-# カーソル色（WezTermに合わせる）
-cursor-color = #EEEEEE
-cursor-text = black
-
-# ウィンドウ装飾（タイトルバー非表示、WezTermのRESIZEに相当）
-window-decoration = none
+theme = GitHub Dark High Contrast
