@@ -11,13 +11,60 @@ in
     cocoapods
     ffmpeg
     gh
-    git
     gzip
     tree
     unzip
     uv
     watchman
   ];
+
+  # ── git 設定 ──
+  programs.git = {
+    enable = true;
+
+    settings = {
+      user.name = "daiki-beppu";
+      user.email = "beppu.engineer@gmail.com";
+      init.defaultBranch = "main";
+    };
+
+    ignores = [
+      # macOS
+      ".DS_Store"
+      ".AppleDouble"
+      ".LSOverride"
+      "._*"
+
+      # Thumbnails
+      "Thumbs.db"
+
+      # IDE
+      ".vscode/"
+      ".idea/"
+      "*.swp"
+      "*.swo"
+      "*~"
+
+      # Node.js
+      "node_modules/"
+      "npm-debug.log*"
+      "yarn-debug.log*"
+      "yarn-error.log*"
+
+      # Environment variables
+      ".env"
+      ".env.local"
+      ".env.*.local"
+
+      # Logs
+      "*.log"
+      "logs/"
+
+      # OS generated files
+      ".Spotlight-V100"
+      ".Trashes"
+    ];
+  };
 
   # ── シンボリンク管理 ──
   # ryoppippi 方式: home.file (Nix store 経由) ではなく
@@ -37,8 +84,6 @@ in
     # dotfiles
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
-    link_force "${dotfilesDir}/.gitconfig" "$HOME/.gitconfig"
-    link_force "${dotfilesDir}/.gitignore_global" "$HOME/.gitignore_global"
 
     # Claude Code
     mkdir -p "$HOME/.claude"
