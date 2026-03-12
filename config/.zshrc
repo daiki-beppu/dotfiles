@@ -12,6 +12,18 @@ plugins=(git)
 
 source $ZSH/oh-my-zsh.sh
 
+# zsh-abbr
+source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
+
+# abbr: パイプや && の後でも展開可能にする
+ABBR_REGULAR_ABBREVIATION_GLOB_PREFIXES+=(
+  '*& '
+  '*&& '
+  '*| '
+  '*|| '
+  '*; '
+)
+
 # WezTerm タブタイトルの自動設定
 precmd() {
   # カレントディレクトリを取得（ホームディレクトリは~に短縮）
@@ -32,8 +44,5 @@ precmd() {
 export PROTO_HOME="$HOME/.proto";
 export PATH="$PROTO_HOME/shims:$PROTO_HOME/bin:$PATH";
 
-# Claude Code のエイリアス
-alias cc='claude'
-
-# Ghostty CLI
-alias ghostty='/Applications/Ghostty.app/Contents/MacOS/ghostty'
+# abbr
+abbr cl='claude'

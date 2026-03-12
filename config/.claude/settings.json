@@ -97,5 +97,6 @@
     "qodo-skills@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true
   },
-  "language": "Japanese"
+  "language": "Japanese",
+  "voiceEnabled": true
 }
