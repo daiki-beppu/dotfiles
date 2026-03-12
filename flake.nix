@@ -47,6 +47,55 @@
               home = "/Users/${username}";
             };
 
+            # ── macOS システム設定 ──
+            system.defaults = {
+              # ダークモード
+              NSGlobalDomain.AppleInterfaceStyle = "Dark";
+
+              # キーボード
+              NSGlobalDomain.KeyRepeat = 2;
+              NSGlobalDomain.InitialKeyRepeat = 15;
+              NSGlobalDomain.AppleKeyboardUIMode = 2;
+
+              # トラックパッド
+              NSGlobalDomain."com.apple.swipescrolldirection" = false;
+              NSGlobalDomain."com.apple.trackpad.forceClick" = false;
+              NSGlobalDomain."com.apple.trackpad.scaling" = 3.0;
+
+              trackpad.Clicking = true;
+              trackpad.TrackpadThreeFingerDrag = false;
+              trackpad.TrackpadRightClick = true;
+
+              # Finder
+              NSGlobalDomain.AppleShowAllExtensions = true;
+              finder.ShowExternalHardDrivesOnDesktop = false;
+              finder.ShowHardDrivesOnDesktop = false;
+              finder.ShowRemovableMediaOnDesktop = false;
+              finder.NewWindowTarget = "Recents";
+              finder.FXPreferredViewStyle = "clmv";
+
+              # Dock
+              dock.autohide = true;
+              dock.magnification = true;
+              dock.largesize = 50;
+              dock.tilesize = 47;
+              dock.orientation = "bottom";
+              dock.mineffect = "genie";
+              dock.show-recents = false;
+              dock.showAppExposeGestureEnabled = true;
+              dock.showLaunchpadGestureEnabled = false;
+
+              # 専用オプションがない設定
+              CustomUserPreferences = {
+                "com.apple.AppleMultitouchTrackpad" = {
+                  TrackpadTwoFingerFromRightEdgeSwipeGesture = 0;
+                };
+                "com.apple.finder" = {
+                  ShowRecentTags = false;
+                };
+              };
+            };
+
             # Homebrew との共存
             # nixpkgs にないツールと cask は Homebrew で管理
             homebrew = {
