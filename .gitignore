@@ -10,3 +10,7 @@
 
 # .config 関連の除外
 .config/raycast/  # Raycast設定（トークン含む）
+
+# Nix
+result
+result-*

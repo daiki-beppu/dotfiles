@@ -1,0 +1,107 @@
+{
+  description = "daiki-beppu's macOS dotfiles";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    nix-darwin = {
+      url = "github:LnL7/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs =
+    {
+      nixpkgs,
+      nix-darwin,
+      home-manager,
+      ...
+    }:
+    let
+      username = "mba";
+      hostname = "mba";
+      system = "aarch64-darwin";
+    in
+    {
+      darwinConfigurations.${hostname} = nix-darwin.lib.darwinSystem {
+        inherit system;
+
+        modules = [
+          {
+            # Determinate Nix を使うため nix-daemon の管理を無効化
+            nix.enable = false;
+
+            # システム設定
+            system.stateVersion = 5;
+            system.primaryUser = username;
+            networking.hostName = hostname;
+
+            # ユーザー
+            users.users.${username} = {
+              name = username;
+              home = "/Users/${username}";
+            };
+
+            # Homebrew との共存
+            # nixpkgs にないツールと cask は Homebrew で管理
+            homebrew = {
+              enable = true;
+              onActivation.cleanup = "none";
+
+              taps = [
+                "manaflow-ai/cmux"
+                "libsql/sqld"
+                "tursodatabase/tap"
+              ];
+
+              brews = [
+                "ni"
+                "proto"
+                "tursodatabase/tap/turso"
+              ];
+
+              casks = [
+                "1password"
+                "antigravity"
+                "aqua-voice"
+                "arc"
+                "azookey"
+                "chatgpt"
+                "claude"
+                "cleanmymac"
+                "manaflow-ai/cmux/cmux"
+                "cursor"
+                "discord"
+                "docker-desktop"
+                "figma"
+                "font-hackgen"
+                "google-chrome"
+                "google-drive"
+                "gyazo"
+                "notion"
+                "nvidia-geforce-now"
+                "obsidian"
+                "raycast"
+                "visual-studio-code"
+                "wezterm"
+                "zoom"
+              ];
+            };
+          }
+
+          # Home Manager を nix-darwin のモジュールとして統合
+          home-manager.darwinModules.home-manager
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.users.${username} = import ./nix/packages.nix;
+          }
+        ];
+      };
+    };
+}
