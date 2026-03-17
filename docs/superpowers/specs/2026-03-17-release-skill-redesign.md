@@ -20,20 +20,20 @@
 
 `/release` が呼ばれたら以下の順で判定する：
 
-1. main ブランチ以外 → エラー停止（main に切り替えるか確認）。ただし後半フロー（publish）は `gh release create --target main` で実行するため、main 上でなくても `git switch main && git pull` を自動実行してから進める。
-2. マージ済みリリース PR を検索:
+1. main ブランチ以外にいる場合、`git switch main && git pull origin main` を自動実行する。未コミットの変更がある場合はエラー停止。
+2. 最新リリースの公開日時を取得:
    ```bash
-   # 最新リリースの公開日時を取得
-   gh release list --limit 1 --json publishedAt -q '.[0].publishedAt'
-   # その日時以降にマージされたリリース PR を検索
+   gh release list --limit 1 --json tagName,publishedAt -q '.[0]'
+   ```
+   リリースが 0 件の場合（初回リリース）は全コミットをリリース対象として **前半フロー（prepare）** に進む。
+3. マージ済みリリース PR を検索:
+   ```bash
    gh pr list --state merged --head "release/*" --base main --json mergedAt,title,number \
      | jq '[.[] | select(.mergedAt > "<publishedAt>")]'
    ```
    → マージ済みリリース PR あり → **後半フロー（publish）**
-3. `gh pr list --state open --head "release/*" --base main` → オープンなリリース PR あり → PR URL を表示し「まだマージされていません」で終了
-4. 上記いずれでもない → **前半フロー（prepare）**
-
-初回リリース（タグが存在しない場合）は全コミットをリリース対象として前半フローに進む。
+4. `gh pr list --state open --head "release/*" --base main` → オープンなリリース PR あり → PR URL を表示し「まだマージされていません」で終了
+5. 上記いずれでもない → **前半フロー（prepare）**
 
 ## 前半フロー（prepare）
 
@@ -69,11 +69,11 @@ git log <last-tag>..HEAD --oneline           # 前回以降のコミット一覧
 ### Step 4: PR 作成
 
 ```bash
-gh pr create --base main --head release/v<version> --title "release: v<version>" --generate-notes
+gh pr create --base main --head release/v<version> --title "release: v<version>" --body "v<version> リリース"
 ```
 
 - 品質チェック（review スキル）は呼ばない（変更が version bump のみのため）
-- PR テンプレートは使わず `--generate-notes` に任せる
+- PR 本文はシンプルに（version bump のみの PR なので詳細不要）
 - PR URL を表示して終了
 
 ## 後半フロー（publish）
@@ -106,7 +106,7 @@ git push origin --delete release/v<version> 2>/dev/null  # リモート（自動
 
 | 状況 | 対応 |
 |------|------|
-| main 以外のブランチ | 停止し、main への切り替えを確認 |
+| main 以外のブランチ | `git switch main && git pull` を自動実行（未コミット変更があればエラー停止） |
 | 前回リリースからの差分なし | 「リリースする変更がありません」で終了 |
 | オープンなリリース PR あり | PR URL を表示し「まだマージされていません」で終了 |
 | 同じタグが既に存在 | エラー表示し、バージョンの再指定を促す |
