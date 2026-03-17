@@ -4,6 +4,8 @@
 
 現行の release スキルは `git push origin main` で直接 main にプッシュするが、ブランチ保護ルール（PR 必須 + CI required）があるリポジトリでは失敗する。リリース PR 経由のフローに変更する。
 
+併せて、リリースノート生成を `--generate-notes` に簡素化する（従来の手動カテゴリ分け + ユーザー承認は過剰だったため）。
+
 ## 対象リポジトリ
 
 - specv（`package.json` あり、Publish ワークフロー整備済み）
@@ -18,12 +20,20 @@
 
 `/release` が呼ばれたら以下の順で判定する：
 
-1. main ブランチ以外 → エラー停止（main に切り替えるか確認）
-2. `gh pr list --state merged --head "release/*" --base main` で前回リリースタグ以降にマージされたリリース PR を検索 → マージ済みリリース PR あり → **後半フロー（publish）**
-3. `gh pr list --state open --head "release/*" --base main` → オープンなリリース PR あり → 「まだマージされていません」と表示して終了
+1. main ブランチ以外 → エラー停止（main に切り替えるか確認）。ただし後半フロー（publish）は `gh release create --target main` で実行するため、main 上でなくても `git switch main && git pull` を自動実行してから進める。
+2. マージ済みリリース PR を検索:
+   ```bash
+   # 最新リリースの公開日時を取得
+   gh release list --limit 1 --json publishedAt -q '.[0].publishedAt'
+   # その日時以降にマージされたリリース PR を検索
+   gh pr list --state merged --head "release/*" --base main --json mergedAt,title,number \
+     | jq '[.[] | select(.mergedAt > "<publishedAt>")]'
+   ```
+   → マージ済みリリース PR あり → **後半フロー（publish）**
+3. `gh pr list --state open --head "release/*" --base main` → オープンなリリース PR あり → PR URL を表示し「まだマージされていません」で終了
 4. 上記いずれでもない → **前半フロー（prepare）**
 
-「前回リリースタグ以降」の判定は `gh release list --limit 1` で最新タグの日時を取得し、マージ日時と比較する。
+初回リリース（タグが存在しない場合）は全コミットをリリース対象として前半フローに進む。
 
 ## 前半フロー（prepare）
 
@@ -50,10 +60,11 @@ git log <last-tag>..HEAD --oneline           # 前回以降のコミット一覧
 
 ### Step 3: リリースブランチ作成 & version bump
 
-1. `git switch -c release/v<version>`
-2. `package.json` の `version` フィールドを更新
-3. `/skills commit-convention` に従いコミット（タイプ: `release`）
-4. `git push -u origin release/v<version>`
+1. `git pull origin main`（ローカル main を最新に同期）
+2. `git switch -c release/v<version>`
+3. `package.json` の `version` フィールドを更新
+4. `/skills commit-convention` に従いコミット（例: `release: v0.5.0`）
+5. `git push -u origin release/v<version>`
 
 ### Step 4: PR 作成
 
@@ -85,11 +96,11 @@ gh release create v<version> --target main --generate-notes
 ### Step 3: リリースブランチの削除
 
 ```bash
-git branch -d release/v<version>      # ローカル
-git push origin --delete release/v<version>  # リモート
+git branch -d release/v<version> 2>/dev/null      # ローカル（存在しなくても OK）
+git push origin --delete release/v<version> 2>/dev/null  # リモート（自動削除済みでも OK）
 ```
 
-自動で削除する（確認不要）。
+自動で削除する（確認不要）。ローカル・リモートいずれも存在しない場合はエラーを無視する（別マシンからの実行や GitHub の自動ブランチ削除設定に対応）。
 
 ## エラーハンドリング
 
@@ -99,6 +110,7 @@ git push origin --delete release/v<version>  # リモート
 | 前回リリースからの差分なし | 「リリースする変更がありません」で終了 |
 | オープンなリリース PR あり | PR URL を表示し「まだマージされていません」で終了 |
 | 同じタグが既に存在 | エラー表示し、バージョンの再指定を促す |
+| リリースブランチが存在しない（削除時） | エラーを無視して続行 |
 | `gh` 認証エラー | `gh auth login` を案内 |
 
 ## ルール
