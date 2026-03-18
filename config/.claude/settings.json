@@ -12,13 +12,16 @@
       "Task",
       "NotebookEdit",
       "mcp__*",
+      "mcp__chrome-devtools__*",
       "mcp__plugin_context7_context7__*",
-      "mcp__filesystem__*",
+      "mcp__plugin_Notion_notion__*"
+    ],
+    "ask": [
       "Bash(rm *)",
       "Bash(mv *)",
       "Bash(chmod *)"
     ],
-    "defaultMode": "plan"
+    "defaultMode": "auto"
   },
   "hooks": {
     "SessionStart": [
@@ -29,22 +32,6 @@
             "type": "command",
             "command": "~/.claude/hooks/copy-env.sh",
             "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/playwright-cleanup.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/playwright-cleanup.sh",
-            "timeout": 10
           }
         ]
       }
@@ -62,7 +49,7 @@
     "frontend-design@claude-plugins-official": false,
     "code-review@claude-plugins-official": false,
     "feature-dev@claude-plugins-official": false,
-    "playwright@claude-plugins-official": true,
+    "playwright@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": false,
     "supabase@claude-plugins-official": false,
     "document-skills@anthropic-agent-skills": false,
