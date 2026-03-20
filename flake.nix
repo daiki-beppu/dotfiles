@@ -110,12 +110,12 @@
 
               brews = [
                 "ni"
-                "proto"
                 "tursodatabase/tap/turso"
               ];
 
               casks = [
                 "1password"
+                "1password-cli"
                 "antigravity"
                 "aqua-voice"
                 "arc"

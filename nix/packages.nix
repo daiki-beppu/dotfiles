@@ -97,6 +97,7 @@ in
     }
 
     # dotfiles
+    link_force "${dotfilesDir}/.zshenv" "$HOME/.zshenv"
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
 
