@@ -96,6 +96,10 @@
               };
             };
 
+            # ── Touch ID で sudo 認証 ──
+            security.pam.services.sudo_local.touchIdAuth = true;
+            security.pam.services.sudo_local.reattach = true;
+
             # Homebrew との共存
             # nixpkgs にないツールと cask は Homebrew で管理
             homebrew = {

@@ -7,6 +7,7 @@ in
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
+    bun
     xz
     cocoapods
     ffmpeg
