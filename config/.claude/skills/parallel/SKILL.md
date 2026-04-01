@@ -8,6 +8,8 @@ description: cmux で複数の Claude Code セッションを並列起動し、g
 cmux のペイン分割と git worktree を組み合わせて、同一リポジトリで複数の独立した Claude Code セッションを並列に起動する。
 各セッションは別の worktree（別ブランチ）で動くため、ファイル競合なしに並行作業できる。
 
+> cmux コマンドの詳細は cmux スキルを参照。
+
 ## Prerequisites
 
 - cmux が起動中であること（cmux 内のターミナルで実行する）
