@@ -10,7 +10,7 @@ in
     bun
     xz
     cocoapods
-    ffmpeg
+    ffmpeg-full
     gh
     gzip
     tree
