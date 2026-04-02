@@ -40,6 +40,24 @@ precmd() {
   fi
 }
 
+# NPM_TOKEN lazy loading (1Password CLI)
+# op read はコストが高いため、npm 系コマンド初回実行時にのみ取得する
+_ensure_npm_token() {
+  if [[ -z "$NPM_TOKEN" ]]; then
+    export NPM_TOKEN="$(op read "op://Personal/npm token/credential")"
+  fi
+}
+
+for _cmd in ni nr nlx nu nun nci npm npx bun bunx; do
+  eval "
+    ${_cmd}() {
+      _ensure_npm_token
+      command ${_cmd} \"\$@\"
+    }
+  "
+done
+unset _cmd
+
 # ターミナルからの URL オープン時の振り分け（認証系 → Chrome、その他 → cmux）
 export BROWSER="$HOME/.local/bin/open-browser"
 
