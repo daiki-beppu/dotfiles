@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_NO_FLICKER": "1"
+  },
   "permissions": {
     "allow": [
       "Bash",
@@ -64,10 +67,13 @@
     "Notion@claude-plugins-official": false,
     "chrome-devtools-mcp@claude-plugins-official": true
   },
-  "env": {
-    "CLAUDE_CODE_NO_FLICKER": "1"
-  },
   "language": "Japanese",
+  "effortLevel": "high",
   "voiceEnabled": true,
-  "autoMemoryEnabled": false
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "autoMemoryEnabled": false,
+  "skipDangerousModePermissionPrompt": true
 }
