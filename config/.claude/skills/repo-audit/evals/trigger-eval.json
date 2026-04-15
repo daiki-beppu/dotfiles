@@ -1,0 +1,23 @@
+[
+  {"query": "最近 claude に色々やらせすぎてて、リポジトリが混沌としてる気がする。config/.claude/skills/ の中とか README とか全部見て、何かゴミ残ってへんか洗い出してほしい", "should_trigger": true},
+  {"query": "このリポジトリの定期点検やりたい。溜まってる半端なコードとか死んだドキュメントとか壊れた参照があったら教えて欲しい", "should_trigger": true},
+  {"query": "/repo-audit", "should_trigger": true},
+  {"query": "このリポジトリ、ドキュメントと実装が食い違ってるとこない？ README とか CLAUDE.md とか一通り見てほしい", "should_trigger": true},
+  {"query": "AI の書き散らし拾ってほしい。TODO 残りとか使われてない設定とか console.log の消し忘れとか全体的に", "should_trigger": true},
+  {"query": "skills/ ディレクトリに変なものが紛れ込んでない？ SKILL.md が無いやつとか壊れた symlink とか一斉点検して", "should_trigger": true},
+  {"query": "プロジェクト全体の棚卸しして、見つかった問題を issue に起こしといて", "should_trigger": true},
+  {"query": "repo-audit 走らせてほしい、リリース前の総点検として", "should_trigger": true},
+  {"query": "health check っぽいやつやりたい。リポジトリ全体見て、AI くさい書き方や陳腐化したドキュメントを拾ってほしい", "should_trigger": true},
+  {"query": "このリポジトリ、スキル記述が実際のコマンドと合ってないとこあるかも。全部見て突合してほしい", "should_trigger": true},
+
+  {"query": "いま作業中のブランチにバグありそう。差分レビューして問題あれば直して", "should_trigger": false},
+  {"query": "config/.claude/settings.json の permissions に Bash(gh *) を追加したい", "should_trigger": false},
+  {"query": "この PR に対するセキュリティレビューお願いします。認証系触ってるから", "should_trigger": false},
+  {"query": "リリースしたい。バージョン上げて CHANGELOG も更新してから release 作ってほしい", "should_trigger": false},
+  {"query": "config/.claude/CLAUDE.md を改善してほしい。ツール制約の節が冗長やから整理したい", "should_trigger": false},
+  {"query": "src/api.ts の console.log が本番コードに残ってる。この1ファイルだけ消してほしい", "should_trigger": false},
+  {"query": "マージ済みのブランチを一括で掃除したい。ローカルもリモートも整理して", "should_trigger": false},
+  {"query": "今書いたコードに重複がないか見て、あれば共通化してほしい。レビュー的な意味で", "should_trigger": false},
+  {"query": "バグ報告の issue を 1 件立てたい。昨日作業中に踏んだ login フォームのエラーについて", "should_trigger": false},
+  {"query": "この pull request のレビューお願いします。gh pr view で番号確認してください", "should_trigger": false}
+]
