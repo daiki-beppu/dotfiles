@@ -7,7 +7,9 @@
       "Bash",
       "Read",
       "Write",
+      "Write(//**)",
       "Edit",
+      "Edit(//**)",
       "Glob",
       "Grep",
       "WebFetch",
@@ -23,7 +25,11 @@
       "Bash(mv *)",
       "Bash(chmod *)"
     ],
-    "defaultMode": "plan"
+    "defaultMode": "plan",
+    "additionalDirectories": [
+      "/Users/mba/.claude",
+      "/Users/mba/01-dev/dotfiles"
+    ]
   },
   "hooks": {
     "SessionStart": [
