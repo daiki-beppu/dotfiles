@@ -1,6 +1,6 @@
 ---
 name: nix
-description: dotfiles の Nix 環境管理に使用する。CLI ツールの追加・削除、GUI アプリ (cask) の管理、パッケージの検索、設定の適用 (darwin-rebuild)、依存の更新 (flake update) など、Nix に関わる操作全般で使用すること。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」といった文脈で積極的に発動する。
+description: macOS (nix-darwin) 環境の dotfiles の Nix 環境管理に使用する。CLI ツールの追加・削除、GUI アプリ (cask) の管理、パッケージの検索、設定の適用 (darwin-rebuild)、依存の更新 (flake update) など、Nix に関わる操作全般で使用すること。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」といった文脈で積極的に発動する。
 ---
 
 # Nix 環境管理
@@ -77,6 +77,8 @@ sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/01
 
 初回のみ `nix run nix-darwin --` 経由で実行する。2回目以降は `darwin-rebuild` が PATH に入る。
 
+**`#mba` について:** `#mba` は `flake.nix` 先頭の `hostname` 変数（`hostname = "mba"`）を指すフラグメントで、`darwinConfigurations.${hostname}` から生成される。個人 ID ではないので通常は触らない。この dotfiles をフォークして自分用にリネームする場合のみ、`flake.nix` の `hostname` と `username` を合わせて変更する。
+
 ## 依存の更新
 
 nixpkgs や home-manager を最新に更新する:
@@ -104,7 +106,7 @@ nixpkgs にない場合は `homebrew.brews` に追加する。
 
 Nix > Homebrew > システム の順で PATH が構成されている。
 
-- Nix パッケージ: `/etc/profiles/per-user/mba/bin/`
+- Nix パッケージ: `/etc/profiles/per-user/$USER/bin/`（`$USER` は実行ユーザー）
 - Homebrew: `/opt/homebrew/bin/`
 
 `which <command>` でどちらが使われているか確認できる。

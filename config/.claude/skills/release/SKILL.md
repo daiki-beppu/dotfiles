@@ -89,7 +89,7 @@ git log <last-tag>..HEAD --oneline           # 前回以降のコミット一覧
 gh pr create --base main --head release/v<version> --title "release: v<version>" --body "v<version> リリース"
 ```
 
-- 品質チェック（review スキル）は呼ばない（変更が version bump のみのため）
+- 品質チェック（self-review スキル）は呼ばない（変更が version bump のみのため）
 - PR URL を表示して終了
 
 ### 後半フロー（publish）
