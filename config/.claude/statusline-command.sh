@@ -7,20 +7,6 @@ input=$(cat)
 cwd=$(echo "$input" | jq -r '.workspace.current_dir')
 model=$(echo "$input" | jq -r '.model.display_name')
 used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-input_tokens=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-output_tokens=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
-context_size=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
-current_input=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // empty')
-
-# トークン数をK単位でフォーマット
-format_tokens() {
-    local tokens=$1
-    if [ "$tokens" -ge 1000 ]; then
-        printf "%.1fK" "$(echo "scale=1; $tokens / 1000" | bc)"
-    else
-        printf "%d" "$tokens"
-    fi
-}
 
 # ホームディレクトリを ~ に置換
 cwd_short=$(echo "$cwd" | sed "s|^$HOME|~|")
@@ -115,31 +101,44 @@ else
     context_part=$(printf "📊 ctx ${DIM}░░░░░░░░░░${RESET} N/A")
 fi
 
-# トークン内訳部分（白 + アイコン）
-# トークン数が0の場合（セッションリセット後）は非表示
-if [ "$input_tokens" -eq 0 ] && [ "$output_tokens" -eq 0 ]; then
-    tokens_part=""
-else
-    input_fmt=$(format_tokens "$input_tokens")
-    output_fmt=$(format_tokens "$output_tokens")
-    context_fmt=$(format_tokens "$context_size")
-    tokens_part=""
-fi
+# 5h 用: epoch 秒を HH:MM 形式のローカル時刻に変換
+fmt_reset_hm() {
+    local epoch=$1
+    [ -z "$epoch" ] && return
+    date -j -r "$epoch" +"%H:%M" 2>/dev/null
+}
+
+# 7d 用: epoch 秒を M/D 形式のローカル日付に変換
+fmt_reset_md() {
+    local epoch=$1
+    [ -z "$epoch" ] && return
+    date -j -r "$epoch" +"%-m/%-d" 2>/dev/null
+}
 
 # レートリミット表示部分を生成（stdin JSON の rate_limits から取得）
 make_rate_part() {
-    local label=$1 pct=$2
+    local label=$1 pct=$2 reset=$3
     [ -z "$pct" ] && return
     local bar color
     bar=$(make_bar "$pct")
     color=$(pct_color "$pct")
-    printf "⏱ %s ${color}%s${RESET} %.0f%%" "$label" "$bar" "$pct"
+    if [ -n "$reset" ]; then
+        printf "⏱ %s ${color}%s${RESET} %.0f%% ${DIM}↻%s${RESET}" "$label" "$bar" "$pct" "$reset"
+    else
+        printf "⏱ %s ${color}%s${RESET} %.0f%%" "$label" "$bar" "$pct"
+    fi
 }
 
 util_5h=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
 util_7d=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-rate_5h=$(make_rate_part "5h" "$util_5h")
-rate_7d=$(make_rate_part "7d" "$util_7d")
+reset_5h_epoch=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
+reset_7d_epoch=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+
+reset_5h=$(fmt_reset_hm "$reset_5h_epoch")
+reset_7d=$(fmt_reset_md "$reset_7d_epoch")
+
+rate_5h=$(make_rate_part "5h" "$util_5h" "$reset_5h")
+rate_7d=$(make_rate_part "7d" "$util_7d" "$reset_7d")
 
 # レートリミット部分を結合
 rate_part=""
@@ -151,9 +150,12 @@ elif [ -n "$rate_7d" ]; then
     rate_part="$rate_7d"
 fi
 
-# 全体を結合して出力（1行目: ブランチ+ディレクトリ+モデル、2行目: バー類）
-bar_line="$context_part"
-if [ -n "$rate_part" ]; then
-    bar_line=$(printf "%s | %s" "$context_part" "$rate_part")
-fi
-printf "%s | %s%s\n%s %s" "$prefix" "$model_part" "$git_stat" "$bar_line" "$tokens_part"
+# 全体を 3 行で出力（ctx とレートリミットの間だけ dim 点線で区切る）
+# 1 行目: ブランチ + cwd + git_stat
+# 2 行目: ctx + モデル
+# 3 行目: 5h + 7d（空でも改行は残す）
+separator="${DIM}┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈${RESET}"
+printf "%s%s\n" "$prefix" "$git_stat"
+printf "%s | %s\n" "$context_part" "$model_part"
+printf "%b\n" "$separator"
+printf "%s" "$rate_part"
