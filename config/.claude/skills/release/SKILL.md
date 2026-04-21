@@ -1,13 +1,14 @@
 ---
 name: release
 description: |
-  GitHub Release の作成をリリース PR 経由で実行するスキル。
+  Node.js / npm リポジトリ向けに GitHub Release の作成をリリース PR 経由で実行するスキル。
   `/release` 1 コマンドでリポジトリの状態を自動判定し、
   前半（prepare: バージョン判定 → リリースブランチ → PR 作成）または
   後半（publish: GitHub Release 作成 → ブランチ削除）を実行する。
   「リリースして」「リリース作って」「バージョン上げて」「npm に公開して」
   「新しいバージョン出して」「/release」で発動。
   注意: リリースの閲覧・削除は対象外。新規リリース作成のみ。
+  注意: `package.json` を持たないリポジトリでは起動しない（Cargo.toml / pyproject.toml / go.mod 等は対象外）。
 ---
 
 # release — GitHub Release パイプライン
@@ -21,13 +22,25 @@ description: |
 
 ## When to Use
 
-- 新しいバージョンをリリースしたいとき
+- `package.json` を持つ Node.js / npm リポジトリで新しいバージョンをリリースしたいとき
 - `/release` コマンドを実行したとき
 - 「リリースして」「リリース作って」「npm に公開して」と言われたとき
+
+## Prerequisites
+
+- リポジトリ直下に `package.json` が存在し、`version` フィールドが書かれていること
+- `gh` が認証済みであること（`gh auth status` で OK）
+- main ブランチに push 権限があること
+
+`package.json` がない場合は Node.js / npm 以外のプロジェクト構成と判断し、起動しない（下記 Step 0 を参照）。
 
 ## パイプライン
 
 ### Step 0: 状態判定
+
+0. **前提チェック**: リポジトリ直下に `package.json` が存在することを確認する。存在しない場合は次のメッセージを表示して終了：
+
+   > release スキルは Node.js / npm リポジトリ向けです。`package.json` が見つからないため終了します。Cargo / pyproject / go.mod 等の他言語プロジェクトには対応していません。
 
 1. main ブランチ以外にいる場合、`git switch main && git pull origin main` を自動実行する。未コミットの変更がある場合はエラー停止。
 
@@ -134,7 +147,8 @@ git push origin --delete release/v<version> 2>/dev/null  # リモート（自動
 
 - `/release` 1 コマンドで状態に応じたフローを自動実行
 - リリースノートは `--generate-notes` で GitHub に任せる
-- バージョン更新は `package.json` のみ
+- 対応リポジトリは Node.js / npm（`package.json`）に限定。Cargo.toml / pyproject.toml / go.mod 等は対象外
+- バージョン更新は `package.json` の `version` フィールドのみ
 - コミットメッセージは commit-convention に従う（タイプ: `release`）
 - バージョン判定はユーザーが上書き可能
 - リリースブランチの命名: `release/v<version>`
