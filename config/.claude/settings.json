@@ -70,7 +70,6 @@
     "qodo-skills@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "notion@claude-plugins-official": true,
-    "Notion@claude-plugins-official": false,
     "chrome-devtools-mcp@claude-plugins-official": true
   },
   "language": "Japanese",
