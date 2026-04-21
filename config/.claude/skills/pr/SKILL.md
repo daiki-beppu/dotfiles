@@ -47,6 +47,22 @@ Step 1 (self-review) で `git diff main..HEAD` 系は取得済み。再取得し
    - `build` — ビルド
 3. **その他のプロジェクト**: `Makefile` → `make check` / `make test`、`Cargo.toml` → `cargo check && cargo test`、`flake.nix` → `nix flake check` など、プロジェクトの種類に応じた検証コマンドを実行する
 
+**検出用 Bash スニペット**（1 回の Bash コールで完結）:
+
+```bash
+# 1) CI workflow の有無
+ls .github/workflows/*.yml 2>/dev/null | head -1
+
+# 2) package.json の関連スクリプト抽出
+jq -r '.scripts | keys[]' package.json 2>/dev/null \
+  | grep -E '^(typecheck|type-check|lint|test|build)$'
+
+# 3) プロジェクト型フォールバック
+ls Cargo.toml Makefile flake.nix pyproject.toml go.mod 2>/dev/null
+```
+
+検出結果（実行予定のコマンド一覧）は **AskUserQuestion で「このコマンドで進めてよいか」を確認してから実行**すること。Claude が勝手に推測したコマンドをそのまま流さない。
+
 **実行ルール**:
 
 - Node.js プロジェクトでは必ず `ni` / `nr` 経由で実行すること
@@ -99,7 +115,14 @@ gh pr list --head "$(git branch --show-current)" --json number,url --jq '.[0].ur
 |----------------------|-------------|
 | `feat/` | `references/pr-template-feat.md` |
 | `fix/` | `references/pr-template-fix.md` |
-| その他（`chore/` 等） | `references/pr-template-feat.md` をベースに簡略化 |
+| `chore/` / `docs/` / `refactor/` / `release/` / `perf/` / `style/` / `test/` / `ci/` / その他 | `references/pr-template-feat.md` をベースに簡略化 |
+
+**「簡略化」の具体ルール**:
+
+- 必須: `## Summary` と `## Test plan` の 2 セクションは残す
+- 任意: Motivation / Risk / Rollback / Screenshot など feat 固有のセクションは **ブランチタイプに合致しない場合は削除する**
+- docs 系（`docs/` / README 変更のみ）では Test plan は「該当なし（ドキュメント変更のみ）」と明記
+- release 系では `Summary` にバージョン番号と主要変更点のみ
 
 テンプレートのパスはこのスキルファイルからの相対パス。
 テンプレートに含まれる closing keyword（`Closes #番号` / `Fixes #番号`）は、
