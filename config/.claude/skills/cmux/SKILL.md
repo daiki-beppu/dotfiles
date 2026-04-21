@@ -1,11 +1,11 @@
 ---
 name: cmux
 description: >
-  cmux ターミナルマルチプレクサの汎用コマンドリファレンス。
-  ペイン分割、画面読み書き、ブラウザ制御、通知、ステータス表示など cmux の操作全般で使用する。
+  cmux ターミナルマルチプレクサのコマンドリファレンス（pane / screen / browser / notify / status / workspace 系）。
+  本文に記載のあるコマンド群に限定し、未収録のコマンドは保証しない。
   「cmux で」「ペイン分割」「隣のペインに送信」「ブラウザ開いて」「画面読んで」
   「ステータス表示」「通知」「ワークスペース」「サーフェス」「cmux のコマンド教えて」
-  など、cmux に関わるあらゆる操作で発動すること。
+  など、cmux の操作に関わる場面で発動すること。
   並列 Claude セッション起動は parallel スキルを使う。
 ---
 
@@ -176,7 +176,7 @@ cmux clear-log
 
 ## ブラウザ制御
 
-基本操作のみ記載。全コマンド詳細は `references/browser.md` を参照。
+**`cmux browser` サブコマンドを使う必要が出た時点で、`references/browser.md` を Read ツールで読んでから実行する。** 以下に基本操作の概観のみ記載する（ナビゲーション・DOM スナップショット・スクリーンショット・DOM 操作・JS 実行など）。個別コマンドの完全なフラグ・オプションは browser.md にまとまっているため、SKILL.md 本文だけを根拠にフラグを推測しない。
 
 ```bash
 cmux browser open "https://example.com"           # ブラウザペインを開く
@@ -197,9 +197,9 @@ cmux browser url                                  # 現在の URL 取得
 cmux markdown open README.md                      # Markdown をフォーマット表示（ライブリロード対応）
 ```
 
-## tmux 互換コマンド
+## tmux 由来の互換コマンド（一部）
 
-tmux に慣れたユーザー向けの互換レイヤー:
+tmux に慣れたユーザー向けに用意された限定的な互換レイヤー。**以下に列挙するコマンドのみが保証対象**で、tmux の全コマンドが動くわけではない（例: `kill-session` / `rename-window` などネイティブ tmux 由来のもの全てをサポートするわけではない）:
 
 ```bash
 cmux capture-pane                                 # read-screen と同等
