@@ -74,12 +74,11 @@
     "chrome-devtools-mcp@claude-plugins-official": true
   },
   "language": "Japanese",
-  "effortLevel": "high",
-  "voiceEnabled": true,
   "voice": {
     "enabled": true,
     "mode": "hold"
   },
   "autoMemoryEnabled": false,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "voiceEnabled": true
 }
