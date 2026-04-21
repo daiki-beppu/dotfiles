@@ -14,3 +14,6 @@
 # Nix
 result
 result-*
+
+# skill-creator の評価成果物（workspace）は追跡しない
+config/.claude/skills/*-workspace/
