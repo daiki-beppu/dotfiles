@@ -122,18 +122,26 @@ fi
 - `cmux send --surface surface:<id> "text\n"` → 指定サーフェスにテキスト送信（`\n` で Enter）
 - 2 つ目以降のペインは最初に作った**サーフェスから** `down` で分割する
 
+**プレースホルダ規約:**
+
+- `<absolute_worktree_path_N>` は **`$REPO_ROOT/.worktrees/<nameN>`** を指す
+- `$REPO_ROOT` は Bash プロセス境界で失われるため、各 Bash コールの冒頭で `REPO_ROOT=$(git rev-parse --show-toplevel)` を再取得してから `cmux send` に渡す
+- 送信文字列中の `$REPO_ROOT` と `<nameN>` は **Bash 展開・Claude 側のテンプレート置換の二段階で解決**されるため、事前にシェルで展開させる（クォート位置に注意）
+
 **各タスクの起動（Bash で実行）:**
 
 ```bash
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
 # --- タスク 1: 右に分割 ---
 SURFACE1=$(cmux new-split right 2>&1 | awk '{print $2}')
-cmux send --surface "$SURFACE1" "cd <absolute_worktree_path_1> && claude --permission-mode default\n"
+cmux send --surface "$SURFACE1" "cd $REPO_ROOT/.worktrees/<name1> && claude --permission-mode default\n"
 sleep 8
 cmux send --surface "$SURFACE1" "/tmp/parallel-prompt-<name1>.md を Read ツールで読んで、書かれた手順に従ってタスクを完了させて\n"
 
 # --- タスク 2: タスク 1 のサーフェスから下に分割 ---
 SURFACE2=$(cmux new-split down --surface "$SURFACE1" 2>&1 | awk '{print $2}')
-cmux send --surface "$SURFACE2" "cd <absolute_worktree_path_2> && claude --permission-mode default\n"
+cmux send --surface "$SURFACE2" "cd $REPO_ROOT/.worktrees/<name2> && claude --permission-mode default\n"
 sleep 8
 cmux send --surface "$SURFACE2" "/tmp/parallel-prompt-<name2>.md を Read ツールで読んで、書かれた手順に従ってタスクを完了させて\n"
 
@@ -237,6 +245,7 @@ rm -rf "$STATE_DIR"
 
 - 元のペイン（呼び出し元）は分割するだけで、そこでは Claude セッションを起動しない
 - worktree パスは絶対パスで `cmux send` に渡す（相対パスだと新しいペインの作業ディレクトリに依存してしまう）
+- `<absolute_worktree_path_N>` は `$REPO_ROOT/.worktrees/<nameN>` を指す。各 Bash コールの冒頭で `REPO_ROOT=$(git rev-parse --show-toplevel)` を再取得してから展開する（`$REPO_ROOT` は呼び出しをまたいで生存しない）
 - ブランチ名は `<type>/parallel-<name>` で統一する（`/pr` のテンプレート分岐に合わせるため）
 - 依存関係インストールは worktree 作成時に一度だけ行う（Claude セッション側では不要）
 - 各セッションは独立しており、セッション間の通信やファイル共有は想定しない
