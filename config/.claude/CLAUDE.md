@@ -9,14 +9,9 @@ npm, yarn, pnpm コマンドを直接実行してはならない。必ず ni 経
 - `npm install <pkg>` → `ni <pkg>`
 - `npm install -D <pkg>` → `ni -D <pkg>`
 - `npx <cmd>` → `nlx <cmd>`
-- 詳細は `/skills using-ni` を参照
 
 ### gh
 GitHub CLI。PR・Issue 操作に使用
-
-## コミットメッセージ
-
-詳細は `/skills commit-convention` を参照
 
 ## dotfiles 管理
 
