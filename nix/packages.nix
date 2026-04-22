@@ -10,8 +10,10 @@ in
     bun
     xz
     cocoapods
+    direnv
     ffmpeg-full
     gh
+    google-cloud-sdk
     gzip
     tree
     unzip

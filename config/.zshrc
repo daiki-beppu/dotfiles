@@ -64,3 +64,6 @@ export BROWSER="$HOME/.local/bin/open-browser"
 # Vite+ bin (https://viteplus.dev)
 . "$HOME/.vite-plus/env"
 export PATH="$HOME/.local/bin:$PATH"
+
+# direnv hook
+eval "$(direnv hook zsh)"
