@@ -115,5 +115,9 @@ in
     link_force "${dotfilesDir}/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
     link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
+
+    # takt
+    mkdir -p "$HOME/.takt"
+    link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
   '';
 }
