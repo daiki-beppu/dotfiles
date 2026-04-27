@@ -1,0 +1,7 @@
+# takt グローバル設定
+#
+# プロバイダ・モデル・言語を全プロジェクト共通で定義する。
+# プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
+
+provider: claude
+language: ja
