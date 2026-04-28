@@ -1,0 +1,29 @@
+{
+  "skill_name": "takt-issue",
+  "evals": [
+    {
+      "id": 0,
+      "name": "new-pr-from-main",
+      "prompt": "takt で GitHub issue #100 を実装したい。プロジェクトは React + Node.js、現在のブランチは main。draft で新規 PR を作る形で進めてほしい。具体的にどう進めるか、手順を順序立てて説明して。",
+      "expected_output": "takt add → takt run → 長時間監視 → push → PR 作成 → クリーンアップ の流れ。worktree 経路（対話モード -i ではなく add/run）を選択し、対話プロンプトで base=main, auto-PR=Y を答える。長時間監視は ScheduleWakeup を使う旨を含む。",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 1,
+      "name": "stack-on-existing-pr",
+      "prompt": "takt で issue #50 を回したい。既存の PR #45（ブランチ feature/api-rewrite、現在 draft）に追加コミットを積み上げる形で進めたい。具体的な手順を教えて。",
+      "expected_output": "takt add で base branch=feature/api-rewrite を選択（既定 Y で現ブランチを使う or n で明示入力）、auto-PR=n を選択。完了後に feature/api-rewrite へ push、PR 本文を gh pr edit で更新（Closes #50 など追加）。新規 PR を作らないこと。",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "name": "with-commit-convention",
+      "prompt": "takt で issue #77 を実装する。プロジェクトの commit 規約は日本語 Conventional Commits（chore: / feat: / fix: プレフィックス、issue 番号は (#N) で末尾、本文に変更要点 3〜5 行）。takt の自動コミット（takt: <slug> 形式）はこの規約に合わない。規約準拠を守りながらどう進めるか手順を説明して。",
+      "expected_output": "takt 完了後の自動コミット SHA を控え、base ブランチに戻って git cherry-pick --no-commit <SHA> でステージのみ取り込み、規約準拠のメッセージで新規 commit を作る手順。--no-commit を使う理由（メッセージ書き換えのため）も含むと良い。",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}
