@@ -79,6 +79,8 @@
   },
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
   "voiceEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "remoteControlAtStartup": true,
+  "agentPushNotifEnabled": true
 }
