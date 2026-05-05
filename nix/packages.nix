@@ -15,6 +15,7 @@ in
     gh
     google-cloud-sdk
     gzip
+    terraform
     tree
     unzip
     uv

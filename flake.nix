@@ -32,9 +32,15 @@
         inherit system;
 
         modules = [
-          {
-            # Determinate Nix を使うため nix-daemon の管理を無効化
-            nix.enable = false;
+          (
+            { lib, ... }:
+            {
+              # Determinate Nix を使うため nix-daemon の管理を無効化
+              nix.enable = false;
+
+              # BSL ライセンスの terraform を個別許可（nixpkgs unfree 制限の回避）
+              nixpkgs.config.allowUnfreePredicate =
+                pkg: builtins.elem (lib.getName pkg) [ "terraform" ];
 
             # システム設定
             system.stateVersion = 5;
@@ -147,6 +153,7 @@
               ];
             };
           }
+          )
 
           # Home Manager を nix-darwin のモジュールとして統合
           home-manager.darwinModules.home-manager
