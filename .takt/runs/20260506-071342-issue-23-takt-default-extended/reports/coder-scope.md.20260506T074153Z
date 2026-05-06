@@ -1,0 +1,22 @@
+# 変更スコープ宣言
+
+## タスク
+takt の `default-extended` workflow（多段レビュー + report_spillover step）を dotfiles に新規追加し、関連 nix リンクと takt-issue skill を更新する
+
+## 変更予定
+| 種別 | ファイル |
+|------|---------|
+| 作成 | `config/.takt/workflows/default-extended.yaml` |
+| 作成 | `config/.takt/facets/instructions/report-scope-spillover.md` |
+| 作成 | `config/.takt/facets/instructions/test-design.md` |
+| 作成 | `config/.takt/facets/instructions/test-design-review.md` |
+| 変更 | `nix/packages.nix`（`# takt` セクションに mkdir 2 + link_force 4 を追加） |
+| 変更 | `config/.claude/skills/takt-issue/SKILL.md`（Overview / 対話プロンプト / spillover セクション 3 箇所） |
+
+## 推定規模
+Medium
+
+## 影響範囲
+- takt 利用者の対話プロンプト経路（`takt add` のカテゴリ選択 → workflow 選択）
+- `~/.takt/` のシンボリックリンク構成（darwin-rebuild 適用後）
+- takt-issue skill の運用手順（デフォルト workflow が `default-extended` に切替）

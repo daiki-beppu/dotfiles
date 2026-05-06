@@ -1,0 +1,63 @@
+# 最終検証結果
+
+## 結果: APPROVE
+
+## 要件充足チェック
+
+`order.md` から要件を抽出し、新規ファイル / 変更ファイル / 検証項目に分けて実コードと照合した。
+
+| # | 要件（タスク指示書から抽出） | 充足 | 根拠（ファイル:行） |
+|---|---------------------------|------|-------------------|
+| 1 | `config/.takt/workflows/default-extended.yaml` を新規作成（specv `default.yaml` ベース） | ✅ | `config/.takt/workflows/default-extended.yaml:1-583`（`name: default-extended`、specv 16 step 構造を踏襲、loop_monitors 5 本維持） |
+| 2 | 全 step の `policy:` から `specv-conventions` / `specv-testing` / `srp` を除外 | ✅ | `grep -E "specv-conventions\|specv-testing\|srp" config/.takt/workflows/default-extended.yaml` → 0 件。`tests/test_default_extended_workflow.py` の `test_no_step_references_specv_only_policies` / `test_raw_yaml_does_not_mention_specv_policy_names` 2 件 pass |
+| 3 | `reviewers` step の `next: COMPLETE` を `next: report_spillover` に変更 | ✅ | `config/.takt/workflows/default-extended.yaml:534-538`（`condition: all("approved", "すべて問題なし") next: report_spillover`、`condition: any("needs_fix", ...) next: fix` は維持） |
+| 4 | 新 step `report_spillover` を追加（最終 `next: COMPLETE` で終端） | ✅ | `config/.takt/workflows/default-extended.yaml:539-555`（`name: report_spillover`、`edit: false`、`persona: supervisor`、`pass_previous_response: false`、`instruction: report-scope-spillover`、2 rules とも `next: COMPLETE`） |
+| 5 | `max_steps=60` の指定 | ✅ | `config/.takt/workflows/default-extended.yaml:9`（`max_steps: 60`） |
+| 6 | `report-scope-spillover.md` を新規作成（スコープ判定基準・対象例・`gh issue create` 手順・出力形式） | ✅ | `config/.takt/facets/instructions/report-scope-spillover.md:1-38`（「PR タイトルが変わるか?」基準 L3、対象例 5 種 L11-15、`gh issue list --search` / `gh issue create` 手順 L17、必須出力 3 見出し L22-37） |
+| 7 | `test-design.md` を specv から汎用化して新規作成 | ✅ | `config/.takt/facets/instructions/test-design.md:1-47`（specv 固有トークン 0 件、`testing` policy 経由表現 L7・L23・L34・L39、Happy/Edge/Error 表 L17-21、責務マトリクス L29-32 維持） |
+| 8 | `test-design-review.md` を specv から汎用化して新規作成 | ✅ | `config/.takt/facets/instructions/test-design-review.md:1-44`（specv 固有トークン 0 件、観点 4 項目 L7-32、`approved` / `needs_fix` 出力 L38-43） |
+| 9 | `nix/packages.nix` の `# takt` セクションに `mkdir -p` 2 行と `link_force` 4 行を追加 | ✅ | `nix/packages.nix:120-127`（`mkdir -p "$HOME/.takt/workflows"`、`mkdir -p "$HOME/.takt/facets/instructions"`、4 つの `link_force` で workflow + 3 instruction を symlink） |
+| 10 | `config/.claude/skills/takt-issue/SKILL.md` のデフォルト workflow を `default-extended` に切替 / 対話プロンプト更新 | ✅ | `config/.claude/skills/takt-issue/SKILL.md:13`（Overview）、`L59-69`（プロンプト 7 段階：`カテゴリ: その他/` / `ワークフロー: default-extended`）、`L213-215`（spillover セクション冒頭で `report_spillover` 自動化を明示）、`L251`（rules 行も `report_spillover` 言及に更新） |
+| 11 | specv リポジトリ `.takt/workflows/default.yaml` 削除 | ⚠️ 範囲外（明示分離） | `plan.md:278`、`coder-decisions.md` で「dotfiles worktree から別リポジトリ削除はクロスレポ副作用」として後続 PR に明示分離。issue 本文も「specv リポジトリ」と別リポジトリと明記。本 PR スコープ外として妥当 |
+| 12 | issue 検証「`takt add` で workflow 一覧に `default-extended` が出現する」 | ⚠️ 未確認（手動検証要） | `darwin-rebuild switch` と `takt add` の実行ログは本 run に存在しない。`workflowCategoryParser.js` から「未登録 workflow は自動的に『その他』に分類」が plan で確認済みのため、SKILL.md は `その他/` を案内（実装側挙動と整合） |
+
+「⚠️ 範囲外」（#11）は order.md とは別リポジトリ（specv）の責務で、本 PR ではコード変更を加える手段がない。`plan.md` の「スコープ外」表で根拠付き分離されており、無視ではない。「⚠️ 未確認」（#12）は darwin-rebuild / takt add の実行ログがこの run に無いため、ユーザー側の手動検証ステップとして残る。これは本来の workflow 完了条件には含まれない（手動コマンド要）ため REJECT 根拠にならない。
+
+## 前段 finding の再評価
+
+| finding_id | 前段判定 | 再評価 | 根拠 |
+|------------|----------|--------|------|
+| AI-NEW-default-extended-L549 | resolved（2 回目 ai-review） | 妥当 | `config/.takt/workflows/default-extended.yaml:544-548` で `report_spillover.allowed_tools` が `[Read, Glob, Grep, Bash]` に確定。`grep "WebFetch\|WebSearch" config/.takt/workflows/default-extended.yaml` で `report_spillover` ブロック内に該当語なし。最小権限化の判断は instruction が Web 系を使わない事実と整合 |
+| AI-NEW-helpers-L27 | resolved（2 回目 ai-review） | 妥当 | `tests/_helpers.py:25-27` が docstring + `return path.read_text(encoding="utf-8")` の 2 行。`path.exists()` 二重防御は除去済。テスト 55 件 pass で機能影響なし |
+| AI-NEW-decisions-L9 | resolved（2 回目 ai-review） | 妥当 | `coder-decisions.md:3-9` 見出しが「白リストを実 builtin 集合に揃える」、本文が「初期草案では 7 件…10 件で初出（commit 上は最初から 10 件）」と書き換え。untracked = 新規ファイルである事実と整合 |
+
+3 件すべて初回 ai-review の Warning であり、ai-fix で修正済みかつ 2 回目 ai-review で `resolved` 判定。今回直接ファイル確認しても再発なし。
+
+`new` / `persists` / `reopened` 0 件のため、ブロッキング finding は無し。
+
+## 検証サマリー
+| 項目 | 状態 | 確認方法 |
+|------|------|---------|
+| テスト | ✅ | `python3 -m unittest discover -s tests -p 'test_*.py' -v` を本 step で実行 → `Ran 55 tests in 0.275s OK`（test_default_extended_workflow.py 21 件、test_integration.py 4 件、test_nix_packages.py 7 件、test_report_spillover_instruction.py 7 件、test_takt_issue_skill.py 6 件、test_test_design_instructions.py 8 件 = 計 53 件 + 既存 regression guard 2 件）|
+| ビルド | N/A | dotfiles リポジトリ（YAML + Markdown + Nix）にビルド工程なし。Nix 適用は `darwin-rebuild switch` で行うがユーザー側手動実行（plan.md の「検証」L35 と一致） |
+| 動作確認 | ⚠️ 一部未確認 | YAML パース（`load_workflow_yaml` 経由で 21 件のテスト）/ instruction MD 構造（`test_*_instruction.py` 計 21 件）/ nix link_force と config の整合（`test_integration.py` 4 件）はすべて pass。`darwin-rebuild` 適用後の `takt add` での workflow 一覧表示と `report_spillover` step の起動は本 run では未確認（ユーザー手動検証ステップ） |
+
+## 成果物
+- 作成:
+  - `config/.takt/workflows/default-extended.yaml`
+  - `config/.takt/facets/instructions/report-scope-spillover.md`
+  - `config/.takt/facets/instructions/test-design.md`
+  - `config/.takt/facets/instructions/test-design-review.md`
+  - `tests/__init__.py`
+  - `tests/_helpers.py`
+  - `tests/run.sh`
+  - `tests/test_default_extended_workflow.py`
+  - `tests/test_integration.py`
+  - `tests/test_nix_packages.py`
+  - `tests/test_report_spillover_instruction.py`
+  - `tests/test_takt_issue_skill.py`
+  - `tests/test_test_design_instructions.py`
+- 変更:
+  - `nix/packages.nix`（`# takt` セクションに mkdir 2 行 + link_force 4 行追加）
+  - `config/.claude/skills/takt-issue/SKILL.md`（Overview / 対話プロンプト 7 段階 / spillover セクション冒頭 / Rules 末尾の 4 箇所）
+  - `.gitignore`（`__pycache__/` `*.pyc` 追加）

@@ -1,0 +1,5 @@
+# dotfiles 用 takt プロジェクト設定（dotfiles 固有のオーバーライドのみ）
+# 詳細とグローバル設定との責任分担は config/.claude/CLAUDE.md の `# takt` セクション参照
+
+# 自動 PR は通常 PR で作成（draft にしない）
+draft_pr: false
