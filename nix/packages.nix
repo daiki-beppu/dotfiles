@@ -119,6 +119,12 @@ in
 
     # takt
     mkdir -p "$HOME/.takt"
+    mkdir -p "$HOME/.takt/workflows"
+    mkdir -p "$HOME/.takt/facets/instructions"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
+    link_force "${dotfilesDir}/.takt/workflows/default-extended.yaml" "$HOME/.takt/workflows/default-extended.yaml"
+    link_force "${dotfilesDir}/.takt/facets/instructions/report-scope-spillover.md" "$HOME/.takt/facets/instructions/report-scope-spillover.md"
+    link_force "${dotfilesDir}/.takt/facets/instructions/test-design.md" "$HOME/.takt/facets/instructions/test-design.md"
+    link_force "${dotfilesDir}/.takt/facets/instructions/test-design-review.md" "$HOME/.takt/facets/instructions/test-design-review.md"
   '';
 }
