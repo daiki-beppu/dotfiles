@@ -10,7 +10,14 @@ description: |
 
 ## Overview
 
-takt の `default-extended` workflow（多段レビュー + 自動スコープ外起票）で GitHub issue を実装する一連の手順を自動化するスキル。worktree 作成・長時間 workflow 監視・PR 化・積み上げ・クリーンアップを抜け漏れなく実行する。takt の自動コミットメッセージ（`takt: <slug>` 形式）はそのまま採用する。
+takt の workflow で GitHub issue を実装する一連の手順を自動化するスキル。worktree 作成・長時間 workflow 監視・PR 化・積み上げ・クリーンアップを抜け漏れなく実行する。takt の自動コミットメッセージ（`takt: <slug>` 形式）はそのまま採用する。
+
+workflow は issue の性質に応じて使い分ける:
+
+- **`default-extended`**（16 ステップ・多段レビュー + 自動スコープ外起票）: feature / enhancement、複数ファイル、新規テスト設計が必要な中〜大規模タスク
+- **`default-mini`**（6 ステップ・テスト設計／テスト実装をスキップ）: bugfix / chore / docs / 小規模 refactor、単一〜少数ファイル、既存テストで挙動を確認できる軽量タスク
+
+選択ロジックは Step 1「起動前確認」で扱う。
 
 ## When to Use
 
@@ -49,8 +56,21 @@ cmux tree                                            # 利用可能な pane
 - **base branch**: 既存 PR に積み上げるか / `main` から新規か
 - **auto-PR**: 新規 PR を作成するか / 既存 PR に積むなら不要
 - **issue 分割**: issue が大きすぎるなら別 skill `issue` で sub issue を先に起票
+- **workflow**: `default-extended` / `default-mini` のどちらで回すか（下表で判定）
 
 ワンセンテンスで方針を提案し、ユーザーの判断を仰ぐ（auto モードでも方針判断は確認する）。
+
+#### workflow 判断基準
+
+`gh issue view <N> --json title,body,labels` の結果から推奨を 1 文で提案する。
+
+| issue の特徴 | 推奨 workflow |
+|---|---|
+| ラベル: `bug` / `chore` / `docs` / 小規模 `refactor`、単一〜少数ファイル、既存テストで挙動を確認できる | `default-mini` |
+| ラベル: `feature` / `enhancement`、複数ファイル、新規テスト設計が必要 / 既存テストでは足りない | `default-extended` |
+| 判断に迷う場合 | `default-extended`（fail-safe 側） |
+
+`default-mini` を選んだ場合は **`report_spillover` step が走らない**ため、Step 7 の人手 spillover チェックが必須になる旨をユーザーに伝える。
 
 ### 2. takt add（タスク登録）
 
@@ -60,8 +80,10 @@ cmux tree                                            # 利用可能な pane
 
 ```
 1. takt add '#<N>'                                   # issue 番号を引用符で囲む
-2. カテゴリ: その他/ → Enter（default-extended は「その他」配下に自動分類される）
-3. ワークフロー: default-extended → Enter（多段レビュー + 自動スコープ外起票）
+2. カテゴリ: その他/ → Enter（default-extended / default-mini いずれも「その他」配下に自動分類される）
+3. ワークフロー: <Step 1 で確定した workflow> → Enter
+   - `default-extended`: 多段レビュー + 自動スコープ外起票（feature・中〜大規模向け）
+   - `default-mini`: 計画 → 実装 → AI レビュー → 並列レビュー（bugfix・chore など軽量タスク向け、テスト設計／テスト実装をスキップ）
 4. Base branch: 現ブランチでよいか [Y/n] → 既存 PR 積み上げなら Y、main にするなら n で main を入力
 5. Worktree path (Enter for auto)                    # Enter
 6. Branch name (Enter for auto)                      # Enter
@@ -212,6 +234,8 @@ takt list --non-interactive --action delete --branch takt/<N>/<slug> --yes
 
 `default-extended` workflow では `report_spillover` step が並列レビュー後に自動実行され、検出したスコープ外問題を `gh issue create` で起票する。**本セクションは `report_spillover` が拾えなかった分の人手対応として位置付ける**。
 
+**`default-mini` workflow を選んだ場合は `report_spillover` step が存在しない**ため、スコープ外発見の自動起票は走らない。本セクションの人手対応（`issue` スキルへの引き渡し）が **必須** となる。
+
 takt の実行中・完了後にスコープ外の問題に気付いたら、**worktree 内で直接修正してはならない**。スコープを膨らませると PR レビューが肥大化し、takt builtin の「タスク指示書の文言を拡大解釈しない」スコープ規律にも反する。
 
 代わりに次の手順で別 issue として起票する:
@@ -241,10 +265,12 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **完了検知の選択**: `Monitor`（素の `tail -f`）は通知ごとに cache miss が走るため selective filter を組まないと割高。`ScheduleWakeup` は完了タイミングが全く読めない場合の保険でしか正当化できない。`tasks.yaml` の status フィールドを poll できる takt では `Bash run_in_background` + `until` ループ（30s 間隔）が最安で、これを **本 skill のデフォルト**とする
 - **`tasks.yaml` の name prefix**: `Task created: <slug>` の slug は task 説明文先頭から自動生成される（記号は除去、80 文字程度で truncate）。並列駆動時は複数 task で同じ prefix になりがちなので、prefix での絞り込みが効く
 - **skill のスコープ判定**: 編集対象が **グローバル user skill**（dotfiles 管理のもの。例: takt-issue / parallel / cp など）なら `~/01-dev/dotfiles/config/.claude/skills/` を編集する（`~/.claude/` はシンボリックリンク）。一方、**project-scoped skill**（リポジトリの `.claude/skills/` に commit され、`yt-skills sync` などで downstream に配布されるもの）はそのリポジトリ内で編集する。両者を取り違えると配布経路が壊れる
+- **`default-mini` は `report_spillover` を持たない**: 軽量タスクで mini を選んだ場合、スコープ外発見は人手で `issue` スキルに引き渡す必要がある。`default-extended` の感覚で見落とさない
 
 ## Rules
 
-- 起動前に方針（base branch / auto-PR / 分割）をユーザーに確認する。auto モードでも判断確認は省かない
+- 起動前に方針（base branch / auto-PR / 分割 / workflow）をユーザーに確認する。auto モードでも判断確認は省かない
+- workflow（`default-extended` / `default-mini`）を起動前に判断・確認する。判断軸は label / 影響範囲 / 新規テスト設計の要否。bugfix / chore / docs / 小規模 refactor は `default-mini`、feature / 中〜大規模は `default-extended`、迷ったら `default-extended`。`default-mini` を選んだ場合は Step 7 の人手 spillover チェックを強制する
 - worktree が必要な場合は `takt add` → `takt run` 経路を強制する
 - 自動コミットメッセージ（`takt: <slug>`）は書き換えず、そのまま採用する
 - 長時間監視は `Bash run_in_background` + `until` ループで `.takt/tasks.yaml` の status を 30s 間隔で poll する。`ScheduleWakeup` は完了タイミングが完全に読めない場合の保険。前景 sleep ループは禁止
