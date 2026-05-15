@@ -16,6 +16,7 @@
       "WebSearch",
       "Task",
       "NotebookEdit",
+      "Skill",
       "mcp__chrome-devtools",
       "mcp__plugin_context7_context7",
       "mcp__plugin_Notion_notion"
@@ -53,7 +54,7 @@
     "example-skills@anthropic-agent-skills": false,
     "context7@claude-plugins-official": true,
     "typescript-lsp@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,
     "code-review@claude-plugins-official": false,
     "feature-dev@claude-plugins-official": false,
@@ -79,8 +80,8 @@
   },
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true,
   "remoteControlAtStartup": true,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
