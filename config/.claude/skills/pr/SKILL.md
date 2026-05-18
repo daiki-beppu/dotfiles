@@ -98,12 +98,25 @@ gh pr list --head "$(git branch --show-current)" --json number,url --jq '.[0].ur
 
 **issue リンクの検出**:
 
-ブランチ名から issue 番号を抽出する（例: `feat/14-add-auth` → `14`）。
-番号が見つかったら `gh issue view <番号> --json state -q .state` で issue が open か確認し、
-有効なら PR 本文に closing keyword を含める。
+PR が解決する全 issue を以下の手順で集約する（ブランチ名のみに依存しない）:
 
-- バグ修正（`fix/`）→ `Fixes #14`
-- それ以外 → `Closes #14`
+1. **ブランチ名から抽出**: `feat/14-add-auth` → `14` などのパターンマッチ
+2. **コミットメッセージから集約**: `git log main..HEAD --format=%B` で全コミット本文を取得し、`Closes #N` / `Fixes #N` / `Resolves #N` / 件名末尾の `(#N)` 形式の番号を抽出
+3. **重複除去**: 上記 1, 2 を統合してユニークな issue 番号リストを作成
+
+各番号について以下で open かつ存在を確認:
+
+```bash
+gh issue view <番号> --json state,title -q '.state + " " + .title'
+```
+
+確認できた issue を PR 本文に closing keyword で列挙する:
+
+- バグ修正系コミット（`fix:` プレフィックス）が当該 issue を解決 → `Fixes #N`
+- それ以外 → `Closes #N`
+- **複数 issue を解決する PR では各 issue ごとに 1 行**: `Closes #14`, `Fixes #332` のように並べる（`Closes #14 #15` は GitHub が認識せず機能しない）
+
+ブランチ名にも commit メッセージにも issue 番号が現れないが、PR が何らかの issue を解決していると分かる場合はユーザーに確認して明示的に追加すること。**release ブランチや複数 issue 同梱 PR では特に重要**（過去の付け忘れ実例: PR #331 / PR #333）。
 
 **PR タイトル**: commit-convention のタイプを含む日本語（70 文字以内）
 
@@ -126,7 +139,7 @@ gh pr list --head "$(git branch --show-current)" --json number,url --jq '.[0].ur
 
 テンプレートのパスはこのスキルファイルからの相対パス。
 テンプレートに含まれる closing keyword（`Closes #番号` / `Fixes #番号`）は、
-issue リンク検出で取得した番号で置き換える。issue がない場合はその行を省略する。
+issue リンク検出で取得した **全番号** で置き換える（複数ある場合は 1 行ずつ列挙）。issue がない場合はその行を省略する。
 
 PR 作成後、URL を表示する。
 

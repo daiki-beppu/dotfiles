@@ -221,6 +221,38 @@ EOF
 )"
 ```
 
+#### 5-C. CI チェック監視
+
+PR を作成（5-A）または積み上げ（5-B）した直後に GitHub Actions の完了まで待つ。`tasks.yaml` の poll と同じ「`Bash run_in_background` + 完了時 1 通知」パターンで投げ、前景 sleep ループは使わない。
+
+PR 番号は 5-A なら `gh pr create` の URL 末尾、5-B なら積み上げ先の `<PR#>` をそのまま使う。
+
+```bash
+PR_NUMBER=<PR#>    # 5-A の URL 末尾 or 5-B の <PR#>
+
+cat > /tmp/wait_ci_<slug>.sh <<EOF
+#!/usr/bin/env bash
+set -u
+cd <repo path>
+echo "[wait_ci] start \$(date '+%H:%M:%S') PR=#${PR_NUMBER}"
+gh pr checks ${PR_NUMBER} --watch --interval 30
+EXIT=\$?
+echo "[wait_ci] DONE \$(date '+%H:%M:%S') exit=\$EXIT"
+gh pr checks ${PR_NUMBER}
+exit \$EXIT
+EOF
+chmod +x /tmp/wait_ci_<slug>.sh
+```
+
+これを `Bash` の `run_in_background: true` で投げる。timeout は CI 最長想定 + α で `2400000ms`（40 分）程度。
+
+完了通知が来たら:
+
+- **exit 0** → 全 check pass。レビュー依頼へ進める
+- **exit ≠ 0** → 失敗 check の job を `gh pr checks ${PR_NUMBER}` の出力で特定し、`gh run view <run-id> --log-failed` で失敗ログを取得して原因判断。修正は worktree（5-A）または積み上げ先ブランチ（5-B）で行い、push 後に再度 5-C を回す
+
+CI fail が takt スコープ外（flaky test など）と判断した場合は Step 7 に従って別 issue に切り出す。
+
 ### 6. クリーンアップ
 
 ```bash
@@ -266,6 +298,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **`tasks.yaml` の name prefix**: `Task created: <slug>` の slug は task 説明文先頭から自動生成される（記号は除去、80 文字程度で truncate）。並列駆動時は複数 task で同じ prefix になりがちなので、prefix での絞り込みが効く
 - **skill のスコープ判定**: 編集対象が **グローバル user skill**（dotfiles 管理のもの。例: takt-issue / parallel / cp など）なら `~/01-dev/dotfiles/config/.claude/skills/` を編集する（`~/.claude/` はシンボリックリンク）。一方、**project-scoped skill**（リポジトリの `.claude/skills/` に commit され、`yt-skills sync` などで downstream に配布されるもの）はそのリポジトリ内で編集する。両者を取り違えると配布経路が壊れる
 - **`default-mini` は `report_spillover` を持たない**: 軽量タスクで mini を選んだ場合、スコープ外発見は人手で `issue` スキルに引き渡す必要がある。`default-extended` の感覚で見落とさない
+- **PR 作成で終わらない**: takt の auto-commit → push → `gh pr create` の後に GitHub Actions が走る。takt workflow 自体は `.github/workflows/*.yml` をローカル再現しないため、CI fail を見落とすと merge 段で初めて気付くことになる。必ず Step 5-C の `gh pr checks --watch` を入れる
 
 ## Rules
 
@@ -274,6 +307,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - worktree が必要な場合は `takt add` → `takt run` 経路を強制する
 - 自動コミットメッセージ（`takt: <slug>`）は書き換えず、そのまま採用する
 - 長時間監視は `Bash run_in_background` + `until` ループで `.takt/tasks.yaml` の status を 30s 間隔で poll する。`ScheduleWakeup` は完了タイミングが完全に読めない場合の保険。前景 sleep ループは禁止
+- PR 作成・積み上げ後は必ず Step 5-C で `gh pr checks --watch` を `Bash run_in_background` で投げて GitHub Actions の完了を待つ（`tasks.yaml` poll と同じ「完了時 1 通知」パターン）。CI fail なら `gh run view <run-id> --log-failed` で原因を確認し、修正 push → 5-C 再実行までを skill 内で完結させる
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。`report_spillover` step が拾えなかったものは `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
 - ローカルブランチ削除は PR merge 後に `branch-clean` スキルへ委譲（merge 前に消さない）
 - 単独 issue でもメインペインを `cmux new-split right` で右に分割し、新規 pane で takt を実行する（メインペインは Claude 用に残す）
