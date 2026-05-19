@@ -73,25 +73,42 @@ PR 作成自体は workflow の `finalize_pr` step が常に実行する（self-
 
 `default-mini` を選んだ場合は **`report_spillover` step が走らない**ため、Step 7 の人手 spillover チェックが必須になる旨をユーザーに伝える。
 
+#### provider 構成 (参考)
+
+reviewer 系 4 persona は Codex、実装系 (`coder` / `planner`) と `supervisor` は Claude。詳細と rate limit リカバリ手順は `~/.claude/skills/takt/SKILL.md` の `persona_providers` セクションを参照。
+
 ### 2. takt add（タスク登録）
 
 #### 2-A. 単独 issue の場合
 
-メインペインから `cmux new-split right` で右に分割し、その新規 pane で対話プロンプトに 1 つずつ応答する（メインペインは Claude の作業領域として残す）。プロンプトは 7 段階:
+メインペインから `cmux new-split right` で右に分割し、その新規 pane で対話プロンプトに 1 つずつ応答する（メインペインは Claude の作業領域として残す）。
+
+プロンプトは（順に）:
 
 ```
-1. takt add '#<N>'                                   # issue 番号を引用符で囲む
-2. カテゴリ: その他/ → Enter（default-extended / default-mini いずれも「その他」配下に自動分類される）
-3. ワークフロー: <Step 1 で確定した workflow> → Enter
-   - `default-extended`: 多段レビュー + 自動スコープ外起票 + finalize_pr（feature・中〜大規模向け）
-   - `default-mini`: 計画 → 実装 → AI レビュー → 並列レビュー + finalize_pr（bugfix・chore など軽量タスク向け）
-4. Base branch: 現ブランチでよいか [Y/n] → 既存 PR 積み上げなら Y、main にするなら n で main を入力
-5. Worktree path (Enter for auto)                    # Enter
-6. Branch name (Enter for auto)                      # Enter
-7. Auto-create PR? [Y/n]                             # 必ず n（PR 作成は workflow の finalize_pr step が担当）
+1. takt add '#<N>'                                    # issue 番号を引用符で囲む
+2. Select workflow:                                   # カテゴリ選択 (下の表参照)
+3. Select workflow category:                          # 個別 workflow 選択
+4. Base branch: 現ブランチでよいか [Y/n]              # 現ブランチが main の場合は自動スキップされる（main が base に自動採用）。
+                                                      # 既存 feature ブランチ等の場合のみ出現。積み上げなら Y、main にしたいなら n で main を入力
+5. Worktree path (Enter for auto)                     # Enter
+6. Branch name (Enter for auto)                       # Enter
+7. Auto-create PR? [Y/n]                              # 必ず n（PR 作成は workflow の finalize_pr step が担当）
 ```
 
-**重要**: 各プロンプトは個別に `cmux send-key Enter` か `cmux send "Y\n"` で送信し、`cmux read-screen` で次プロンプトの出現を確認してから次に進む。連続送信しない。
+#### workflow カテゴリ階層（UI 上の所在）
+
+カテゴリ → workflow の 2 段選択。dotfiles では `config/.takt/preferences/workflow-categories.yaml` の overlay により、トップに **🐱オリジナル/** カテゴリが表示され、よく使う workflow を 1 階層で取れる:
+
+| カテゴリ (出現順) | 配下の workflow | カーソル操作 (workflow 確定まで) |
+|---|---|---|
+| **🐱オリジナル/** | `default-mini` / `default-extended` | Enter → Enter (mini) / Enter → ↓1 + Enter (extended) |
+| **builtin/** | 既存 builtin 階層 (`⚡ Mini/` / `🚀 クイックスタート/` / `🎨 フロントエンド/` ...) | ↓1 + Enter → さらに中で選択 |
+| **その他/** | `research` / `deep-research` / `magi` / `compound-eye` / `default-extended` | ↓2 + Enter → 中で選択 |
+
+overlay 定義の実体は `config/.takt/preferences/workflow-categories.yaml` (symlink で `~/.takt/preferences/workflow-categories.yaml`)。仕様の詳細は `~/.claude/skills/takt/SKILL.md` を参照。
+
+**重要**: 各プロンプトは個別に `cmux send-key <key>` か `cmux send "<text>\n"` で送信し、`cmux read-screen` で次プロンプトの出現を確認してから次に進む。連続送信しない（Enter 連鎖は permission 拒否される）。`↓` は `cmux send-key --surface <id> down`、確定は `cmux send-key --surface <id> enter`。
 
 #### 2-B. 並列駆動（複数 issue 同時）の場合
 
@@ -284,6 +301,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **PR 作成で終わらない**: workflow の `finalize_pr` step が `gh pr create` した後に GitHub Actions が走る。`finalize_pr` 自体は CI ローカル検証（Step 2）でプロジェクト固有のチェックを再現するが、GitHub Actions の network-bound なジョブ（deploy preview、external API テスト等）は再現しない。merge 段で初めて気付くことを避けるため、必ず Step 5-C の `gh pr checks --watch` を入れる
 - **`Auto-create PR? [Y/n]` で Y にしない**: Y にすると takt 本体が PR を作り、その後 workflow の `finalize_pr` step も PR を作ろうとする。重複は `finalize_pr` 内の既存 PR チェック（4-F）で防がれるが、品質チェック付き PR を確実に作るには必ず n を選ぶ
 - **`finalize_pr` の base branch 判定**: instruction は `git for-each-ref --format='%(upstream:short)'` で base を取得する。`takt add` の Step 4「Base branch: 現ブランチでよいか [Y/n]」で n を選んで `main` を明示した場合と、Y で現ブランチ（feature ブランチ等）を base にした場合とで分岐する。意図と違う動作になったときはこの判定を疑う
+- **Codex review の厳しさ**: reviewer 系 4 persona を Codex 化しているため、軽微な指摘で `needs_fix` → `fix` のループが回りやすい。loop_monitor の threshold=3 が効くので 3 サイクルで前進するが、明らかに過剰な指摘が続く場合は instruction (`facets/instructions/review-*.md` / `ai-review.md`) で「軽微 APPROVE / 重大のみ ABORT」を明記する
 
 ## Rules
 

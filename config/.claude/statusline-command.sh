@@ -140,22 +140,59 @@ reset_7d=$(fmt_reset_md "$reset_7d_epoch")
 rate_5h=$(make_rate_part "5h" "$util_5h" "$reset_5h")
 rate_7d=$(make_rate_part "7d" "$util_7d" "$reset_7d")
 
-# レートリミット部分を結合
+# レートリミット部分を結合（Claude プレフィックス付き）
+ORANGE='\033[38;2;255;140;0m'
+claude_prefix=$(printf "${ORANGE}Claude${RESET}")
 rate_part=""
 if [ -n "$rate_5h" ] && [ -n "$rate_7d" ]; then
-    rate_part=$(printf "%s | %s" "$rate_5h" "$rate_7d")
+    rate_part=$(printf "%s %s | %s" "$claude_prefix" "$rate_5h" "$rate_7d")
 elif [ -n "$rate_5h" ]; then
-    rate_part="$rate_5h"
+    rate_part=$(printf "%s %s" "$claude_prefix" "$rate_5h")
 elif [ -n "$rate_7d" ]; then
-    rate_part="$rate_7d"
+    rate_part=$(printf "%s %s" "$claude_prefix" "$rate_7d")
 fi
 
-# 全体を 3 行で出力（ctx とレートリミットの間だけ dim 点線で区切る）
+# Codex レートリミット（最新の rollout JSONL から抽出）
+codex_rate_part=""
+latest_dir=$(ls -td ~/.codex/sessions/*/*/*/ 2>/dev/null | head -1)
+if [ -n "$latest_dir" ]; then
+    latest_rollout=$(ls -t "${latest_dir}"rollout-*.jsonl 2>/dev/null | head -1)
+    if [ -n "$latest_rollout" ]; then
+        # 末尾 16KB だけ読み、最後の rate_limits 行を抽出
+        rate_line=$(tail -c 16384 "$latest_rollout" 2>/dev/null | grep '"rate_limits"' | tail -1)
+        if [ -n "$rate_line" ]; then
+            cdx_5h=$(echo "$rate_line" | jq -r '.payload.rate_limits.primary.used_percent // empty' 2>/dev/null)
+            cdx_5h_epoch=$(echo "$rate_line" | jq -r '.payload.rate_limits.primary.resets_at // empty' 2>/dev/null)
+            cdx_7d=$(echo "$rate_line" | jq -r '.payload.rate_limits.secondary.used_percent // empty' 2>/dev/null)
+            cdx_7d_epoch=$(echo "$rate_line" | jq -r '.payload.rate_limits.secondary.resets_at // empty' 2>/dev/null)
+            cdx_5h_reset=$(fmt_reset_hm "$cdx_5h_epoch")
+            cdx_7d_reset=$(fmt_reset_md "$cdx_7d_epoch")
+            cdx_5h_part=$(make_rate_part "5h" "$cdx_5h" "$cdx_5h_reset")
+            cdx_7d_part=$(make_rate_part "7d" "$cdx_7d" "$cdx_7d_reset")
+            GRAY='\033[38;2;160;160;160m'
+            codex_prefix=$(printf "${GRAY}Codex${RESET}")
+            if [ -n "$cdx_5h_part" ] && [ -n "$cdx_7d_part" ]; then
+                codex_rate_part=$(printf "%s %s | %s" "$codex_prefix" "$cdx_5h_part" "$cdx_7d_part")
+            elif [ -n "$cdx_5h_part" ]; then
+                codex_rate_part=$(printf "%s %s" "$codex_prefix" "$cdx_5h_part")
+            elif [ -n "$cdx_7d_part" ]; then
+                codex_rate_part=$(printf "%s %s" "$codex_prefix" "$cdx_7d_part")
+            fi
+        fi
+    fi
+fi
+
+# 全体を 4 行で出力（ctx とレートリミットの間だけ dim 点線で区切る）
 # 1 行目: ブランチ + cwd + git_stat
 # 2 行目: ctx + モデル
-# 3 行目: 5h + 7d（空でも改行は残す）
+# 3 行目: 区切り
+# 4 行目: Claude 5h + 7d
+# 5 行目: Codex 5h + 7d（取得できれば）
 separator="${DIM}┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈${RESET}"
 printf "%s%s\n" "$prefix" "$git_stat"
 printf "%s | %s\n" "$context_part" "$model_part"
 printf "%b\n" "$separator"
 printf "%s" "$rate_part"
+if [ -n "$codex_rate_part" ]; then
+    printf "\n%b\n%s" "$separator" "$codex_rate_part"
+fi
