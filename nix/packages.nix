@@ -10,6 +10,7 @@ in
     bun
     xz
     cocoapods
+    codex
     direnv
     ffmpeg-full
     gh

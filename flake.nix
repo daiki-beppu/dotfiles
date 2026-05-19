@@ -134,6 +134,7 @@
                 "claude"
                 "cleanmymac"
                 "manaflow-ai/cmux/cmux"
+                "codex-app"
                 "cursor"
                 "discord"
                 "docker-desktop"
