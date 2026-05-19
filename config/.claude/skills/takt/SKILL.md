@@ -216,6 +216,39 @@ language: ja         # 出力言語
 draft_pr: false      # auto-PR 作成時に draft にするか
 ```
 
+### Persona ごとの provider 切替（`persona_providers`）
+
+persona 単位で provider / model / provider_options を上書きするブロック。グローバル設定
+（`~/.takt/config.yaml`）またはプロジェクト設定（`.takt/config.yaml`）に宣言する。
+
+```yaml
+persona_providers:
+  requirements-reviewer:
+    provider: codex
+  testing-reviewer:
+    provider: codex
+  ai-antipattern-reviewer:
+    provider: codex
+  architecture-reviewer:
+    provider: codex
+```
+
+- キーは YAML 上はスネークケース（`persona_providers` / `provider_options`）で書くが、
+  takt 内部では camelCase に正規化される
+- persona 単位で上書きできるフィールドは `provider` / `model` / `provider_options`
+- 上の例は reviewer 系 4 persona（requirements / testing / ai-antipattern / architecture）
+  を Codex に振る運用構成。Claude Code Max のトークン枠を温存しつつレビュー品質を担保する狙い
+
+provider の解決優先順は以下（上が優先）。
+
+1. CLI flag（`--provider`）
+2. `persona_providers.<persona>.provider`
+3. workflow YAML の `step.provider`
+4. プロジェクト設定（`.takt/config.yaml` の `provider`）
+5. グローバル設定（`~/.takt/config.yaml` の `provider`）
+
+step 単位の `provider:` 切替（workflow YAML 側の宣言）は本 skill の範囲外。
+
 ### タスク状態（`.takt/tasks.yaml`）
 
 `takt add` で追記、`takt run` で消化される。
