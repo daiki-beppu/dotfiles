@@ -7,19 +7,15 @@ provider: claude
 language: ja
 
 # Persona 単位で provider / model を切り替える。
-# - reviewer 系 4 persona は Codex に振り、Claude Code のトークン消費を削減する。
-#   Codex の rate limit に当たったら該当ブロックをコメントアウトで全戻し可能。
-# - coder は Claude のまま model だけ Sonnet に下げる。
-#   実装で最も動く persona なので Opus → Sonnet の置換が一番効く。
-# - planner / supervisor は Opus のまま（計画と最終判定の品質維持）。
+# - coder は実装で最も動く persona（write_tests / implement / ai_fix /
+#   write_tests_fix / fix / finalize_pr の 6 ステップ）。Codex に振り切り、
+#   Claude のトークン消費を最大限削減する。
+# - reviewer 系 4 persona は Claude/Opus（デフォルト）に戻し、
+#   レビューの判断品質を Opus 基準で担保する。
+# - planner / supervisor は Opus のまま（明示設定不要）。
+#
+# 全戻ししたい場合は coder を `model: sonnet` に戻し、
+# reviewer 4 種に `provider: codex` を再追加する。
 persona_providers:
   coder:
-    model: sonnet
-  requirements-reviewer:
-    provider: codex
-  testing-reviewer:
-    provider: codex
-  ai-antipattern-reviewer:
-    provider: codex
-  architecture-reviewer:
     provider: codex
