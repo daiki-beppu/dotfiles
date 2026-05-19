@@ -146,8 +146,6 @@ in
     copy_force "${dotfilesDir}/.takt/workflows/default-extended.yaml" "$HOME/.takt/workflows/default-extended.yaml"
     copy_force "${dotfilesDir}/.takt/workflows/default-mini.yaml" "$HOME/.takt/workflows/default-mini.yaml"
     copy_force "${dotfilesDir}/.takt/facets/instructions/report-scope-spillover.md" "$HOME/.takt/facets/instructions/report-scope-spillover.md"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/test-design.md" "$HOME/.takt/facets/instructions/test-design.md"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/test-design-review.md" "$HOME/.takt/facets/instructions/test-design-review.md"
     copy_force "${dotfilesDir}/.takt/facets/instructions/finalize-pr.md" "$HOME/.takt/facets/instructions/finalize-pr.md"
   '';
 }
