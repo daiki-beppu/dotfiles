@@ -1,0 +1,7 @@
+# takt の workflow 選択 UI でトップに表示するユーザー独自カテゴリ。
+# ここで定義したカテゴリが builtin より先頭に並び、builtin 一式は "builtin" サブカテゴリにまとめられる。
+workflow_categories:
+  "🐱オリジナル":
+    workflows:
+      - default-mini
+      - default-extended

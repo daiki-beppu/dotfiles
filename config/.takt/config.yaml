@@ -5,3 +5,17 @@
 
 provider: claude
 language: ja
+
+# Persona 単位で provider を切り替える。
+# reviewer 系 4 persona を Codex に振り、Claude Code のトークン消費を削減する。
+# 実装系 (coder / planner) と全体判定 (supervisor) は Claude のまま。
+# Codex の rate limit に当たったら該当ブロックをコメントアウトで全戻し可能。
+persona_providers:
+  requirements-reviewer:
+    provider: codex
+  testing-reviewer:
+    provider: codex
+  ai-antipattern-reviewer:
+    provider: codex
+  architecture-reviewer:
+    provider: codex

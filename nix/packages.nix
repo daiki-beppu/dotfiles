@@ -138,7 +138,9 @@ in
     mkdir -p "$HOME/.takt"
     mkdir -p "$HOME/.takt/workflows"
     mkdir -p "$HOME/.takt/facets/instructions"
+    mkdir -p "$HOME/.takt/preferences"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
+    link_force "${dotfilesDir}/.takt/preferences/workflow-categories.yaml" "$HOME/.takt/preferences/workflow-categories.yaml"
     # workflows / facets は takt v0.39.0 の isPathSafe が realpath 解決後の
     # symlink を path traversal として弾くため実コピーで配置する
     copy_force "${dotfilesDir}/.takt/workflows/default-extended.yaml" "$HOME/.takt/workflows/default-extended.yaml"

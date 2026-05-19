@@ -249,6 +249,25 @@ provider の解決優先順は以下（上が優先）。
 
 step 単位の `provider:` 切替（workflow YAML 側の宣言）は本 skill の範囲外。
 
+### Workflow カテゴリ overlay（`~/.takt/preferences/workflow-categories.yaml`）
+
+`takt add` の workflow 選択 UI のカテゴリ階層を独自カスタマイズするための overlay ファイル。存在すると `~/.takt/preferences/workflow-categories.yaml` の内容が **builtin より先頭に挿入され**、builtin 一式は `builtin/` サブカテゴリにまとめられる。
+
+```yaml
+workflow_categories:
+  "🐱お気に入り":
+    workflows:
+      - default-mini
+      - default-extended
+```
+
+- キーは YAML 上のスネークケース `workflow_categories`
+- 各カテゴリ直下の `workflows` に配置したい workflow 名を列挙する（重複可、builtin と同名でよい）
+- builtin の階層自体は `<takt インストール先>/builtins/<language>/workflow-categories.yaml` で定義されており、上記 overlay とマージされる
+- overlay が存在しないときは builtin の階層がそのまま使われる
+
+dotfiles では `config/.takt/preferences/workflow-categories.yaml` に実体を置いて symlink で配置。
+
 ### タスク状態（`.takt/tasks.yaml`）
 
 `takt add` で追記、`takt run` で消化される。
