@@ -161,3 +161,7 @@ PR 作成後、URL を表示する。
 - PR 本文はブランチタイプに対応する references/ のテンプレートに従う
 - ユーザーの承認なしに PR を作成しない — Step 4 で内容をプレビュー表示し確認を取る
 - CI チェックが1つでも失敗したらパイプラインを停止する — 強制的にスキップしない
+
+## 関連
+
+takt 経路の PR 作成は本 skill ではなく、workflow の `finalize_pr` step が同等処理を担当する。instruction の実体は `~/.takt/facets/instructions/finalize-pr.md`（dotfiles 実体は `config/.takt/facets/instructions/finalize-pr.md`）。本 skill のロジック（Step 1〜4）を変更したら、`finalize-pr.md` も同時に更新して挙動を揃えること。
