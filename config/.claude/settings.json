@@ -71,7 +71,17 @@
     "qodo-skills@claude-plugins-official": true,
     "skill-creator@claude-plugins-official": true,
     "notion@claude-plugins-official": true,
-    "chrome-devtools-mcp@claude-plugins-official": true
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": true,
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
   },
   "language": "Japanese",
   "voice": {
