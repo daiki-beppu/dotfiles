@@ -111,8 +111,8 @@ step 実行時に AI に渡される具体的指示。Markdown。カテゴリ別
 
 | 名前 | 用途 |
 |------|------|
-| `test-design` | テスト設計（`[user]` でカスタマイズ済み） |
-| `test-design-review` | テスト設計レビュー（`[user]` でカスタマイズ済み） |
+| `test-design` | テスト設計（builtin。dotfiles の default-extended では未使用） |
+| `test-design-review` | テスト設計レビュー（builtin。dotfiles の default-extended では未使用） |
 | `write-tests-first` | テストファースト実装（write_tests / write_tests_fix） |
 | `review-test` | テスト実装レビュー |
 

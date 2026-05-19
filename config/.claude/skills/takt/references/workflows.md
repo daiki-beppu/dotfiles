@@ -12,7 +12,7 @@ SKILL.md 本文の [Workflow](../SKILL.md#workflow) 節から参照される。
 
 ## default-extended（テスト先行開発）
 
-`max_steps: 60`、step 数 15。**`initial_step: plan`** から始まり、7 つのフェーズで進む。
+`max_steps: 60`、step 数 13。**`initial_step: plan`** から始まり、6 つのフェーズで進む。
 各 review ↔ fix のループには `loop_monitor` が仕込まれており、threshold（既定 3）を超えると
 supervisor が「健全 / 非生産的」を判定して次の遷移先を決める。
 
@@ -23,9 +23,6 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 | **計画** | `plan` | planner | `plan` | `plan.md` |
 | 計画レビュー | `plan_review` | requirements-reviewer | `review-requirements` | `requirements-review.md` |
 | 計画修正 | `plan_fix` | planner | `plan` | `plan.md` |
-| **テスト設計** | `test_design` | test-planner | `test-design` (user override) | `test-design.md` |
-| テスト設計レビュー | `test_design_review` | testing-reviewer | `test-design-review` (user override) | `test-design-review.md` |
-| テスト設計修正 | `test_design_fix` | test-planner | `test-design` | `test-design.md` |
 | **テスト実装** | `write_tests` | coder | `write-tests-first` | `test-report.md` |
 | テスト実装レビュー | `write_tests_review` | testing-reviewer | `review-test` | `testing-review.md` |
 | テスト実装修正 | `write_tests_fix` | coder | `write-tests-first` | `test-report.md` |
@@ -41,9 +38,8 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 各 step は `rules:` で次 step を決める。主な遷移:
 
 - `plan` → `plan_review`（要件明確） / `COMPLETE`（質問のみで実装不要） / `ABORT`（要件不足）
-- `plan_review` → `test_design`（approved） / `plan_fix`（needs_fix）
-- `test_design` → `test_design_review`（完了） / `test_design`（ユーザー確認、対話時のみ）
-- `write_tests` → `write_tests_review`（テスト Red 完了） / `test_design`（設計不備） / `implement`（テスト対象未実装でスキップ）
+- `plan_review` → `write_tests`（approved） / `plan_fix`（needs_fix）
+- `write_tests` → `write_tests_review`（テスト Red 完了） / `implement`（テスト対象未実装でスキップ）
 - `implement` → `ai_review`（実装完了 / 未着手 / 判断不能、いずれも進む）
 - `ai_review` → `reviewers`（AI 問題なし） / `ai_fix`（AI 問題あり）
 - `reviewers` の集約: 全 reviewer が approved → `report_spillover`、いずれかが needs_fix → `fix`
@@ -63,13 +59,13 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 
 ## default-mini（テスト省略の軽量版）
 
-`max_steps: 30`、step 数 6。**テスト設計／テスト実装フェーズを省略**した軽量版。
+`max_steps: 30`、step 数 6。**テスト実装フェーズを省略**した軽量版。
 
 ```
 plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervise) ⇄ fix → COMPLETE
 ```
 
-- bugfix / chore / docs / 小規模 refactor など、新規テスト設計が不要なタスク向け
+- bugfix / chore / docs / 小規模 refactor など、新規テスト実装が不要なタスク向け
 - `report_spillover` step が **ない**ため、スコープ外発見の自動起票は走らない。
   takt-issue skill では mini 選択時に人手 spillover チェックが強制される
 
@@ -77,12 +73,11 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 
 ## loop_monitor の挙動
 
-`default-extended` には 5 つの loop_monitor が定義されている。いずれも **threshold: 3**。
+`default-extended` には 4 つの loop_monitor が定義されている。いずれも **threshold: 3**。
 
 | 監視対象ループ | judge | 「健全」時の next | 「非生産的」時の next |
 |---------------|-------|------------------|---------------------|
-| `plan_review` ↔ `plan_fix` | supervisor | `plan_review`（継続） | `test_design`（強制前進） |
-| `test_design_review` ↔ `test_design_fix` | supervisor | `test_design_review`（継続） | `write_tests`（強制前進） |
+| `plan_review` ↔ `plan_fix` | supervisor | `plan_review`（継続） | `write_tests`（強制前進） |
 | `write_tests_review` ↔ `write_tests_fix` | supervisor | `write_tests_review`（継続） | `implement`（強制前進） |
 | `ai_review` ↔ `ai_fix` | supervisor | `ai_review`（継続） | `reviewers`（強制前進） |
 | `reviewers` ↔ `fix` | supervisor | `reviewers`（継続） | `ABORT` |
@@ -105,9 +100,8 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 | 種類 | 名前 | 位置付け |
 |------|------|----------|
 | workflow | `default-extended` | builtin と同名でローカル版を維持。優先される |
-| instruction | `test-design` | テスト設計指示のカスタム版 |
-| instruction | `test-design-review` | テスト設計レビュー指示のカスタム版 |
 | instruction | `report-scope-spillover` | スコープ外起票指示のカスタム版（`gh issue create` 連携） |
+| instruction | `finalize-pr` | PR 作成・更新指示のカスタム版 |
 
 `takt catalog instructions` で `[user]` ラベルが付いているものがカスタム版。builtin と
 同名の facet を上書きするので、workflow YAML 側は変更不要で挙動だけ差し替わる。
@@ -143,7 +137,7 @@ loop_monitors:
         - condition: 健全（指摘が反映されている）
           next: plan_review
         - condition: 非生産的（同じ指摘を繰り返している）
-          next: test_design
+          next: write_tests
 steps:
   - name: plan
     edit: false
@@ -157,7 +151,7 @@ steps:
       report:
         - name: plan.md
           format: plan
-  # ... 以下 14 step ...
+  # ... 以下 12 step ...
 ```
 
 実体は `~/.takt/workflows/default-extended.yaml` および

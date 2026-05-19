@@ -1,5 +1,5 @@
 name: default-extended
-description: テスト先行開発ワークフロー（計画 → 計画レビュー → テスト設計 → 設計レビュー → テスト実装 → テスト実装レビュー → 実装 → AIアンチパターンレビュー → 並列レビュー → スコープ外発見の起票 → 完了）
+description: テスト先行開発ワークフロー（計画 → 計画レビュー → テスト実装 → テスト実装レビュー → 実装 → AIアンチパターンレビュー → 並列レビュー → スコープ外発見の起票 → 完了）
 workflow_config:
   provider_options:
     codex:
@@ -32,31 +32,6 @@ loop_monitors:
       rules:
         - condition: 健全（指摘が反映されている）
           next: plan_review
-        - condition: 非生産的（同じ指摘を繰り返している）
-          next: test_design
-  - cycle:
-      - test_design_review
-      - test_design_fix
-    threshold: 3
-    judge:
-      persona: supervisor
-      instruction: |
-        test_design_review と test_design_fix のループが {cycle_count} 回繰り返されました。
-
-        各サイクルのレポートを確認し、このループが健全（指摘が反映されている）か、
-        非生産的（同じ指摘を繰り返している）かを判断してください。
-
-        **参照するレポート:**
-        - 設計レビュー結果: {report:test-design-review.md}
-        - テスト設計レポート: {report:test-design.md}
-
-        **判断基準:**
-        - 各サイクルで新しい指摘が反映され、テスト設計が改善しているか
-        - 同じ指摘が繰り返されていないか
-        - ケース網羅性・責務分担の指摘が解消されているか
-      rules:
-        - condition: 健全（指摘が反映されている）
-          next: test_design_review
         - condition: 非生産的（同じ指摘を繰り返している）
           next: write_tests
   - cycle:
@@ -167,7 +142,7 @@ steps:
     instruction: review-requirements
     rules:
       - condition: approved
-        next: test_design
+        next: write_tests
       - condition: needs_fix
         next: plan_fix
     output_contracts:
@@ -197,94 +172,6 @@ steps:
       report:
         - name: plan.md
           format: plan
-  - name: test_design
-    edit: false
-    persona: test-planner
-    policy:
-      - testing
-    knowledge:
-      - architecture
-      - unit-testing
-      - e2e-testing
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-          - WebSearch
-          - WebFetch
-    instruction: test-design
-    pass_previous_response: true
-    rules:
-      - condition: テスト設計が完了した
-        next: test_design_review
-      - condition: 設計を進められない（要件不足）
-        next: ABORT
-      - condition: ユーザーへの確認事項がある
-        next: test_design
-        requires_user_input: true
-        interactive_only: true
-    output_contracts:
-      report:
-        - name: test-design.md
-          format: test-plan
-  - name: test_design_review
-    edit: false
-    persona: testing-reviewer
-    policy:
-      - review
-      - testing
-    knowledge:
-      - architecture
-      - unit-testing
-      - e2e-testing
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-          - WebSearch
-          - WebFetch
-    instruction: test-design-review
-    rules:
-      - condition: approved
-        next: write_tests
-      - condition: needs_fix
-        next: test_design_fix
-    output_contracts:
-      report:
-        - name: test-design-review.md
-          format: testing-review
-  - name: test_design_fix
-    edit: false
-    persona: test-planner
-    policy:
-      - testing
-    knowledge:
-      - architecture
-      - unit-testing
-      - e2e-testing
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-          - WebSearch
-          - WebFetch
-    instruction: test-design
-    pass_previous_response: false
-    rules:
-      - condition: 設計修正が完了した
-        next: test_design_review
-      - condition: 修正不能（要件不足）
-        next: ABORT
-    output_contracts:
-      report:
-        - name: test-design.md
-          format: test-plan
   - name: write_tests
     edit: true
     persona: coder
@@ -310,10 +197,8 @@ steps:
     instruction: write-tests-first
     pass_previous_response: false
     rules:
-      - condition: テスト実装が完了した（test-design.md のケースを Red 状態で実装）
+      - condition: テスト実装が完了した（plan.md を元にテストケースを Red 状態で実装）
         next: write_tests_review
-      - condition: 設計に不備が見つかった
-        next: test_design
       - condition: テスト対象が未実装のためテスト作成をスキップする
         next: implement
       - condition: テスト作成を進行できない
@@ -550,9 +435,38 @@ steps:
     pass_previous_response: false
     rules:
       - condition: スコープ外発見なし、または起票完了
-        next: COMPLETE
+        next: finalize_pr
       - condition: 起票判断が不能（gh エラー含む）
+        next: finalize_pr
+  - name: finalize_pr
+    edit: true
+    persona: coder
+    policy:
+      - coding
+      - review
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+          - WebFetch
+    required_permission_mode: edit
+    instruction: finalize-pr
+    pass_previous_response: false
+    rules:
+      - condition: PR 作成完了、または既存 PR を検出
         next: COMPLETE
+      - condition: 品質チェック失敗（self-review 修正後も CI 不通）
+        next: fix
+    output_contracts:
+      report:
+        - name: finalize-pr.md
+          format: summary
+          use_judge: false
   - name: fix
     edit: true
     persona: coder
