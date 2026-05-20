@@ -12,9 +12,13 @@ SKILL.md 本文の [Workflow](../SKILL.md#workflow) 節から参照される。
 
 ## default-extended（テスト先行開発）
 
-`max_steps: 60`、step 数 15。**`initial_step: plan`** から始まり、7 つのフェーズで進む。
+`max_steps: 60`、step 数 14。**`initial_step: plan`** から始まり、6 つのフェーズで進む。
 各 review ↔ fix のループには `loop_monitor` が仕込まれており、threshold（既定 3）を超えると
 supervisor が「健全 / 非生産的」を判定して次の遷移先を決める。
+
+PR 作成は workflow step では行わず、workflow 完了後に takt CLI 本体の `postExecutionFlow` が
+自動で `autoCommitAndPush` → `pushBranch` → `gh pr create`（既存 PR があれば `gh pr comment`）
+を実行する。`takt -i <N> --auto-pr --draft` か `takt add` 対話で Y を選んだ場合に発動する。
 
 ### フェーズ別 step 一覧
 
@@ -34,7 +38,6 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 | **スコープ外起票** | `report_spillover` | supervisor | `report-scope-spillover` (user override) | （`gh issue create` を実行） |
 | **PR 前品質チェック** | `self_review` | coder | `self-review` (user override) | `self-review.md` |
 | CI ローカル検証 | `ci_verify` | coder | `ci-verify` (user override) | `ci-verify.md` |
-| **PR 作成** | `finalize_pr` | coder | `finalize-pr` (user override) | `finalize-pr.md` |
 
 ### 遷移ルール
 
@@ -49,8 +52,7 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 - `fix` → `reviewers`（修正完了） / `plan`（情報不足、計画からやり直し）
 - `report_spillover` → `self_review`（起票完了 / 起票不能どちらも次へ進む）
 - `self_review` → `ci_verify`（self-review 完了） / `fix`（main / master ブランチ上で実行された）
-- `ci_verify` → `finalize_pr`（全コマンド成功） / `fix`（1 つ以上失敗）
-- `finalize_pr` → `COMPLETE`（PR 作成完了 / 既存 PR 検出）
+- `ci_verify` → `COMPLETE`（全コマンド成功、以降は takt CLI の postExecutionFlow に委譲） / `fix`（1 つ以上失敗）
 
 ### `reviewers` step の並列構成
 
@@ -74,7 +76,9 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 - bugfix / chore / docs / 小規模 refactor など、新規テスト実装が不要なタスク向け
 - `report_spillover` step が **ない**ため、スコープ外発見の自動起票は走らない。
   takt-issue skill では mini 選択時に人手 spillover チェックが強制される
-- `self_review` / `ci_verify` step も **ない**ため、`finalize_pr` 内で self-review・CI ローカル検証・commit/push・PR 作成を一括実行する（default-extended と異なり責務が分離されていない）
+- `self_review` / `ci_verify` step も **ない**ため、PR 前の品質チェックは別途人手で実行する
+  （または `pr` skill / `cp` skill 側で吸収する）。PR 作成自体は default-extended と同様、
+  takt CLI 本体の postExecutionFlow に委譲される
 
 詳細な builtin 内容は `takt prompt default-mini` でプレビューできる。
 
@@ -108,9 +112,11 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 |------|------|----------|
 | workflow | `default-extended` | builtin と同名でローカル版を維持。優先される |
 | instruction | `report-scope-spillover` | スコープ外起票指示のカスタム版（`gh issue create` 連携） |
-| instruction | `self-review` | PR 前のコード簡素化・セキュリティ点検・CLAUDE.md 同期（finalize-pr から分離） |
-| instruction | `ci-verify` | CI ローカル検証（typecheck / lint / test / build）。finalize-pr から分離 |
-| instruction | `finalize-pr` | commit + push + PR 作成（積み上げ判定含む）。品質チェックは self-review / ci-verify に委譲 |
+| instruction | `self-review` | PR 前のコード簡素化・セキュリティ点検・CLAUDE.md 同期 |
+| instruction | `ci-verify` | CI ローカル検証（typecheck / lint / test / build） |
+
+PR 作成挙動は takt CLI 本体の `postExecutionFlow` が担うため、`finalize-pr` instruction は
+dotfiles から削除し、workflow step も置かない。
 
 `takt catalog instructions` で `[user]` ラベルが付いているものがカスタム版。builtin と
 同名の facet を上書きするので、workflow YAML 側は変更不要で挙動だけ差し替わる。

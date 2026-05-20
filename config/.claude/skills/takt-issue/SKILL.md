@@ -2,7 +2,7 @@
 name: takt-issue
 description: |
   takt の workflow で GitHub issue を実行するスキル。`takt add` → `takt run` 経路で worktree を作成し、
-  長時間 workflow を `Bash run_in_background` + `tasks.yaml` poll ループで完了検知、完了後に PR 化・積み上げ・クリーンアップまでを統一手順で行う。
+  長時間 workflow を `Bash run_in_background` + `tasks.yaml` poll ループで完了検知、完了後の PR 化（takt CLI の postExecutionFlow に委譲）と積み上げ・クリーンアップまでを統一手順で行う。
   「takt で issue 対応」「takt で #N を進めて」「takt 回して」など、takt 経由で issue を実装する意図が読み取れる発話で発動する。
 ---
 
@@ -10,11 +10,11 @@ description: |
 
 ## Overview
 
-takt の workflow で GitHub issue を実装する一連の手順を自動化するスキル。worktree 作成・長時間 workflow 監視・PR 化・積み上げ・クリーンアップを抜け漏れなく実行する。takt の自動コミットメッセージ（`takt: <slug>` 形式）はそのまま採用する。
+takt の workflow で GitHub issue を実装する一連の手順を自動化するスキル。worktree 作成・長時間 workflow 監視・PR 化（takt CLI の postExecutionFlow に委譲）・積み上げ・クリーンアップを抜け漏れなく実行する。takt の自動コミットメッセージ（`takt: <slug>` 形式）はそのまま採用する。
 
 workflow は issue の性質に応じて使い分ける:
 
-- **`default-extended`**（13 ステップ・多段レビュー + 自動スコープ外起票）: feature / enhancement、複数ファイル、テスト先行で進めたい中〜大規模タスク
+- **`default-extended`**（14 ステップ・多段レビュー + 自動スコープ外起票 + self-review / ci-verify）: feature / enhancement、複数ファイル、テスト先行で進めたい中〜大規模タスク
 - **`default-mini`**（6 ステップ・テスト実装をスキップ）: bugfix / chore / docs / 小規模 refactor、単一〜少数ファイル、既存テストで挙動を確認できる軽量タスク
 
 選択ロジックは Step 1「起動前確認」で扱う。
@@ -53,11 +53,11 @@ cmux tree                                            # 利用可能な pane
 
 ユーザーに以下を確認する（ユーザー指定があればそれを優先）:
 
-- **base branch**: `main` から新規 PR を作るか / 既存 feature ブランチに積み上げるか。**この選択を `finalize_pr` step が自動判定して 5-A / 5-B を切り替える**
+- **base branch**: `main` から新規 PR を作るか / 既存 feature ブランチに積み上げるか。`takt add` の Step 4「Base branch」で選んだ branch がそのまま PR の base になる
 - **issue 分割**: issue が大きすぎるなら別 skill `issue` で sub issue を先に起票
 - **workflow**: `default-extended` / `default-mini` のどちらで回すか（下表で判定）
 
-PR 作成自体は workflow の `finalize_pr` step が常に実行する（self-review / CI ローカル検証 / commit / push / `gh pr create` または `gh pr edit`）。`takt add` の `Auto-create PR? [Y/n]` プロンプトは **n を選ぶ**（takt 本体の auto-PR と workflow の finalize_pr が二重起動するのを防ぐため）。
+PR 作成は takt CLI 本体の `postExecutionFlow` が workflow 完了後に自動実行する（auto-commit → push → `gh pr create`、既存 PR があれば `gh pr comment` で追記）。`takt add` の `Auto-create PR? [Y/n]` プロンプトは **Y を選ぶ**（PR を自動で作るため）。workflow 側の品質チェックは `self_review` / `ci_verify` step が担当し、PR 作成自体は workflow step を持たない。
 
 ワンセンテンスで方針を提案し、ユーザーの判断を仰ぐ（auto モードでも方針判断は確認する）。
 
@@ -93,7 +93,7 @@ reviewer 系 4 persona は Codex、実装系 (`coder` / `planner`) と `supervis
                                                       # 既存 feature ブランチ等の場合のみ出現。積み上げなら Y、main にしたいなら n で main を入力
 5. Worktree path (Enter for auto)                     # Enter
 6. Branch name (Enter for auto)                       # Enter
-7. Auto-create PR? [Y/n]                              # 必ず n（PR 作成は workflow の finalize_pr step が担当）
+7. Auto-create PR? [Y/n]                              # Y（PR 作成は takt CLI 本体の postExecutionFlow が担当）
 ```
 
 #### workflow カテゴリ階層（UI 上の所在）
@@ -204,31 +204,48 @@ chmod +x /tmp/wait_takt_<slug>.sh
 
 ### 5. 完了後処理
 
-PR 化と品質チェック（self-review / CI ローカル検証 / commit / push / `gh pr create` または `gh pr edit`）は **workflow の `finalize_pr` step が自動実行する**。skill 側で手動の `gh pr create` / `gh pr edit` は **不要**。`pr` skill と同等の処理が workflow 内で完結する。
+PR 作成（auto-commit / push / `gh pr create` または既存 PR への `gh pr comment` 追記）は **takt CLI 本体の `postExecutionFlow` が workflow 完了直後に自動実行する**。skill 側で手動の `gh pr create` / `gh pr edit` は基本不要。品質チェック（self-review / CI ローカル検証）は workflow 内の `self_review` / `ci_verify` step が担当する。
 
-#### 5-A / 5-B. PR 化（workflow が担当）
+#### 5-A. 新規 PR（base = main / master）
 
-`finalize_pr` step が `BASE_BRANCH` を見て自動分岐する:
-
-- **base = main / master** → 新規 PR 作成（旧 Step 5-A 相当）
-- **base = それ以外（既存 feature ブランチ等）** → 既存 PR 積み上げ（旧 Step 5-B 相当）。worktree ブランチを base に merge → push → 既存 PR 本文に `Closes #<N>` 追記
+`takt add` で `Auto-create PR? [Y/n]` に Y を選んでいれば、postExecutionFlow が `gh pr create` で新規 PR を作る。PR 本文は固定テンプレート（`## Summary` + `## Execution Report` + `Closes #<N>` + `<!-- takt:managed -->` マーカー）。
 
 skill 側ですべきことは:
 
-1. `tasks.yaml` の status が `completed` になったら `.takt/runs/<run_slug>/reports/finalize-pr.md` を Read で読む
-2. PR URL とテンプレート種別、品質チェック結果（self-review 修正数 / CI 検証結果）をユーザーに表示
-3. `status: failed` で finalize_pr が落ちている場合は失敗ログを確認し、`fix` step でリカバリ済みか、人手介入が必要かを判断
+1. `tasks.yaml` の status が `completed` になったら `cmux read-screen` 末尾 50 行を読み、PR URL を抽出（`https://github.com/.../pull/<N>` 形式）
+2. PR URL と `.takt/runs/<run_slug>/reports/self-review.md` / `ci-verify.md` を Read で読んで品質チェック結果をユーザーに表示
+3. `status: failed` で workflow 自体が落ちている場合は失敗ログを確認し、`fix` step でリカバリ済みか、人手介入が必要かを判断
+4. PR 作成自体が失敗（auth エラー等）した場合は `tasks.yaml` の `prFailed: true` で検出できる。その時は手動で `gh pr create` するか、`/cp` skill を親 repo で叩いてリカバリ
 
-`finalize_pr` instruction の中身は `~/.takt/facets/instructions/finalize-pr.md`（dotfiles 実体は `config/.takt/facets/instructions/finalize-pr.md`）を参照。
+#### 5-B. 既存 PR への積み上げ（base = feature ブランチ等）
+
+postExecutionFlow は既存 PR を検出すると新規作成せず `gh pr comment <N> --body <prBody>` でコメント追記するだけ。**worktree ブランチを base ブランチに merge する処理は builtin に無い** ため、必要なら以下を人手で実行する:
+
+```bash
+# 親 repo に戻る
+cd <main repo path>
+# 既存 PR の base ブランチに切り替えて worktree ブランチを merge
+git checkout <BASE_BRANCH>
+git pull --ff-only origin <BASE_BRANCH>
+git merge --no-ff takt/<N>/<slug> -m "Merge takt/<N>/<slug> into <BASE_BRANCH>"
+git push origin <BASE_BRANCH>
+# 既存 PR 本文に Closes #<N> を追記
+EXISTING_PR=$(gh pr list --head <BASE_BRANCH> --state open --json number -q '.[0].number')
+gh pr edit "$EXISTING_PR" --body "$(gh pr view "$EXISTING_PR" --json body -q '.body')
+
+Closes #<N>"
+```
+
+skill 側ですべきことは、merge 実行可否（人手承認）の確認、上記コマンドの実行、結果（既存 PR URL）のユーザー報告。
 
 #### 5-C. CI チェック監視
 
-`finalize_pr` step が PR を作成または積み上げた直後に GitHub Actions の完了まで待つ。`tasks.yaml` の poll と同じ「`Bash run_in_background` + 完了時 1 通知」パターンで投げ、前景 sleep ループは使わない。
+postExecutionFlow が PR を作成または積み上げた直後に GitHub Actions の完了まで待つ。`tasks.yaml` の poll と同じ「`Bash run_in_background` + 完了時 1 通知」パターンで投げ、前景 sleep ループは使わない。
 
-PR 番号は `finalize-pr.md` レポートの `## PR` セクションに記録された URL の末尾、または `gh pr list --head <branch> --json number` で取得する。
+PR 番号は 5-A の URL 末尾、または `gh pr list --head takt/<N>/<slug> --json number -q '.[0].number'` で取得する。
 
 ```bash
-PR_NUMBER=<PR#>    # 5-A の URL 末尾 or 5-B の <PR#>
+PR_NUMBER=<PR#>    # 5-A は postExecutionFlow が出力した URL 末尾、5-B は積み上げ先の既存 PR 番号
 
 cat > /tmp/wait_ci_<slug>.sh <<EOF
 #!/usr/bin/env bash
@@ -298,21 +315,21 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **`tasks.yaml` の name prefix**: `Task created: <slug>` の slug は task 説明文先頭から自動生成される（記号は除去、80 文字程度で truncate）。並列駆動時は複数 task で同じ prefix になりがちなので、prefix での絞り込みが効く
 - **skill のスコープ判定**: 編集対象が **グローバル user skill**（dotfiles 管理のもの。例: takt-issue / parallel / cp など）なら `~/01-dev/dotfiles/config/.claude/skills/` を編集する（`~/.claude/` はシンボリックリンク）。一方、**project-scoped skill**（リポジトリの `.claude/skills/` に commit され、`yt-skills sync` などで downstream に配布されるもの）はそのリポジトリ内で編集する。両者を取り違えると配布経路が壊れる
 - **`default-mini` は `report_spillover` を持たない**: 軽量タスクで mini を選んだ場合、スコープ外発見は人手で `issue` スキルに引き渡す必要がある。`default-extended` の感覚で見落とさない
-- **PR 作成で終わらない**: workflow の `finalize_pr` step が `gh pr create` した後に GitHub Actions が走る。`finalize_pr` 自体は CI ローカル検証（Step 2）でプロジェクト固有のチェックを再現するが、GitHub Actions の network-bound なジョブ（deploy preview、external API テスト等）は再現しない。merge 段で初めて気付くことを避けるため、必ず Step 5-C の `gh pr checks --watch` を入れる
-- **`Auto-create PR? [Y/n]` で Y にしない**: Y にすると takt 本体が PR を作り、その後 workflow の `finalize_pr` step も PR を作ろうとする。重複は `finalize_pr` 内の既存 PR チェック（4-F）で防がれるが、品質チェック付き PR を確実に作るには必ず n を選ぶ
-- **`finalize_pr` の base branch 判定**: instruction は `git for-each-ref --format='%(upstream:short)'` で base を取得する。`takt add` の Step 4「Base branch: 現ブランチでよいか [Y/n]」で n を選んで `main` を明示した場合と、Y で現ブランチ（feature ブランチ等）を base にした場合とで分岐する。意図と違う動作になったときはこの判定を疑う
+- **PR 作成で終わらない**: takt CLI の postExecutionFlow が `gh pr create` した後に GitHub Actions が走る。workflow 内の `ci_verify` step はプロジェクト固有のチェックをローカル再現するが、GitHub Actions の network-bound なジョブ（deploy preview、external API テスト等）は再現しない。merge 段で初めて気付くことを避けるため、必ず Step 5-C の `gh pr checks --watch` を入れる
+- **`Auto-create PR? [Y/n]` は Y を選ぶ**: takt CLI 本体の postExecutionFlow が PR を作る経路を有効化するため。workflow 側に PR 作成 step は存在しないので二重起動の懸念はない
+- **既存 PR 積み上げは人手**: postExecutionFlow は既存 PR を検出すると `gh pr comment` でコメント追記するだけで base ブランチへの merge は行わない。積み上げ運用なら Step 5-B の手動 merge 手順を実行する
 - **Codex review の厳しさ**: reviewer 系 4 persona を Codex 化しているため、軽微な指摘で `needs_fix` → `fix` のループが回りやすい。loop_monitor の threshold=3 が効くので 3 サイクルで前進するが、明らかに過剰な指摘が続く場合は instruction (`facets/instructions/review-*.md` / `ai-review.md`) で「軽微 APPROVE / 重大のみ ABORT」を明記する
 
 ## Rules
 
 - 起動前に方針（base branch / 分割 / workflow）をユーザーに確認する。auto モードでも判断確認は省かない
 - workflow（`default-extended` / `default-mini`）を起動前に判断・確認する。判断軸は label / 影響範囲 / テスト先行の要否。bugfix / chore / docs / 小規模 refactor は `default-mini`、feature / 中〜大規模は `default-extended`、迷ったら `default-extended`。`default-mini` を選んだ場合は Step 7 の人手 spillover チェックを強制する
-- `Auto-create PR? [Y/n]` プロンプトは **必ず n** を選ぶ。PR 作成は workflow の `finalize_pr` step が担当する（takt 本体の auto-PR と二重起動させない）
+- `Auto-create PR? [Y/n]` プロンプトは **Y** を選ぶ。PR 作成は takt CLI 本体の `postExecutionFlow` が担当する
 - worktree が必要な場合は `takt add` → `takt run` 経路を強制する
 - 自動コミットメッセージ（`takt: <slug>`）は書き換えず、そのまま採用する
 - 長時間監視は `Bash run_in_background` + `until` ループで `.takt/tasks.yaml` の status を 30s 間隔で poll する。`ScheduleWakeup` は完了タイミングが完全に読めない場合の保険。前景 sleep ループは禁止
-- `finalize_pr` step の結果は `.takt/runs/<run_slug>/reports/finalize-pr.md` に出力される。完了後はこれを Read で読んで PR URL と品質チェック結果をユーザーに表示する
-- 5-A / 5-B の判定は `finalize_pr` instruction が base branch から自動分岐する。skill 側で `gh pr create` / `gh pr edit` を手動実行しない
+- 品質チェック結果は `.takt/runs/<run_slug>/reports/self-review.md` / `ci-verify.md` に出力される。完了後はこれを Read で読んでユーザーに表示する。PR URL は `cmux read-screen` 末尾または `gh pr list --head takt/<N>/<slug>` で取得する
+- 既存 PR 積み上げ（5-B）は builtin に無いため skill 側で手動 merge → `gh pr edit` を実行する。新規 PR 作成（5-A）は postExecutionFlow に任せ、`gh pr create` を手動実行しない
 - PR 作成・積み上げ後は必ず Step 5-C で `gh pr checks --watch` を `Bash run_in_background` で投げて GitHub Actions の完了を待つ（`tasks.yaml` poll と同じ「完了時 1 通知」パターン）。CI fail なら `gh run view <run-id> --log-failed` で原因を確認し、修正 push → 5-C 再実行までを skill 内で完結させる
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。`report_spillover` step が拾えなかったものは `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
 - ローカルブランチ削除は PR merge 後に `branch-clean` スキルへ委譲（merge 前に消さない）

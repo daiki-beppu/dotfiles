@@ -148,6 +148,5 @@ in
     copy_force "${dotfilesDir}/.takt/facets/instructions/report-scope-spillover.md" "$HOME/.takt/facets/instructions/report-scope-spillover.md"
     copy_force "${dotfilesDir}/.takt/facets/instructions/self-review.md" "$HOME/.takt/facets/instructions/self-review.md"
     copy_force "${dotfilesDir}/.takt/facets/instructions/ci-verify.md" "$HOME/.takt/facets/instructions/ci-verify.md"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/finalize-pr.md" "$HOME/.takt/facets/instructions/finalize-pr.md"
   '';
 }

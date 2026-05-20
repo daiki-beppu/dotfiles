@@ -482,39 +482,12 @@ steps:
     pass_previous_response: false
     rules:
       - condition: 全コマンド成功
-        next: finalize_pr
+        next: COMPLETE
       - condition: 1 つ以上失敗
         next: fix
     output_contracts:
       report:
         - name: ci-verify.md
-          format: summary
-          use_judge: false
-  - name: finalize_pr
-    edit: true
-    persona: coder
-    policy:
-      - coding
-      - review
-    provider_options:
-      claude:
-        allowed_tools:
-          - Read
-          - Glob
-          - Grep
-          - Edit
-          - Write
-          - Bash
-          - WebFetch
-    required_permission_mode: edit
-    instruction: finalize-pr
-    pass_previous_response: false
-    rules:
-      - condition: PR 作成完了、または既存 PR を検出
-        next: COMPLETE
-    output_contracts:
-      report:
-        - name: finalize-pr.md
           format: summary
           use_judge: false
   - name: fix
