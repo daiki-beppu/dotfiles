@@ -1,93 +1,23 @@
-# finalize-pr — 品質チェック付き PR 作成
+# finalize-pr — commit + push + PR 作成
 
-このファイルは Claude Code の `pr` skill (`~/.claude/skills/pr/SKILL.md`) と同じ動作を takt workflow の最終 step として再現するためのもの。`pr` skill 側を変更したら、こちらも追従させること。
+このファイルは Claude Code の `pr` skill (`~/.claude/skills/pr/SKILL.md`) の **PR 作成部分** と同じ動作を takt workflow の最終 step として再現するためのもの。`pr` skill 側の PR 作成挙動を変更したら、こちらも追従させること（self-review / CI 検証は別 instruction `self-review` / `ci-verify` に切り出されている）。
 
-takt の auto-commit 済みブランチに対して **self-review → CI ローカル検証 → 追加 commit + push → `gh pr create`** を順番に実行し、品質チェック付きの PR を自動作成する。
+takt の auto-commit 済みブランチに対して **追加 commit + push + `gh pr create`** を順番に実行し、PR を作成する。self-review / CI ローカル検証は前段の `self_review` / `ci_verify` step で完了している前提。
 
 ## 前提
 
 - takt が `takt/<N>/<slug>` ブランチを作り、auto-commit 済みである
 - 作業ディレクトリは worktree 内
-- `git status --short` で大半のケースは未コミット差分なしの状態
+- 前段 `self_review` step が修正を行っていれば、worktree に未コミット差分がある場合がある
+- 前段 `ci_verify` step が成功している（失敗していれば `fix` step に戻っている）
 
-## Step 1: self-review（インライン展開）
-
-`~/.claude/skills/self-review/SKILL.md` の処理を手で再現する。サブスキルは呼ばず、すべてインラインで実行する。
-
-### 1-A. Context 収集
-
-```bash
-git branch --show-current
-git status --short
-git diff --stat main..HEAD
-git log main..HEAD --oneline
-```
-
-`main` または `master` ブランチ上で動いている場合は **エラー扱いで step を停止** し、`rules.条件: 品質チェック失敗` で `fix` step に戻す。
-
-### 1-B. コード簡素化レビュー（simplify 相当）
-
-`git diff main..HEAD` の追加行を対象に、以下を機械的にチェックして自動修正する:
-
-- 未使用 import / 未使用変数 / 未使用ヘルパー関数の削除
-- 同一ロジックの 3 重複以上を抽出してヘルパー化（ただし 3 重複未満なら触らない — 過抽象化禁止）
-- 1 関数 100 行超 → 機能単位で分割
-- magic number / magic string → 名前付き定数へ
-- 不要なコメント（コードを読めば明らかな WHAT 説明）の削除
-- 「`// removed ...`」「`// added for issue #N`」のような履歴コメント削除
-
-修正は worktree 上で行い、後段 Step 3 で追加コミットする。
-
-### 1-C. セキュリティ点検（インライン）
-
-`git diff main..HEAD -- ':!*.lock' ':!*.snap'` の **追加行（`^+`）** に対して以下を grep し、検出したら CRITICAL / WARNING / INFO に分類する:
-
-- **シークレット**: `AKIA[0-9A-Z]{16}`（AWS）、`xox[baprs]-`（Slack）、`-----BEGIN .* PRIVATE KEY-----`、`password\s*=\s*["'][^"']+["']`、`token\s*=\s*["'][^"']+["']`、`api[_-]?key\s*=\s*["'][^"']+["']`
-- **インジェクション**: 文字列連結の SQL、動的 `exec(` / `eval(`、未サニタイズ入力を含むシェル `$(...)`
-- **意図せぬ混入**: `.env` / `credentials*` / `*.pem` / `id_rsa*` の追加
-
-CRITICAL（実シークレット / 明らかな脆弱性 / 秘密ファイル混入）は **即修正**: secret はプレースホルダ化、秘密ファイルは `git restore --staged` で unstage、検出された差分はコメントアウトしないで削除。`fixtures/` / `*.test.*` / `*.spec.*` 配下のダミー値や `your-api-key-here` 等のプレースホルダは CRITICAL に上げない。
-
-WARNING / INFO はサマリーに列挙のみ。
-
-### 1-D. CLAUDE.md 同期
-
-`git diff --stat main..HEAD` の出力に `CLAUDE.md`（大小文字無視）が含まれる場合のみ、`claude-md-management:claude-md-improver` の指示書を Read で読み込み、その手順に従って同期。含まれなければスキップ。
-
-## Step 2: CI ローカル検証
-
-PR 作成前にプロジェクトの CI で実行される検証をローカルで再現する。
-
-### 2-A. 検出
-
-```bash
-ls .github/workflows/*.yml 2>/dev/null | head -1
-jq -r '.scripts | keys[]' package.json 2>/dev/null | grep -E '^(typecheck|type-check|lint|test|build)$'
-ls Cargo.toml Makefile flake.nix pyproject.toml go.mod 2>/dev/null
-```
-
-### 2-B. 実行コマンド決定
-
-優先順位:
-
-1. **CI ワークフロー**: `.github/workflows/*.yml` を Read で読み、`run:` ステップから検証コマンドを抽出。Node の `npm/yarn/pnpm run X` は `nr X` に、`npx X` は `nlx X` に置換（`ni` ツール経由）
-2. **package.json フォールバック**: `typecheck` / `type-check` / `lint` / `test` / `build` のスクリプトを `nr <name>` で実行
-3. **その他**: `Makefile` → `make check` / `make test`、`Cargo.toml` → `cargo check && cargo test`、`flake.nix` → `nix flake check`、`pyproject.toml` → `pytest` / `mypy`、`go.mod` → `go test ./...`
-
-### 2-C. 実行と結果判定
-
-検出したコマンドを順次実行し、stdout/stderr を 50 行ずつ要約する。
-
-- **すべて成功** → Step 3 へ
-- **1 つでも失敗** → 失敗ログを `output_contracts/finalize-pr.md` に転記し、step rule の `品質チェック失敗` で `fix` step に戻す（再修正ループ）
-
-## Step 3: commit + push
+## Step 1: commit + push
 
 ```bash
 git status --short
 ```
 
-Step 1 で修正が発生した場合のみ追加コミット:
+前段 `self_review` で修正が発生した場合のみ追加コミット:
 
 ```bash
 git add -A
@@ -103,7 +33,7 @@ BRANCH=$(git branch --show-current)
 git push -u origin "$BRANCH"
 ```
 
-## Step 4: PR 化（新規作成 or 既存 PR 積み上げ）
+## Step 2: PR 化（新規作成 or 既存 PR 積み上げ）
 
 base branch によって動作を切り替える。
 
@@ -116,10 +46,10 @@ BASE_BRANCH=$(git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref 
 
 判定:
 
-- `BASE_BRANCH` が `main` / `master` → **新規 PR 作成モード（5-A）**: 4-A〜4-F を実行
-- それ以外（既存の feature/release/chore ブランチ等） → **既存 PR 積み上げモード（5-B）**: 4-G にジャンプ
+- `BASE_BRANCH` が `main` / `master` → **新規 PR 作成モード**: 2-A〜2-F を実行
+- それ以外（既存の feature/release/chore ブランチ等） → **既存 PR 積み上げモード**: 2-G にジャンプ
 
-### 4-A. issue 番号の抽出
+### 2-A. issue 番号の抽出
 
 ```bash
 BRANCH=$(git branch --show-current)            # 例: takt/127/refactor-auth
@@ -134,7 +64,7 @@ git log main..HEAD --format=%B | grep -oE '#[0-9]+' | head -1 | tr -d '#'
 
 それでも見つからない場合は closing keyword なしで PR を作成（人手で後追記）。
 
-### 4-B. ラベルからテンプレート判定
+### 2-B. ラベルからテンプレート判定
 
 ```bash
 gh issue view "$ISSUE_N" --json labels,title,state -q '.labels[].name' 2>/dev/null
@@ -148,13 +78,13 @@ gh issue view "$ISSUE_N" --json labels,title,state -q '.labels[].name' 2>/dev/nu
 
 テンプレート本体は Read ツールで読み、`Closes #番号` / `Fixes #番号` の行を実 issue 番号で置換する。
 
-### 4-C. draft フラグ
+### 2-C. draft フラグ
 
 ```bash
 cat .takt/config.yaml 2>/dev/null | grep -E '^draft_pr:\s*true' && DRAFT_FLAG=--draft || DRAFT_FLAG=
 ```
 
-### 4-D. PR 本文の組み立て
+### 2-D. PR 本文の組み立て
 
 `git log main..HEAD --format='%s%n%n%b'` の全コミットメッセージを分析して、テンプレートの各セクションを埋める:
 
@@ -165,7 +95,7 @@ cat .takt/config.yaml 2>/dev/null | grep -E '^draft_pr:\s*true' && DRAFT_FLAG=--
 
 closing keyword は **issue ごとに 1 行**（`Closes #14 #15` は GitHub が認識しないので NG）。
 
-### 4-E. PR 作成
+### 2-E. PR 作成
 
 ```bash
 gh pr create $DRAFT_FLAG \
@@ -176,7 +106,7 @@ gh pr create $DRAFT_FLAG \
 
 PR URL を `output_contracts/finalize-pr.md` に記録する。
 
-### 4-F. 既存 PR チェック
+### 2-F. 既存 PR チェック
 
 PR 作成前に既存 PR を確認:
 
@@ -186,7 +116,7 @@ gh pr list --head "$BRANCH" --json number,url --jq '.[0].url'
 
 既に PR が存在する場合は新規作成せず URL を `finalize-pr.md` に記録して step を終了（COMPLETE）。「重複作成しない」のは pr skill と同じ挙動。
 
-### 4-G. 既存 PR 積み上げ（5-B 経路）
+### 2-G. 既存 PR 積み上げ
 
 `BASE_BRANCH` が `main` / `master` 以外の場合に実行する。worktree ブランチを既存 PR ブランチに merge して push し、PR 本文に `Closes #<N>` を追記する。
 
@@ -220,8 +150,6 @@ fi
 
 | 失敗内容 | 次の step |
 |----------|-----------|
-| main / master ブランチ上で実行 | `fix`（人手で feature ブランチに切り替え） |
-| Step 2 の CI 検証で失敗 | `fix`（再修正ループ） |
 | `gh pr create` が認証エラー / 既存 PR エラー | `COMPLETE`（人手で takt-issue skill 経由で対応） |
 
 ## output_contracts/finalize-pr.md フォーマット
@@ -229,15 +157,12 @@ fi
 ```
 # finalize-pr 実行結果
 
-## self-review
-- 修正したファイル数: N
-- 検出したセキュリティ警告: CRITICAL=N / WARNING=N / INFO=N
-
-## CI ローカル検証
-- 実行コマンド: <list>
-- 結果: 成功 / 失敗（失敗時はログ抜粋）
+## commit + push
+- 追加コミット: yes / no
+- push 結果: 成功 / 失敗
 
 ## PR
+- モード: 新規作成 / 積み上げ
 - URL: <https://github.com/...>
 - closing keyword: Closes #<N>
 - テンプレート: feat / fix / 簡略版
@@ -247,7 +172,7 @@ fi
 ## Rules
 
 - takt の auto-commit メッセージ（`takt: <slug>`）は書き換えない
-- self-review 修正コミットのみ追加コミットする
+- 前段 `self_review` の修正分のみ追加コミットする
 - `Skill()` ツールに依存しない（workflow の provider 非対応のため、すべてインラインで実行）
 - `Closes #N` / `Fixes #N` は issue ごとに 1 行
 - 既存 PR があれば重複作成しない（URL を記録して COMPLETE）

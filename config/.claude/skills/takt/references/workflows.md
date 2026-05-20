@@ -12,7 +12,7 @@ SKILL.md 本文の [Workflow](../SKILL.md#workflow) 節から参照される。
 
 ## default-extended（テスト先行開発）
 
-`max_steps: 60`、step 数 13。**`initial_step: plan`** から始まり、6 つのフェーズで進む。
+`max_steps: 60`、step 数 15。**`initial_step: plan`** から始まり、7 つのフェーズで進む。
 各 review ↔ fix のループには `loop_monitor` が仕込まれており、threshold（既定 3）を超えると
 supervisor が「健全 / 非生産的」を判定して次の遷移先を決める。
 
@@ -32,6 +32,9 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 | **並列レビュー** | `reviewers` | （`arch-review` + `supervise` を並列実行） | `review-arch` / `supervise` | `architect-review.md` / `supervisor-validation.md` / `summary.md` |
 | 修正 | `fix` | coder | `fix` | （edit のみ） |
 | **スコープ外起票** | `report_spillover` | supervisor | `report-scope-spillover` (user override) | （`gh issue create` を実行） |
+| **PR 前品質チェック** | `self_review` | coder | `self-review` (user override) | `self-review.md` |
+| CI ローカル検証 | `ci_verify` | coder | `ci-verify` (user override) | `ci-verify.md` |
+| **PR 作成** | `finalize_pr` | coder | `finalize-pr` (user override) | `finalize-pr.md` |
 
 ### 遷移ルール
 
@@ -44,7 +47,10 @@ supervisor が「健全 / 非生産的」を判定して次の遷移先を決め
 - `ai_review` → `reviewers`（AI 問題なし） / `ai_fix`（AI 問題あり）
 - `reviewers` の集約: 全 reviewer が approved → `report_spillover`、いずれかが needs_fix → `fix`
 - `fix` → `reviewers`（修正完了） / `plan`（情報不足、計画からやり直し）
-- `report_spillover` → `COMPLETE`（起票完了 / 起票不能どちらも完了扱い）
+- `report_spillover` → `self_review`（起票完了 / 起票不能どちらも次へ進む）
+- `self_review` → `ci_verify`（self-review 完了） / `fix`（main / master ブランチ上で実行された）
+- `ci_verify` → `finalize_pr`（全コマンド成功） / `fix`（1 つ以上失敗）
+- `finalize_pr` → `COMPLETE`（PR 作成完了 / 既存 PR 検出）
 
 ### `reviewers` step の並列構成
 
@@ -68,6 +74,7 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 - bugfix / chore / docs / 小規模 refactor など、新規テスト実装が不要なタスク向け
 - `report_spillover` step が **ない**ため、スコープ外発見の自動起票は走らない。
   takt-issue skill では mini 選択時に人手 spillover チェックが強制される
+- `self_review` / `ci_verify` step も **ない**ため、`finalize_pr` 内で self-review・CI ローカル検証・commit/push・PR 作成を一括実行する（default-extended と異なり責務が分離されていない）
 
 詳細な builtin 内容は `takt prompt default-mini` でプレビューできる。
 
@@ -101,7 +108,9 @@ plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervi
 |------|------|----------|
 | workflow | `default-extended` | builtin と同名でローカル版を維持。優先される |
 | instruction | `report-scope-spillover` | スコープ外起票指示のカスタム版（`gh issue create` 連携） |
-| instruction | `finalize-pr` | PR 作成・更新指示のカスタム版 |
+| instruction | `self-review` | PR 前のコード簡素化・セキュリティ点検・CLAUDE.md 同期（finalize-pr から分離） |
+| instruction | `ci-verify` | CI ローカル検証（typecheck / lint / test / build）。finalize-pr から分離 |
+| instruction | `finalize-pr` | commit + push + PR 作成（積み上げ判定含む）。品質チェックは self-review / ci-verify に委譲 |
 
 `takt catalog instructions` で `[user]` ラベルが付いているものがカスタム版。builtin と
 同名の facet を上書きするので、workflow YAML 側は変更不要で挙動だけ差し替わる。

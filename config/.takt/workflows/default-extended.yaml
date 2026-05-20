@@ -435,9 +435,61 @@ steps:
     pass_previous_response: false
     rules:
       - condition: スコープ外発見なし、または起票完了
-        next: finalize_pr
+        next: self_review
       - condition: 起票判断が不能（gh エラー含む）
+        next: self_review
+  - name: self_review
+    edit: true
+    persona: coder
+    policy:
+      - coding
+      - review
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+    required_permission_mode: edit
+    instruction: self-review
+    pass_previous_response: false
+    rules:
+      - condition: self-review 完了（修正の有無問わず）
+        next: ci_verify
+      - condition: main / master ブランチ上で実行された
+        next: fix
+    output_contracts:
+      report:
+        - name: self-review.md
+          format: summary
+          use_judge: false
+  - name: ci_verify
+    edit: false
+    persona: coder
+    policy:
+      - review
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    instruction: ci-verify
+    pass_previous_response: false
+    rules:
+      - condition: 全コマンド成功
         next: finalize_pr
+      - condition: 1 つ以上失敗
+        next: fix
+    output_contracts:
+      report:
+        - name: ci-verify.md
+          format: summary
+          use_judge: false
   - name: finalize_pr
     edit: true
     persona: coder
@@ -460,8 +512,6 @@ steps:
     rules:
       - condition: PR 作成完了、または既存 PR を検出
         next: COMPLETE
-      - condition: 品質チェック失敗（self-review 修正後も CI 不通）
-        next: fix
     output_contracts:
       report:
         - name: finalize-pr.md
