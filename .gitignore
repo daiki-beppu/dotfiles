@@ -21,3 +21,6 @@ config/.claude/skills/*-workspace/
 # Python テスト実行時のキャッシュ
 __pycache__/
 *.pyc
+
+# Claude Code の手動 worktree 置き場（parallel スキル等が利用）
+.worktrees/
