@@ -75,7 +75,7 @@ PR 作成は takt CLI 本体の `postExecutionFlow` が workflow 完了後に自
 
 #### provider 構成 (参考)
 
-reviewer 系 4 persona は Codex、実装系 (`coder` / `planner`) と `supervisor` は Claude。詳細と rate limit リカバリ手順は `~/.claude/skills/takt/SKILL.md` の `persona_providers` セクションを参照。
+`coder` persona のみ Codex、その他（`planner` / `supervisor` / reviewer 系 4 persona）は Claude。実装で最も動く coder を Codex に振り、Claude Code Max のトークン枠を温存する構成。詳細と rate limit リカバリ手順は `~/.claude/skills/takt/SKILL.md` の `persona_providers` セクションを参照。
 
 ### 2. takt add（タスク登録）
 

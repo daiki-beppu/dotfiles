@@ -194,7 +194,7 @@ steps:
           - WebSearch
           - WebFetch
     required_permission_mode: edit
-    instruction: write-tests-first
+    instruction: coder-write-tests-first
     pass_previous_response: false
     rules:
       - condition: テスト実装が完了した（plan.md を元にテストケースを Red 状態で実装）
@@ -263,7 +263,7 @@ steps:
           - WebSearch
           - WebFetch
     required_permission_mode: edit
-    instruction: write-tests-first
+    instruction: coder-write-tests-first
     pass_previous_response: false
     rules:
       - condition: 修正完了
@@ -295,7 +295,7 @@ steps:
           - WebSearch
           - WebFetch
     required_permission_mode: edit
-    instruction: implement-after-tests
+    instruction: coder-implement-after-tests
     rules:
       - condition: 実装完了
         next: ai_review
@@ -358,7 +358,7 @@ steps:
           - WebSearch
           - WebFetch
     required_permission_mode: edit
-    instruction: ai-fix
+    instruction: coder-ai-fix
     pass_previous_response: false
     rules:
       - condition: AI Reviewerの指摘に対する修正が完了した
@@ -510,7 +510,7 @@ steps:
           - WebSearch
           - WebFetch
     required_permission_mode: edit
-    instruction: fix
+    instruction: coder-fix
     pass_previous_response: false
     rules:
       - condition: 修正完了
