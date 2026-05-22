@@ -1,5 +1,5 @@
 abbr "cl"="claude --permission-mode bypassPermissions"
 abbr "cla"="claude --permission-mode auto"
-abbr "ccusage"="bunx ccusage"
+abbr "ccusage"="bunx ccusage@20"
 abbr "diff"="bunx difit ."
 abbr "sv"="bunx specv@latest"
