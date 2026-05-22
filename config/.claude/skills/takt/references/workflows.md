@@ -1,173 +1,95 @@
 # takt builtin workflow リファレンス
 
-builtin workflow の step 構成・ループ制御・dotfiles カスタマイズの詳細。
-SKILL.md 本文の [Workflow](../SKILL.md#workflow) 節から参照される。
+builtin workflow の step 構成と subworkflow 内訳。SKILL.md 本文の [Workflow](../SKILL.md#workflow) 節から参照される。
+
+dotfiles 環境は **eject なし**（builtin の `default` / `default-mini` をそのまま使用）。カスタム workflow / instruction は持たない。
 
 ## 目次
 
-- [default-extended（テスト先行開発）](#default-extended テスト先行開発)
-- [default-mini（テスト省略の軽量版）](#default-mini テスト省略の軽量版)
-- [loop_monitor の挙動](#loop_monitor-の挙動)
-- [dotfiles 内のカスタマイズ](#dotfiles-内のカスタマイズ)
+- [default（テスト先行開発）](#default-テスト先行開発)
+- [default-mini（テスト省略の軽量版）](#default-mini-テスト省略の軽量版)
+- [subworkflow: default-draft](#subworkflow-default-draft)
+- [subworkflow: default-peer-review](#subworkflow-default-peer-review)
+- [プレビューと検証](#プレビューと検証)
 
-## default-extended（テスト先行開発）
+## default（テスト先行開発）
 
-`max_steps: 60`、step 数 14。**`initial_step: plan`** から始まり、6 つのフェーズで進む。
-各 review ↔ fix のループには `loop_monitor` が仕込まれており、threshold（既定 3）を超えると
-supervisor が「健全 / 非生産的」を判定して次の遷移先を決める。
+`max_steps: 30`、親 step 数 4。**`initial_step: plan`** から始まる。
 
-PR 作成は workflow step では行わず、workflow 完了後に takt CLI 本体の `postExecutionFlow` が
-自動で `autoCommitAndPush` → `pushBranch` → `gh pr create`（既存 PR があれば `gh pr comment`）
-を実行する。`takt -i <N> --auto-pr --draft` か `takt add` 対話で Y を選んだ場合に発動する。
+| 順 | step | 種別 | persona / call | 出力 report |
+|---|---|---|---|---|
+| 1 | `plan` | edit: false | planner | `plan.md` |
+| 2 | `write_tests` | edit: true | coder | `test-report.md` |
+| 3 | `draft` | workflow_call | `default-draft`（`impl_instruction: implement-after-tests`） | （subworkflow 内で出力） |
+| 4 | `peer-review` | workflow_call | `default-peer-review` | （subworkflow 内で出力） |
 
-### フェーズ別 step 一覧
+### 遷移
 
-| フェーズ | step | persona | instruction | 出力 report |
-|----------|------|---------|-------------|-------------|
-| **計画** | `plan` | planner | `plan` | `plan.md` |
-| 計画レビュー | `plan_review` | requirements-reviewer | `review-requirements` | `requirements-review.md` |
-| 計画修正 | `plan_fix` | planner | `plan` | `plan.md` |
-| **テスト実装** | `write_tests` | coder | `write-tests-first` | `test-report.md` |
-| テスト実装レビュー | `write_tests_review` | testing-reviewer | `review-test` | `testing-review.md` |
-| テスト実装修正 | `write_tests_fix` | coder | `write-tests-first` | `test-report.md` |
-| **本実装** | `implement` | coder | `implement-after-tests` | `coder-scope.md` / `coder-decisions.md` |
-| **AI レビュー** | `ai_review` | ai-antipattern-reviewer | `ai-review` | `ai-review.md` |
-| AI レビュー修正 | `ai_fix` | coder | `ai-fix` | （edit のみ） |
-| **並列レビュー** | `reviewers` | （`arch-review` + `supervise` を並列実行） | `review-arch` / `supervise` | `architect-review.md` / `supervisor-validation.md` / `summary.md` |
-| 修正 | `fix` | coder | `fix` | （edit のみ） |
-| **スコープ外起票** | `report_spillover` | supervisor | `report-scope-spillover` (user override) | （`gh issue create` を実行） |
-| **PR 前品質チェック** | `self_review` | coder | `self-review` (user override) | `self-review.md` |
-| CI ローカル検証 | `ci_verify` | coder | `ci-verify` (user override) | `ci-verify.md` |
+- `plan` → `write_tests`（要件明確） / `COMPLETE`（質問のみ） / `ABORT`（要件不足）
+- `write_tests` → `draft`（テスト作成完了 or テスト対象未実装でスキップ） / `ABORT` / `write_tests`（user input 要）
+- `draft` → `peer-review`（COMPLETE） / `plan`（need_replan） / `ABORT`
+- `peer-review` → `COMPLETE`（COMPLETE） / `plan`（need_replan） / `ABORT`
 
-### 遷移ルール
-
-各 step は `rules:` で次 step を決める。主な遷移:
-
-- `plan` → `plan_review`（要件明確） / `COMPLETE`（質問のみで実装不要） / `ABORT`（要件不足）
-- `plan_review` → `write_tests`（approved） / `plan_fix`（needs_fix）
-- `write_tests` → `write_tests_review`（テスト Red 完了） / `implement`（テスト対象未実装でスキップ）
-- `implement` → `ai_review`（実装完了 / 未着手 / 判断不能、いずれも進む）
-- `ai_review` → `reviewers`（AI 問題なし） / `ai_fix`（AI 問題あり）
-- `reviewers` の集約: 全 reviewer が approved → `report_spillover`、いずれかが needs_fix → `fix`
-- `fix` → `reviewers`（修正完了） / `plan`（情報不足、計画からやり直し）
-- `report_spillover` → `self_review`（起票完了 / 起票不能どちらも次へ進む）
-- `self_review` → `ci_verify`（self-review 完了） / `fix`（main / master ブランチ上で実行された）
-- `ci_verify` → `COMPLETE`（全コマンド成功、以降は takt CLI の postExecutionFlow に委譲） / `fix`（1 つ以上失敗）
-
-### `reviewers` step の並列構成
-
-`reviewers` は単一 step だが内部で 2 つの reviewer を並列起動する。
-
-| サブ reviewer | persona | instruction | 出力 |
-|---------------|---------|-------------|------|
-| `arch-review` | architecture-reviewer | `review-arch` | `architect-review.md` |
-| `supervise`   | supervisor | `supervise` | `supervisor-validation.md` / `summary.md` |
-
-集約ルールは `all("approved", "すべて問題なし")` で `report_spillover` へ進む。
+PR 作成は workflow step では行わず、workflow 完了後に takt CLI 本体の `postExecutionFlow` が自動で `autoCommitAndPush` → `pushBranch` → `gh pr create`（既存 PR があれば `gh pr comment`）を実行する。
 
 ## default-mini（テスト省略の軽量版）
 
-`max_steps: 30`、step 数 6。**テスト実装フェーズを省略**した軽量版。
+`max_steps: 30`、親 step 数 3。`default` から `write_tests` を取り除いただけ。
 
-```
-plan → implement → ai_review ⇄ ai_fix → reviewers (arch-review + supervise) ⇄ fix → COMPLETE
-```
+| 順 | step | 種別 | persona / call |
+|---|---|---|---|
+| 1 | `plan` | edit: false | planner |
+| 2 | `draft` | workflow_call | `default-draft`（args 既定） |
+| 3 | `peer-review` | workflow_call | `default-peer-review` |
 
-- bugfix / chore / docs / 小規模 refactor など、新規テスト実装が不要なタスク向け
-- `report_spillover` step が **ない**ため、スコープ外発見の自動起票は走らない。
-  takt-issue skill では mini 選択時に人手 spillover チェックが強制される
-- `self_review` / `ci_verify` step も **ない**ため、PR 前の品質チェックは別途人手で実行する
-  （または `pr` skill / `cp` skill 側で吸収する）。PR 作成自体は default-extended と同様、
-  takt CLI 本体の postExecutionFlow に委譲される
+bugfix / chore / docs / 小規模 refactor など、新規テスト実装が不要なタスク向け。
 
-詳細な builtin 内容は `takt prompt default-mini` でプレビューできる。
+## subworkflow: default-draft
 
-## loop_monitor の挙動
+実装フェーズ。`implement` step と `ai-antipattern-review` ↔ `ai-antipattern-fix` のループを内包する。0.40.0 のリネームで `ai_review` / `ai_fix` から `ai-antipattern-*` に統一されている。
 
-`default-extended` には 4 つの loop_monitor が定義されている。いずれも **threshold: 3**。
+主な step（builtin の `default-draft.yaml` 参照）:
 
-| 監視対象ループ | judge | 「健全」時の next | 「非生産的」時の next |
-|---------------|-------|------------------|---------------------|
-| `plan_review` ↔ `plan_fix` | supervisor | `plan_review`（継続） | `write_tests`（強制前進） |
-| `write_tests_review` ↔ `write_tests_fix` | supervisor | `write_tests_review`（継続） | `implement`（強制前進） |
-| `ai_review` ↔ `ai_fix` | supervisor | `ai_review`（継続） | `reviewers`（強制前進） |
-| `reviewers` ↔ `fix` | supervisor | `reviewers`（継続） | `ABORT` |
+- `implement`（coder, `impl_instruction` 引数で `implement-after-tests` などを差し替え）
+- `ai-antipattern-review-1st`（ai-antipattern-reviewer）
+- `ai-antipattern-fix`（coder）
+- ループ判定の `loop_monitor`（supervisor judge、threshold 3）
 
-判断基準は各 monitor の `judge.instruction` に書かれており、共通テンプレートは
-**「指摘が反映されているか」「同じ指摘の繰り返しになっていないか」「設計／実装の不備が
-解消されているか」** の 3 軸で評価する。
+`default` 側の `draft` step は `args.impl_instruction: implement-after-tests` を渡し、テスト先行後の本実装に切り替える。`default-mini` 側は引数を渡さず subworkflow の既定実装 instruction が使われる。
 
-`reviewers` ↔ `fix` のループだけ「非生産的」時に `ABORT` になる点に注意。
-他のループは強制前進だが、最後の reviewers でループが収束しないときはタスク中断扱い。
+## subworkflow: default-peer-review
 
-## dotfiles 内のカスタマイズ
+3 並列のレビューフェーズ。
 
-`~/01-dev/dotfiles/config/.takt/` 配下に eject 済みのカスタマイズが置かれている。
-`~/.takt/` 配下の workflows / facets ディレクトリ自体は dotfiles 側からコピー or 個別 symlink
-で同期される構成。
+- `arch-review`（architecture-reviewer, `review-arch` instruction）→ `architect-review.md`
+- `ai-antipattern-review-2nd`（ai-antipattern-reviewer, `ai-antipattern-review` instruction）→ `ai-antipattern-review.md`
+- `supervise`（supervisor, `supervise` instruction）→ `supervisor-validation.md` / `summary.md`
 
-### カスタマイズされている facet
+集約ルールで全 reviewer が approved なら `COMPLETE`、いずれかが needs_fix なら `fix` step に降りて修正ループを回す。`reviewers` ↔ `fix` の loop_monitor が「非生産的」と判定すると `ABORT`。
 
-| 種類 | 名前 | 位置付け |
-|------|------|----------|
-| workflow | `default-extended` | builtin と同名でローカル版を維持。優先される |
-| instruction | `report-scope-spillover` | スコープ外起票指示のカスタム版（`gh issue create` 連携） |
-| instruction | `self-review` | PR 前のコード簡素化・セキュリティ点検・CLAUDE.md 同期 |
-| instruction | `ci-verify` | CI ローカル検証（typecheck / lint / test / build） |
+### スコープ外発見の自動起票は無い
 
-PR 作成挙動は takt CLI 本体の `postExecutionFlow` が担うため、`finalize-pr` instruction は
-dotfiles から削除し、workflow step も置かない。
+builtin の `default` / `default-mini` には `report_spillover` 相当の step が **無い**。スコープ外発見は必ず人手で `issue` スキルに引き渡す（詳細は `takt-issue` SKILL.md の Step 7 を参照）。
 
-`takt catalog instructions` で `[user]` ラベルが付いているものがカスタム版。builtin と
-同名の facet を上書きするので、workflow YAML 側は変更不要で挙動だけ差し替わる。
+### `self_review` / `ci_verify` も無い
 
-### カスタマイズの編集対象
+PR 前のコード簡素化チェックやローカル CI 実行は builtin にない。必要なら `self-review` / `verify` などの user skill を別途叩く運用にする。
 
-- 編集場所は `~/01-dev/dotfiles/config/.takt/` 一択。`~/.takt/config.yaml` は symlink 経由
-- 新しい facet を追加するときは `takt eject <type> <name>` で取り出し、dotfiles に commit
-- workflow を新しく作るときは `takt workflow init` で雛形 → `.takt/workflows/` 配下に置き、
-  `takt workflow doctor` で検証
+## auto-improvement-loop（参考）
 
-## 参考: workflow YAML の構造
+`max_steps: infinite` の自己ループ workflow。`route_context` → `plan_from_issue` or `plan_fresh_improvement` → `enqueue_task` → `wait_before_next_scan`（`delay_before_ms: 60000`）→ `route_context` に戻る。
 
-参考までに `default-extended.yaml` の冒頭構造を抜粋する。
+起動: `takt run --workflow auto-improvement-loop`（または `takt add` で workflow 選択）。カレントディレクトリの git リポジトリをスコープに、open Issue / PR / コードベースから改善機会を AI が抽出して新規 task を enqueue する。
 
-```yaml
-name: default-extended
-description: テスト先行開発ワークフロー（...）
-workflow_config:
-  provider_options:
-    codex:
-      network_access: true
-max_steps: 60
-initial_step: plan
-loop_monitors:
-  - cycle: [plan_review, plan_fix]
-    threshold: 3
-    judge:
-      persona: supervisor
-      instruction: |
-        ... 健全 vs 非生産的の判定指示 ...
-      rules:
-        - condition: 健全（指摘が反映されている）
-          next: plan_review
-        - condition: 非生産的（同じ指摘を繰り返している）
-          next: write_tests
-steps:
-  - name: plan
-    edit: false
-    persona: planner
-    knowledge: architecture
-    instruction: plan
-    rules:
-      - condition: 要件が明確で実装可能
-        next: plan_review
-    output_contracts:
-      report:
-        - name: plan.md
-          format: plan
-  # ... 以下 12 step ...
+dotfiles リポジトリで回す意味は薄い（Issue / PR ベースの開発リポジトリ向け機能）。
+
+## プレビューと検証
+
+```bash
+takt prompt default             # default の各 step の prompt をプレビュー
+takt prompt default-mini        # default-mini のプレビュー
+takt workflow doctor            # 全 workflow を検証
+takt workflow doctor default    # 特定 workflow のみ
 ```
 
-実体は `~/.takt/workflows/default-extended.yaml` および
-`~/01-dev/dotfiles/config/.takt/workflows/default-extended.yaml`。
+カスタム workflow を作るときは `takt workflow init` で雛形 → `.takt/workflows/` 配下に置き、`takt workflow doctor` で検証する。builtin を改造したい場合は `takt eject default` で `.takt/workflows/default.yaml` に降ろしてから編集する（builtin 直接編集は禁止）。
