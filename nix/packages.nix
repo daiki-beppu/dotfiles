@@ -101,18 +101,6 @@ in
       fi
     }
 
-    # takt の isPathSafe が symlink を path traversal 扱いで弾くため、
-    # workflows / facets は実コピーで配置する用のヘルパー
-    copy_force() {
-      local src="$1"
-      local dst="$2"
-      if [ ! -f "$dst" ] || [ -L "$dst" ] || ! cmp -s "$src" "$dst"; then
-        rm -f "$dst"
-        cp "$src" "$dst"
-        echo "Copied: $dst <- $src"
-      fi
-    }
-
     # dotfiles
     link_force "${dotfilesDir}/.zshenv" "$HOME/.zshenv"
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
@@ -136,17 +124,6 @@ in
 
     # takt
     mkdir -p "$HOME/.takt"
-    mkdir -p "$HOME/.takt/workflows"
-    mkdir -p "$HOME/.takt/facets/instructions"
-    mkdir -p "$HOME/.takt/preferences"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
-    link_force "${dotfilesDir}/.takt/preferences/workflow-categories.yaml" "$HOME/.takt/preferences/workflow-categories.yaml"
-    # workflows / facets は takt v0.39.0 の isPathSafe が realpath 解決後の
-    # symlink を path traversal として弾くため実コピーで配置する
-    copy_force "${dotfilesDir}/.takt/workflows/default-extended.yaml" "$HOME/.takt/workflows/default-extended.yaml"
-    copy_force "${dotfilesDir}/.takt/workflows/default-mini.yaml" "$HOME/.takt/workflows/default-mini.yaml"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/report-scope-spillover.md" "$HOME/.takt/facets/instructions/report-scope-spillover.md"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/self-review.md" "$HOME/.takt/facets/instructions/self-review.md"
-    copy_force "${dotfilesDir}/.takt/facets/instructions/ci-verify.md" "$HOME/.takt/facets/instructions/ci-verify.md"
   '';
 }
