@@ -7,18 +7,22 @@ provider: claude
 language: ja
 
 # Persona 単位で provider / model を切り替える。
-# - coder は実装で最も動く persona。Claude Opus に振り切り、
-#   実装の判断品質を Opus 基準で担保する。
-# - reviewer 系 3 persona（architecture-reviewer / ai-antipattern-reviewer
-#   / supervisor）は Codex に寄せ、Claude のトークン消費を抑える。
-# - planner はデフォルト（claude/opus）のまま明示設定不要。
+# - coder は実装で最も動く persona。Codex に寄せて Claude のトークン消費を抑える。
+# - planner / reviewer 系 3 persona（architecture-reviewer /
+#   ai-antipattern-reviewer / supervisor）は判断品質を Opus 基準で担保するため
+#   claude/opus を明示する。
 persona_providers:
-  coder:
+  planner:
     provider: claude
     model: opus
+  coder:
+    provider: codex
   architecture-reviewer:
-    provider: codex
+    provider: claude
+    model: opus
   ai-antipattern-reviewer:
-    provider: codex
+    provider: claude
+    model: opus
   supervisor:
-    provider: codex
+    provider: claude
+    model: opus
