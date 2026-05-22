@@ -20,7 +20,6 @@ in
     tree
     unzip
     uv
-    watchman
 
     # Python + youtube-channels 自動化に必要なパッケージ
     (python314.withPackages (ps: with ps; [

@@ -7,15 +7,18 @@ provider: claude
 language: ja
 
 # Persona 単位で provider / model を切り替える。
-# - coder は実装で最も動く persona（write_tests / implement / ai_fix /
-#   write_tests_fix / fix / finalize_pr の 6 ステップ）。Codex に振り切り、
-#   Claude のトークン消費を最大限削減する。
-# - reviewer 系 4 persona は Claude/Opus（デフォルト）に戻し、
-#   レビューの判断品質を Opus 基準で担保する。
-# - planner / supervisor は Opus のまま（明示設定不要）。
-#
-# 全戻ししたい場合は coder を `model: sonnet` に戻し、
-# reviewer 4 種に `provider: codex` を再追加する。
+# - coder は実装で最も動く persona。Claude Opus に振り切り、
+#   実装の判断品質を Opus 基準で担保する。
+# - reviewer 系 3 persona（architecture-reviewer / ai-antipattern-reviewer
+#   / supervisor）は Codex に寄せ、Claude のトークン消費を抑える。
+# - planner はデフォルト（claude/opus）のまま明示設定不要。
 persona_providers:
   coder:
+    provider: claude
+    model: opus
+  architecture-reviewer:
+    provider: codex
+  ai-antipattern-reviewer:
+    provider: codex
+  supervisor:
     provider: codex
