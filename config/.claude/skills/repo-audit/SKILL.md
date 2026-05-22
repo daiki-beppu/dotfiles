@@ -77,7 +77,7 @@ gh label list --json name           # 既存ラベル（issue 起票時のため
 |---|---------|------|------|------|
 | 1 | 過剰防御 | src/foo.ts:42 | 空の catch | 例外を握りつぶしている |
 | 2 | ドキュ陳腐化 | README.md | `scripts/build.sh` が存在しない | 参照先ファイルが無い |
-| 3 | スキル乖離 | config/.claude/skills/pr/SKILL.md | `nr ci` に対応するスクリプトが無い | package.json と突合 |
+| 3 | スキル乖離 | config/.claude/skills/some-skill/SKILL.md | 参照する CLI が PATH に存在しない | command -v で確認 |
 | 4 | 後方互換残骸 | config/.zshrc:120 | 旧 alias `old-cmd` が誰からも呼ばれていない | git grep で参照ゼロ・履歴上も未使用 |
 ```
 

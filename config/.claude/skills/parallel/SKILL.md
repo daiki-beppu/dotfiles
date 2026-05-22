@@ -65,7 +65,7 @@ AskUserQuestion で並列実行するタスクを収集する。
 
 - **タスクの説明**: Claude への指示になる。長文可（一時ファイル経由で渡すため）
 - **短縮名**: ブランチ名に使う英数字・ハイフン（例: `user-auth`）
-- **タイプ**: `feat` / `fix` / `chore`（デフォルト `feat`）。`/pr` のテンプレート分岐で使う
+- **タイプ**: `feat` / `fix` / `chore`（デフォルト `feat`）。ブランチ名接頭辞に使用（commit-convention のタイプに準拠）
 
 ## Step 4: worktree 作成 + 依存関係インストール
 
@@ -85,7 +85,7 @@ fi
 
 - `<name>` はタスク短縮名
 - `<type>` は `feat` / `fix` / `chore`
-- ブランチ名は `<type>/parallel-<name>` に統一（`/pr` のテンプレート分岐に合わせるため）
+- ブランチ名は `<type>/parallel-<name>` に統一（commit-convention のタイプを接頭辞として使用）
 - Node.js プロジェクトでは `ni` を使う（CLAUDE.md の方針）
 - .env ファイルは既存の copy-env.sh SessionStart フックが自動コピーする
 
@@ -246,7 +246,7 @@ rm -rf "$STATE_DIR"
 - 元のペイン（呼び出し元）は分割するだけで、そこでは Claude セッションを起動しない
 - worktree パスは絶対パスで `cmux send` に渡す（相対パスだと新しいペインの作業ディレクトリに依存してしまう）
 - `<absolute_worktree_path_N>` は `$REPO_ROOT/.worktrees/<nameN>` を指す。各 Bash コールの冒頭で `REPO_ROOT=$(git rev-parse --show-toplevel)` を再取得してから展開する（`$REPO_ROOT` は呼び出しをまたいで生存しない）
-- ブランチ名は `<type>/parallel-<name>` で統一する（`/pr` のテンプレート分岐に合わせるため）
+- ブランチ名は `<type>/parallel-<name>` で統一する（commit-convention のタイプを接頭辞として使用）
 - 依存関係インストールは worktree 作成時に一度だけ行う（Claude セッション側では不要）
 - 各セッションは独立しており、セッション間の通信やファイル共有は想定しない
 - サーフェス ID は `cmux new-split` の出力から `awk '{print $2}'` でパースする
