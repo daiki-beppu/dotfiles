@@ -38,7 +38,7 @@ description: |
   - 件名末尾の `(#N)` は単に PR 番号を残す慣例であり **クローズキーワードではない**。両者を混同しないこと
   - 利用可能なキーワード: `Close, Closes, Closed, Fix, Fixes, Fixed, Resolve, Resolves, Resolved`（バグ修正は `Fixes`、それ以外は `Closes` を推奨）
   - 複数 issue にまたがる場合は `Closes #14, Closes #15` のように **各 issue ごとに 1 つずつ書く**（`Closes #14 #15` は GitHub が認識せず機能しない）
-  - PR スカッシュマージで body が消えると自動クローズも消えるため、PR 本文側にも同じキーワードを必ず含めること（pr スキル参照）
+  - PR スカッシュマージで body が消えると自動クローズも消えるため、PR 本文側にも同じキーワードを必ず含めること
 
 ## 例
 
