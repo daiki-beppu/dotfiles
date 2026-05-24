@@ -6,11 +6,11 @@
 provider: claude
 language: ja
 
-# Persona 単位で provider / model を切り替える。
-# - coder は実装で最も動く persona。Codex に寄せて Claude のトークン消費を抑える。
-# - planner / reviewer 系 3 persona（architecture-reviewer /
-#   ai-antipattern-reviewer / supervisor）は判断品質を Opus 基準で担保するため
-#   claude/opus を明示する。
+# Persona 単位で provider / model を切り替える（安定ベースライン）。
+# - coder は Codex に寄せて Claude のトークン消費を抑える。
+# - planner / reviewer 系（architecture / ai-antipattern / supervisor）は claude/opus で判断・レビュー品質を担保。
+# - Codex の rate limit 等で一時的に coder を Claude へ逃がす場合は、この global ではなく
+#   各リポジトリの project .takt/config.yaml に persona_providers override を足す（global は触らない）。
 persona_providers:
   planner:
     provider: claude
