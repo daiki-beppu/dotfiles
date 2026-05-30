@@ -41,17 +41,29 @@ precmd() {
 }
 
 # NPM_TOKEN lazy loading (1Password CLI)
-# op read はコストが高いため、npm 系コマンド初回実行時にのみ取得する
+# op read はコストが高いため、npm 系コマンド初回実行時にのみ取得する。
+# 取得済みなら以降は何もしない（セッション中の op 問い合わせは成功後 1 回だけ）。
+# 取得失敗時は素の 1Password エラーを握りつぶさず、短い案内に置き換えて中断する
+# （fail fast）。NPM_TOKEN は設定されないため、1Password 復旧後の再実行で再取得する。
 _ensure_npm_token() {
-  if [[ -z "$NPM_TOKEN" ]]; then
-    export NPM_TOKEN="$(op read "op://Personal/npm token/credential")"
+  [[ -n "$NPM_TOKEN" ]] && return 0
+  if ! command -v op >/dev/null 2>&1; then
+    print -u2 "error: op (1Password CLI) が見つかりません"
+    return 1
   fi
+  local token
+  if ! token=$(op read "op://Personal/npm token/credential" 2>/dev/null); then
+    print -u2 "error: 1Password から npm token を取得できません。"
+    print -u2 "  1Password アプリを起動・アンロックしてください"
+    return 1
+  fi
+  export NPM_TOKEN="$token"
 }
 
 for _cmd in ni nr nlx nu nun nci npm npx bun bunx; do
   eval "
     ${_cmd}() {
-      _ensure_npm_token
+      _ensure_npm_token || return \$?
       command ${_cmd} \"\$@\"
     }
   "
