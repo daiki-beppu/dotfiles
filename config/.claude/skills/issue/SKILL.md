@@ -10,7 +10,7 @@ description: |
 
 ## Overview
 
-会話コンテキストから GitHub issue を「要件定義書 = 仕様書」として新規作成するスキル。会話の流れから適切なタイトル・本文・ラベルを推測し、ユーザー確認後に `gh issue create` で作成する。本文はカテゴリ別テンプレ（bug / feature / refactor / chore / docs）と takt 最適化された共通コア構造（参照資料 / 影響ファイル / 要件 / スコープ外）に沿って生成し、`takt-issue` skill 経由の自動実装でも入力品質が担保される形に揃える。ラベル選定はリポジトリ固有の運用パターン（過去 issue から学習）と既存ラベルの description マッチングを組み合わせる。
+会話コンテキストから GitHub issue を「要件定義書 = 仕様書」として新規作成するスキル。会話の流れから適切なタイトル・本文・ラベルを推測し、ユーザー確認後に `gh issue create` で作成する。本文はカテゴリ別テンプレ（bug / feature / refactor / chore / docs）と takt 最適化された共通コア構造（参照資料 / 影響ファイル / 要件 / スコープ外）に沿って生成し、`takt-issue` skill 経由の自動実装でも入力品質が担保される形に揃える。さらに **takt 適用判断（`default` / `default-mini` / takt 不要）を起票時に前倒し**し、対応ラベル（`takt:*`）と本文末尾の `## 実装方針（takt）` セクションの両方に記録することで、後工程（`takt-issue`）の判断コストを削減する。ラベル選定はリポジトリ固有の運用パターン（過去 issue から学習）と既存ラベルの description マッチングを組み合わせる。
 
 ## When to Use
 
@@ -97,6 +97,11 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    ## 受け入れ基準（任意）
    （書く場合のみ。チェックリスト形式。レビュー時の参照材料。takt 側では自動検証されない）
    - [ ] ...
+
+   ## 実装方針（takt）
+   （Step 5 の takt 適用判断を記録する。本文末尾に固定で置き、上記の既存セクション名・順序は変えない＝plan.md instruction の抽出に干渉させない。issue 起票時の暫定判断であり、実行時に takt-issue 側で最終確認する）
+   - workflow: default-mini   （`default` / `default-mini` / `不要（手動実装が妥当）` のいずれか）
+   - 理由: 単一ファイルの bugfix、既存テストで挙動確認できるため
    ```
 
    カテゴリ固有セクション群（コア構造内の `<カテゴリ固有セクション群>` に挿入する）:
@@ -137,7 +142,18 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
 
 4. **タイトル生成**: 簡潔で具体的な日本語タイトル（50 文字以内目安）。**将来 PR タイトルに直結するため、スコープを正確に反映した表現にする**（takt-issue のスコープ外判定基準が「PR タイトルが変わるか」であるため）
 
-5. **ラベル選定**: 以下の 3 ステップで候補を絞り込む
+5. **takt 適用判断**: カテゴリ判定（Step 2）と `## 影響ファイル`（Step 3）を入力に、以下の 3 値から 1 つを判定する。結果は Step 6 のラベルと Step 3 本文末尾の `## 実装方針（takt）` の両方に記録する。判定基準は `takt-issue` skill の workflow 判断表と整合させる（issue 側で前倒しした判断を takt-issue 側が踏襲する）
+
+   | 判定 | ラベル | 基準 |
+   | --- | --- | --- |
+   | `default` | `takt:default` | feature / enhancement、複数ファイル、テスト先行で進めたい中〜大規模タスク。**迷ったらこれ（fail-safe）** |
+   | `default-mini` | `takt:default-mini` | bug / chore / docs / 小規模 refactor、単一〜少数ファイル、既存テストで挙動確認できる軽量タスク |
+   | `不要（手動）` | `takt:manual` | 1 行修正・誤字・設定値 1 箇所変更など、workflow を回すまでもない極小タスク。手動実装が妥当 |
+
+   - `## 影響ファイル` が `(plan step で確定する)` で未確定の場合は、カテゴリベースで暫定判定し fail-safe 側（`default`）に寄せる
+   - 本文末尾の `## 実装方針（takt）` には判定した workflow と理由を記録する（`不要（手動）` の場合は workflow 行を「不要（手動実装が妥当）」とし理由を添える）
+
+6. **ラベル選定**: 以下の 3 ステップで候補を絞り込む
 
    **Step A: 共通ラベル検出**（過去 issue から運用パターン学習）
    - `gh issue list` の結果からラベル別の出現頻度を計算する。例:
@@ -169,7 +185,19 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    - ユーザーが承認したラベルのみ `gh label create --name "name" --description "desc" --color "xxxxxx"` で作成 → そのラベルを issue に付ける
    - ユーザーが拒否したらラベルなしで作成（fallback）
 
-6. **プレビュー表示**: 生成内容を以下のフォーマットで表示する。各ラベルには選定理由を 1 行で添える
+   **Step D: takt 適用ラベル**（Step 5 の判定結果を反映）
+   - Step 5 の判定に対応する takt ラベルを 1 つ必ず候補に含める（`takt:default` / `takt:default-mini` / `takt:manual`）
+   - 当該 takt ラベルが既存リポジトリに無い場合は、Step C と同じ新規ラベルフローに従う（プレビューに「新規ラベル候補」として提示 → ユーザー承認後に `gh label create` で作成）。推奨定義:
+
+     | name | description | color |
+     | --- | --- | --- |
+     | `takt:default` | takt default workflow で実装（テスト先行） | `5319e7` |
+     | `takt:default-mini` | takt default-mini workflow で実装（テスト省略の軽量版） | `1d76db` |
+     | `takt:manual` | takt 不要・手動実装が妥当 | `cfd3d7` |
+
+   - ユーザーが takt ラベルの作成を拒否した場合は、ラベルは付けず本文末尾の `## 実装方針（takt）` セクションだけ残す（判断自体は本文に残る fallback）
+
+7. **プレビュー表示**: 生成内容を以下のフォーマットで表示する。各ラベルには選定理由を 1 行で添える
 
    ```
    ## Issue プレビュー
@@ -177,31 +205,33 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    **リポジトリ**: owner/repo
    **カテゴリ**: refactor
    **タイトル**: ここにタイトル
+   **takt 方針**: default-mini （単一ファイル・既存テストで確認可）
    **ラベル**:
      - refactor （カテゴリ判定: refactor）
      - documentation （過去 issue 92% に付与: リポジトリ共通ラベル）
+     - takt:default-mini （takt 適用判断）
 
    **本文**:
    （カテゴリ別テンプレ + コア構造を適用した本文）
    ```
 
-   Step C の新規提案がある場合は別ブロックで表示する：
+   Step C / Step D の新規提案がある場合は別ブロックで表示する：
 
    ```
    **新規ラベル候補**（既存に該当なし、作成しますか？）:
      - chore (NEW): 雑務系タスク
-     - refactor (NEW): リファクタリング
+     - takt:default-mini (NEW): takt default-mini workflow で実装
    ```
 
-7. **ユーザー確認**: 「この内容で作成しますか？修正があれば教えてください」と確認する。修正指示があれば反映してから再度プレビューする。新規ラベル候補は個別に承認/拒否を確認する
+8. **ユーザー確認**: 「この内容で作成しますか？修正があれば教えてください」と確認する。修正指示があれば反映してから再度プレビューする。新規ラベル候補は個別に承認/拒否を確認する
 
-8. **issue 作成**: 承認後、必要に応じて `gh label create` を実行してから `gh issue create` で作成する
+9. **issue 作成**: 承認後、必要に応じて `gh label create` を実行してから `gh issue create` で作成する
 
    ```bash
    gh issue create --title "タイトル" --body "本文" --label "label1,label2"
    ```
 
-9. **URL を表示**: 作成された issue の URL を表示する
+10. **URL を表示**: 作成された issue の URL を表示する
 
 ## Rules
 
@@ -209,6 +239,9 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
 - **`## 参照資料` セクションは実装時に読むべきファイル・ディレクトリを相対パス箇条書きで記述する**（takt の plan instruction が自動抽出して Read/Glob で開くため形式を厳守）
 - **`## 要件` は番号付きリストで検証可能な単位に分解する**（完了条件のメイン）
 - **`## スコープ外` は省略不可**（takt-issue の別 issue 化判定の境界として機能する）
+- **takt 適用判断を 3 値（`takt:default` / `takt:default-mini` / `takt:manual`）で行い、対応ラベルと本文末尾 `## 実装方針（takt）` の両方に記録する**。判定基準は `takt-issue` skill の workflow 判断表と整合させ、迷ったら `default` に寄せる（fail-safe）
+- **`## 実装方針（takt）` は本文末尾に固定で置き、既存セクション（参照資料 / 影響ファイル / 要件 / スコープ外）の名前・順序は変えない**（plan.md instruction の抽出に干渉させない）
+- takt ラベルが既存リポジトリに無い場合は新規ラベルフロー（Step C / D）に従いユーザー承認後に作成。拒否時はラベルを付けず `## 実装方針（takt）` セクションのみ残す
 - タイトルは将来 PR タイトルに直結するため、スコープを正確に反映した簡潔な日本語にする（takt-issue のスコープ外判定基準が「PR タイトルが変わるか」のため）
 - **`## 要件` / `## スコープ外` が会話から導出できない場合は、プレビュー前にユーザーに不足項目を質問する**（空のまま作成しない）
 - `## 参照資料` が特定できない場合はユーザーに質問し、実装着手前のコード調査が必要なら `(plan step で確定する)` と明記して残す
