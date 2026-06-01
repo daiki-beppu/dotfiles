@@ -73,7 +73,7 @@ builtin の `default` / `default-mini` には `report_spillover` 相当の step 
 
 ### `self_review` / `ci_verify` も無い
 
-PR 前のコード簡素化チェックやローカル CI 実行は builtin にない。必要なら `self-review` / `verify` などの user skill を別途叩く運用にする。
+PR 前のコード簡素化チェックやローカル CI 実行は builtin にない。必要なら built-in の `/review` や `verify` skill を別途叩く運用にする。
 
 ## auto-improvement-loop（参考）
 
