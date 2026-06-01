@@ -1,5 +1,5 @@
 ---
-name: branch-clean
+name: clean-branch
 description: Use when マージ済みの不要ブランチを一括削除したいとき。「ブランチ整理」「マージ済み削除」「branch 掃除」「ブランチ一覧きれいにして」など、ブランチの整理に関わる場面で使用すること
 ---
 
