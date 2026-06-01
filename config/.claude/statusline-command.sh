@@ -11,9 +11,17 @@ used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
 # ホームディレクトリを ~ に置換
 cwd_short=$(echo "$cwd" | sed "s|^$HOME|~|")
 
-# Git ブランチ情報を取得
+# Git ブランチ情報を取得（detached HEAD は @<short-sha> で代用）
 cd "$cwd" 2>/dev/null
-branch=$(GIT_OPTIONAL_LOCKS=0 git symbolic-ref --short HEAD 2>/dev/null)
+in_git=$(GIT_OPTIONAL_LOCKS=0 git rev-parse --is-inside-work-tree 2>/dev/null)
+branch=""
+if [ "$in_git" = "true" ]; then
+    branch=$(GIT_OPTIONAL_LOCKS=0 git symbolic-ref --short HEAD 2>/dev/null)
+    if [ -z "$branch" ]; then
+        sha=$(GIT_OPTIONAL_LOCKS=0 git rev-parse --short HEAD 2>/dev/null)
+        [ -n "$sha" ] && branch="@${sha}"
+    fi
+fi
 
 # ANSI カラーコード
 GREEN='\033[32m'
@@ -32,22 +40,29 @@ fi
 # モデル名部分（マゼンタ + アイコン）
 model_part=$(printf "${MAGENTA}🤖 %s${RESET}" "$model")
 
-# Git diff stat（GitHub 風: +追加 -削除）
+# Git diff stat（GitHub 風: +追加 -削除 ?未追跡）
 RED='\033[31m'
 git_stat=""
-if [ -n "$branch" ]; then
+if [ "$in_git" = "true" ]; then
     diff_output=$(GIT_OPTIONAL_LOCKS=0 git diff --numstat HEAD 2>/dev/null)
+    untracked=$(GIT_OPTIONAL_LOCKS=0 git ls-files --others --exclude-standard 2>/dev/null | grep -c .)
+    added=0
+    deleted=0
     if [ -n "$diff_output" ]; then
-        added=$(echo "$diff_output" | awk '{s+=$1} END {printf "%d", s}')
-        deleted=$(echo "$diff_output" | awk '{s+=$2} END {printf "%d", s}')
-        parts=""
-        [ "$added" -gt 0 ] && parts=$(printf "${GREEN}+%d${RESET}" "$added")
-        if [ "$deleted" -gt 0 ]; then
-            [ -n "$parts" ] && parts="${parts} "
-            parts="${parts}$(printf "${RED}-%d${RESET}" "$deleted")"
-        fi
-        [ -n "$parts" ] && git_stat=$(printf " | 📝 Changes %s" "$parts")
+        added=$(echo "$diff_output" | awk '$1 ~ /^[0-9]+$/ {s+=$1} END {printf "%d", s+0}')
+        deleted=$(echo "$diff_output" | awk '$2 ~ /^[0-9]+$/ {s+=$2} END {printf "%d", s+0}')
     fi
+    parts=""
+    [ "$added" -gt 0 ] && parts=$(printf "${GREEN}+%d${RESET}" "$added")
+    if [ "$deleted" -gt 0 ]; then
+        [ -n "$parts" ] && parts="${parts} "
+        parts="${parts}$(printf "${RED}-%d${RESET}" "$deleted")"
+    fi
+    if [ "$untracked" -gt 0 ]; then
+        [ -n "$parts" ] && parts="${parts} "
+        parts="${parts}$(printf "${YELLOW}?%d${RESET}" "$untracked")"
+    fi
+    [ -n "$parts" ] && git_stat=$(printf " | 📝 Changes %s" "$parts")
     # Worktree 判定
     git_dir=$(GIT_OPTIONAL_LOCKS=0 git rev-parse --git-dir 2>/dev/null)
     if echo "$git_dir" | grep -q '/worktrees/'; then
