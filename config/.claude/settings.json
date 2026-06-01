@@ -73,7 +73,8 @@
     "notion@claude-plugins-official": true,
     "chrome-devtools-mcp@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
-    "codex@openai-codex": true
+    "codex@openai-codex": true,
+    "commit-commands@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -83,6 +84,7 @@
       }
     }
   },
+  "model": "claude-opus-4-7[1m]",
   "language": "Japanese",
   "voice": {
     "enabled": true,
