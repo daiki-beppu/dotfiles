@@ -361,5 +361,5 @@ eject 先は引数 `--global` の有無で切り替わる。
 ## 関連 skill
 
 - **`takt-issue`**: issue → worktree → workflow 実行 → PR 化 → クリーンアップまでの一連手順。実際に takt を回すときの主役。本 skill は takt-issue から「コマンド詳細はこちら」と参照される補助リファレンス
-- **`branch-clean`**: takt が残したローカルブランチを PR merge 後に一括削除するときに併用
+- **`clean-branch`**: takt が残したローカルブランチを PR merge 後に一括削除するときに併用
 - **`cmux`**: takt の対話プロンプト操作を別ペインから行うときに併用（並列駆動時のレイアウト管理）

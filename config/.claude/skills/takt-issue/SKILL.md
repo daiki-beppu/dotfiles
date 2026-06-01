@@ -277,7 +277,7 @@ skill 側ですべきことは:
 1. `tasks.yaml` の status が `completed` になったら `cmux read-screen` 末尾 50 行を読み、PR URL を抽出（`https://github.com/.../pull/<N>` 形式）
 2. PR URL と `.takt/runs/<run_slug>/reports/` 配下のレビューレポート（builtin の peer-review が出力する `architecture-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` など）を Read で読んでレビュー結果をユーザーに表示
 3. `status: failed` で workflow 自体が落ちている場合は失敗ログを確認し、`fix` step でリカバリ済みか、人手介入が必要かを判断
-4. PR 作成自体が失敗（auth エラー等）した場合は `tasks.yaml` の `prFailed: true` で検出できる。その時は手動で `gh pr create` するか、`/cp` skill を親 repo で叩いてリカバリ
+4. PR 作成自体が失敗（auth エラー等）した場合は `tasks.yaml` の `prFailed: true` で検出できる。その時は手動で `gh pr create` するか、`/commit-commands:commit-push-pr` を親 repo で叩いてリカバリ
 
 #### 5-B. 既存 PR への積み上げ（base = feature ブランチ等）
 
@@ -339,7 +339,7 @@ CI fail が takt スコープ外（flaky test など）と判断した場合は 
 takt list --non-interactive --action delete --branch takt/<N>/<slug> --yes
 ```
 
-ローカルブランチ `takt/<N>/<slug>` は PR が merge されたあとに `branch-clean` スキルで一括削除する（merge 前に削除すると PR の差分元が失われる）。
+ローカルブランチ `takt/<N>/<slug>` は PR が merge されたあとに `clean-branch` スキルで一括削除する（merge 前に削除すると PR の差分元が失われる）。
 
 ### 7. スコープ外の発見は別 issue 化
 
@@ -377,7 +377,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **`--branch` 省略不可**: `takt list --non-interactive --action delete` は branch 名を明示しないとエラー
 - **完了検知の選択**: `Monitor`（素の `tail -f`）は通知ごとに cache miss が走るため selective filter を組まないと割高。`ScheduleWakeup` は完了タイミングが全く読めない場合の保険でしか正当化できない。`tasks.yaml` の status フィールドを poll できる takt では background shell + `until` ループ（30s 間隔）が最安で、これを **本 skill のデフォルト**とする
 - **`tasks.yaml` の name prefix**: `Task created: <slug>` の slug は task 説明文先頭から自動生成される（記号は除去、80 文字程度で truncate）。並列駆動時は複数 task で同じ prefix になりがちなので、prefix での絞り込みが効く
-- **skill のスコープ判定**: 編集対象が **グローバル user skill**（dotfiles 管理のもの。例: takt-issue / parallel / cp など）なら `~/01-dev/dotfiles/config/.claude/skills/` を編集する（`~/.claude/` はシンボリックリンク）。一方、**project-scoped skill**（リポジトリの `.claude/skills/` に commit され、`yt-skills sync` などで downstream に配布されるもの）はそのリポジトリ内で編集する。両者を取り違えると配布経路が壊れる
+- **skill のスコープ判定**: 編集対象が **グローバル user skill**（dotfiles 管理のもの。例: takt-issue / parallel など）なら `~/01-dev/dotfiles/config/.claude/skills/` を編集する（`~/.claude/` はシンボリックリンク）。一方、**project-scoped skill**（リポジトリの `.claude/skills/` に commit され、`yt-skills sync` などで downstream に配布されるもの）はそのリポジトリ内で編集する。両者を取り違えると配布経路が壊れる
 - **builtin にスコープ外自動起票は無い**: builtin の `default` / `default-mini` はいずれも spillover step を持たない。スコープ外発見は必ず Step 7 の人手手順で `issue` スキルに引き渡す
 - **PR 作成で終わらない**: takt CLI の postExecutionFlow が `gh pr create` した後に GitHub Actions が走る。workflow 内のレビューはコード読みだけで CI を回さないため、必ず Step 5-C の `gh pr checks --watch` で GitHub Actions の完了まで待つ
 - **`Auto-create PR? [Y/n]` は Y を選ぶ**: takt CLI 本体の postExecutionFlow が PR を作る経路を有効化するため。workflow 側に PR 作成 step は存在しないので二重起動の懸念はない
@@ -400,7 +400,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - 既存 PR 積み上げ（5-B）は builtin に無いため skill 側で手動 merge → `gh pr edit` を実行する。新規 PR 作成（5-A）は postExecutionFlow に任せ、`gh pr create` を手動実行しない
 - PR 作成・積み上げ後は必ず Step 5-C で `gh pr checks --watch` を background 実行で投げて GitHub Actions の完了を待つ（`tasks.yaml` poll と同じ「完了時 1 通知」パターン）。CI fail なら `gh run view <run-id> --log-failed` で原因を確認し、修正 push → 5-C 再実行までを skill 内で完結させる
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。builtin の `default` / `default-mini` には spillover 自動起票がないので、スコープ外発見は必ず `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
-- ローカルブランチ削除は PR merge 後に `branch-clean` スキルへ委譲（merge 前に消さない）
+- ローカルブランチ削除は PR merge 後に `clean-branch` スキルへ委譲（merge 前に消さない）
 - 単独 issue でもメインペインを `cmux new-split right` で右に分割し、新規 pane で takt を実行する（メインペインは Claude 用に残す）
 - 並列駆動時は 1 つ目を `cmux new-split right` で右に分割、2 つ目以降は直前のサーフェスから `cmux new-split down --surface ...` で下に積み重ねる（parallel スキルと同じレイアウト）
 - メインペイン（呼び出し元）では takt を起動しない。Claude の監視・集約用に残す
