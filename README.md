@@ -55,7 +55,6 @@ dotfiles/
 │       ├── statusline-command.sh
 │       ├── hooks/
 │       └── skills/
-├── Brewfile               # Homebrew パッケージ一覧（参考用）
 └── docs/
     └── manual-setup.md    # 手動設定ガイド
 ```

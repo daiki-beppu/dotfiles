@@ -33,5 +33,7 @@ worktree の置き場は以下に統一する:
 ## dotfiles 管理
 
 - 実体: `~/01-dev/dotfiles/config/.claude/`（git 管理）
-- `~/.claude/` 配下は `~/.dotfiles/config/.claude/` へのシンボリックリンク
-- スキルや設定の編集は dotfiles リポジトリ側で行うこと
+- `~/.claude/` 自体は通常ディレクトリ。配下の以下の個別エントリのみ dotfiles 内の対応ファイルへの symlink:
+  - `CLAUDE.md`, `settings.json`, `hooks/`, `skills/`, `statusline-command.sh`
+- 他のエントリ（`sessions/`, `projects/`, `plugins/`, `cache/` など）は Claude Code 自身が管理する実体
+- スキルや設定の編集は dotfiles リポジトリ側で行うこと（symlink 経由で反映される）

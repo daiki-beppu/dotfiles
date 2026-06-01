@@ -25,7 +25,7 @@ takt の構成要素は 4 階層に分かれる。
 
 | 層 | 役割 | 実体 |
 |----|------|------|
-| **workflow** | step の連なりとループ制御 | `~/.takt/workflows/*.yaml`（builtin） / `.takt/workflows/*.yaml`（プロジェクト） |
+| **workflow** | step の連なりとループ制御 | `~/.bun/install/global/node_modules/takt/builtins/ja/*.yaml`（builtin） / `~/.takt/workflows/*.yaml`（eject 後の上書き） / `.takt/workflows/*.yaml`（プロジェクト） |
 | **step** | 1 回の AI 実行単位。persona・policy・instruction・output_contract を組み合わせる | workflow YAML 内 `steps:` |
 | **facet** | step に注入される素材（persona / policy / knowledge / instruction / output-contract） | builtin カタログ + `.takt/facets/<type>/<name>.md` で上書き |
 | **タスク状態** | 実行中の task 一覧と status、run ログ | `.takt/tasks.yaml`, `.takt/runs/`, `.takt/clone-meta/` |
