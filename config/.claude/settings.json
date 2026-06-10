@@ -32,7 +32,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "claude-opus-4-7[1m]",
+  "model": "claude-fable-5",
   "hooks": {
     "SessionStart": [
       {
