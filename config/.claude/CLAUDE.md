@@ -26,7 +26,7 @@ GitHub CLI。PR・Issue 操作に使用
 worktree の置き場は以下に統一する:
 
 - **takt 自動生成**: `<repo-parent>/takt-worktrees/<timestamp>-<N>-<slug>/`（takt CLI が自動管理）
-- **手動 `git worktree add`**: `$REPO_ROOT/.worktrees/<slug>/`（リポジトリ内・gitignore 必須・`parallel` スキルと共通）
+- **手動 `git worktree add`**: `$REPO_ROOT/.worktrees/<slug>/`（リポジトリ内・gitignore 必須）
 
 新しいリポジトリで手動 worktree を初めて使う際は、`.gitignore` に `.worktrees/` を追加すること。
 
