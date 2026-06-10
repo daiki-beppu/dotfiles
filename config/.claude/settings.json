@@ -17,7 +17,7 @@
       "Task",
       "NotebookEdit",
       "Skill",
-      "mcp__chrome-devtools",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools",
       "mcp__plugin_context7_context7",
       "mcp__plugin_Notion_notion"
     ],
@@ -60,9 +60,10 @@
     "qodo-skills@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": true,
     "notion@claude-plugins-official": false,
-    "chrome-devtools-mcp@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": false,
     "claude-code-setup@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true
+    "commit-commands@claude-plugins-official": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -70,6 +71,13 @@
         "source": "github",
         "repo": "openai/codex-plugin-cc"
       }
+    },
+    "chrome-devtools-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "ChromeDevTools/chrome-devtools-mcp"
+      },
+      "autoUpdate": true
     }
   },
   "language": "Japanese",
