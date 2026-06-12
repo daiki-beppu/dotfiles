@@ -18,8 +18,7 @@
       "NotebookEdit",
       "Skill",
       "mcp__chrome-devtools",
-      "mcp__plugin_context7_context7",
-      "mcp__plugin_Notion_notion"
+      "mcp__plugin_context7_context7"
     ],
     "ask": [
       "Bash(rm *)",
@@ -63,7 +62,8 @@
     "chrome-devtools-mcp@claude-plugins-official": false,
     "claude-code-setup@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
-    "chrome-devtools-mcp@chrome-devtools-plugins": false
+    "chrome-devtools-mcp@chrome-devtools-plugins": false,
+    "frontend-design@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
@@ -81,6 +81,7 @@
     }
   },
   "language": "Japanese",
+  "effortLevel": "medium",
   "voice": {
     "enabled": true,
     "mode": "hold"

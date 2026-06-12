@@ -1,6 +1,7 @@
 ---
 name: nix
-description: macOS (nix-darwin) 環境の dotfiles の Nix 環境管理に使用する。CLI ツールの追加・削除、GUI アプリ (cask) の管理、パッケージの検索、設定の適用 (darwin-rebuild)、依存の更新 (flake update) など、Nix に関わる操作全般で使用すること。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」といった文脈で積極的に発動する。
+description: >-
+  macOS (nix-darwin) dotfiles の Nix 環境管理(CLI ツール・GUI アプリ (cask) の追加削除、パッケージ検索、darwin-rebuild、flake update)。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」の文脈で発動。
 ---
 
 # Nix 環境管理

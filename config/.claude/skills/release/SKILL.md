@@ -1,14 +1,7 @@
 ---
 name: release
-description: |
-  Node.js / npm リポジトリ向けに GitHub Release の作成をリリース PR 経由で実行するスキル。
-  `/release` 1 コマンドでリポジトリの状態を自動判定し、
-  前半（prepare: バージョン判定 → リリースブランチ → PR 作成）または
-  後半（publish: GitHub Release 作成 → ブランチ削除）を実行する。
-  「リリースして」「リリース作って」「バージョン上げて」「npm に公開して」
-  「新しいバージョン出して」「/release」で発動。
-  注意: リリースの閲覧・削除は対象外。新規リリース作成のみ。
-  注意: `package.json` を持たないリポジトリでは起動しない（Cargo.toml / pyproject.toml / go.mod 等は対象外）。
+description: >-
+  Node.js / npm リポジトリで GitHub Release をリリース PR 経由で作成する(新規作成のみ)。「リリースして」「リリース作って」「バージョン上げて」「npm に公開して」「/release」で発動。
 ---
 
 # release — GitHub Release パイプライン

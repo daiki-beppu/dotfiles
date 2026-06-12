@@ -1,7 +1,10 @@
 ---
 name: chrome-devtools
-description: Uses Chrome DevTools via MCP for efficient debugging, troubleshooting and browser automation. Use when debugging web pages, automating browser interactions, analyzing performance, or inspecting network requests. This setup assumes the MCP server runs in `--autoConnect` mode (attaches to the user's already-running Chrome 144+), not the default managed mode. Does not apply to `--slim` mode.
+description: >-
+  Uses Chrome DevTools via MCP (--autoConnect mode, attaches to the user's running Chrome 144+). Use when debugging web pages, automating browser interactions, analyzing performance, or inspecting network requests.
 ---
+
+> Note: 本 skill は MCP サーバーが `--autoConnect` モード(既存 Chrome 144+ にアタッチ)で動いている前提。デフォルトの managed モードおよび `--slim` モードには適用されない。
 
 ## Core Concepts
 

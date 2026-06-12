@@ -1,15 +1,12 @@
 ---
 name: takt
-description: >
-  takt CLI（タスク登録・workflow 駆動・worktree 自動生成・catalog 機構）のコマンドリファレンス。
-  本文に記載のあるコマンド・設定ファイル・workflow 概要に限定し、未収録のサブコマンド挙動は保証しない。
-  「takt の使い方」「takt のコマンド教えて」「default と default-mini の違い」
-  「takt catalog って何」「workflow を eject したい」「tasks.yaml の見方」など、
-  takt 本体の仕様・コマンド・設定に関わる場面で発動すること。
-  issue → PR の一連のワークフロー実行は takt-issue スキルを使う（本 skill はその補助参照）。
+description: >-
+  takt CLI(タスク登録・workflow 駆動・worktree 自動生成・catalog)のコマンドリファレンス。「takt の使い方」「default と default-mini の違い」「workflow を eject したい」など takt 本体の仕様・コマンド・設定の場面で発動。issue → PR の実行は takt-issue スキルを使う。
 ---
 
 # takt — コマンドリファレンス
+
+> Note: 本文に記載のあるコマンド・設定ファイル・workflow 概要に限定し、未収録のサブコマンド挙動は保証しない。
 
 takt は AI エージェントによるタスク実行を **workflow** として段階化し、worktree 単位で並走させる
 CLI ツール。issue や自然文タスクを `.takt/tasks.yaml` に積み、step ごとに persona / policy /

@@ -1,12 +1,7 @@
 ---
 name: release-tweet
-description: |
-  GitHub Release に紐付くリリース告知ツイート（X / Bluesky / Mastodon 等、長文 SNS 向け）の草案を生成するスキル。
-  `/release-tweet` または `/release-tweet <tag>` で起動し、`gh release view` で最新もしくは指定タグのリリースノートを取得して、
-  takt 作者風のフォーマット（テーマ絵文字 + 機能ごとの散文 + 末尾の bug-fix 箇条書き）にリライトする。
-  「リリース告知ツイート」「リリースのツイート文作って」「X 告知文」「Bluesky 用に書いて」などで発動する。
-  注意: 投稿自体は行わない。草案を会話に提示するだけ。
-  注意: GitHub Release が 1 件もないリポジトリ（タグだけある状態）では起動しない。
+description: >-
+  GitHub Release のリリース告知ツイート草案(X / Bluesky 等の長文 SNS 向け)を生成する(投稿はしない)。「リリース告知ツイート」「リリースのツイート文作って」「/release-tweet [<tag>]」で発動。
 ---
 
 # release-tweet — リリース告知ツイート草案スキル

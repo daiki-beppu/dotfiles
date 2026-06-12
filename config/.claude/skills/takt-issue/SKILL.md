@@ -1,9 +1,7 @@
 ---
 name: takt-issue
-description: |
-  takt の workflow で GitHub issue を実行するスキル。`takt add` → `takt run` 経路で worktree を作成し、
-  長時間 workflow を background 実行 + `tasks.yaml` poll ループで完了検知、完了後の PR 化（takt CLI の postExecutionFlow に委譲）と積み上げ・クリーンアップまでを統一手順で行う。
-  「takt で issue 対応」「takt で #N を進めて」「takt 回して」など、takt 経由で issue を実装する意図が読み取れる発話で発動する。
+description: >-
+  takt の workflow で GitHub issue を実装する(worktree 作成 → background 実行 + poll で完了検知 → PR 化 → クリーンアップ)。「takt で issue 対応」「takt で #N を進めて」「takt 回して」など、takt 経由で issue を実装する意図が読み取れる発話で発動。
 ---
 
 # takt-issue
@@ -14,8 +12,8 @@ takt の workflow で GitHub issue を実装する一連の手順を自動化す
 
 workflow は issue の性質に応じて使い分ける（いずれも builtin。dotfiles 側のカスタムは持たない）:
 
-- **`default`**（plan → write_tests → draft → peer-review の 4 ステップ。draft / peer-review は subworkflow で内包）: feature / enhancement、複数ファイル、テスト先行で進めたい中〜大規模タスク
-- **`default-mini`**（plan → draft → peer-review の 3 ステップ。テスト実装をスキップ）: bugfix / chore / docs / 小規模 refactor、単一〜少数ファイル、既存テストで挙動を確認できる軽量タスク
+- **`default`**（plan → write_tests → draft → peer-review の 4 ステップ。draft / peer-review は subworkflow で内包）: **新規 feature かつテスト先行が価値を持つ場合のみ**
+- **`default-mini`**（plan → draft → peer-review の 3 ステップ。テスト実装をスキップ）: それ以外すべて — bugfix / chore / docs / refactor / 既存テストで担保できる変更。**迷ったらこちら**（トークン節約優先）
 
 選択ロジックは Step 1「起動前確認」で扱う。
 
@@ -78,9 +76,9 @@ PR 作成は takt CLI 本体の `postExecutionFlow` が workflow 完了後に自
 
 | issue の特徴 | 推奨 workflow |
 |---|---|
-| ラベル: `bug` / `chore` / `docs` / 小規模 `refactor`、単一〜少数ファイル、既存テストで挙動を確認できる | `default-mini` |
-| ラベル: `feature` / `enhancement`、複数ファイル、テスト先行で進めたい | `default` |
-| 判断に迷う場合 | `default`（fail-safe 側） |
+| **新規 feature かつテスト先行が価値を持つ**（新しい振る舞いの追加で、テストを先に書くことで設計が改善する） | `default` |
+| 上記以外すべて — bugfix / chore / docs / refactor / 既存テストで担保できる変更 | `default-mini` |
+| 判断に迷う場合 | `default-mini`（write_tests 1 ステップ分 + 後続レビュー対象の縮小で 1 run あたり約 20-25% 軽い。トークン節約を優先） |
 
 builtin の `default` / `default-mini` はいずれも **スコープ外発見の自動 issue 起票機能を持たない**。スコープ外を見つけたときは Step 7 の人手手順（`issue` スキルへの引き渡し）で対応する旨をユーザーに伝える。
 

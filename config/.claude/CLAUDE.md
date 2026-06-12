@@ -37,3 +37,10 @@ worktree の置き場は以下に統一する:
   - `CLAUDE.md`, `settings.json`, `hooks/`, `skills/`, `statusline-command.sh`
 - 他のエントリ（`sessions/`, `projects/`, `plugins/`, `cache/` など）は Claude Code 自身が管理する実体
 - スキルや設定の編集は dotfiles リポジトリ側で行うこと（symlink 経由で反映される）
+
+## コンテキスト運用（トークン節約）
+
+- タスクの区切りごとに `/clear`（文脈を引き継ぎたい場合のみ `/compact`）。前タスクの文脈を残したまま新タスクを始めない
+- 広域のコード探索・調査は Explore subagent に委譲し、メイン会話に生のファイルダンプを持ち込まない
+- 巨大ファイルは全文 Read せず、offset/limit で必要範囲のみ読む
+- 長大な出力が予想されるコマンドはファイルへ redirect し、必要部分だけ読む
