@@ -31,7 +31,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "opus",
+  "model": "claude-opus-4-6",
   "hooks": {
     "SessionStart": [
       {
@@ -81,7 +81,7 @@
     }
   },
   "language": "Japanese",
-  "effortLevel": "medium",
+  "effortLevel": "xhigh",
   "voice": {
     "enabled": true,
     "mode": "hold"
@@ -90,5 +90,6 @@
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "skipWorkflowUsageWarning": true
 }
