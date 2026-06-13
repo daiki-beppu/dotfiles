@@ -31,6 +31,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
+  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
@@ -89,6 +90,5 @@
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "model": "opus[1m]"
+  "skipAutoPermissionPrompt": true
 }
