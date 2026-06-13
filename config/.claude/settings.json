@@ -31,7 +31,6 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "claude-fable-5",
   "hooks": {
     "SessionStart": [
       {
@@ -90,5 +89,6 @@
   "skipDangerousModePermissionPrompt": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "model": "opus[1m]"
 }
