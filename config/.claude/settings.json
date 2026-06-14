@@ -31,7 +31,6 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
