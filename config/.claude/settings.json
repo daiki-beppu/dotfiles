@@ -31,6 +31,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
+  "model": "claude-opus-4-6[1m]",
   "hooks": {
     "SessionStart": [
       {
