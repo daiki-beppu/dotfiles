@@ -31,7 +31,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "claude-opus-4-6",
+  "model": "claude-opus-4-6[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -88,8 +88,8 @@
   },
   "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "skipWorkflowUsageWarning": true
+  "skipAutoPermissionPrompt": true
 }
