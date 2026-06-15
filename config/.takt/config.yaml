@@ -6,6 +6,23 @@
 provider: claude-terminal
 language: ja
 
+# ── Observability（OTLP エクスポート / フェーズ単位 usage 計測）──
+# OTEL_EXPORTER_OTLP_ENDPOINT 環境変数を設定すると spans/metrics が送信される。
+# 未設定でも monitor・session_log・usage_events_phase は動作する。
+observability:
+  enabled: true
+  monitor: true
+  session_log_exporter: true
+  usage_events_phase: true
+
+# ── Logging ──
+logging:
+  usage_events: true
+
+# ── コマンド品質ゲート ──
+workflow_command_gates:
+  custom_scripts: true
+
 # Persona 単位で provider / model を切り替える（安定ベースライン）。
 # - coder は Codex に寄せて Claude のトークン消費を抑える。
 # - planner / reviewer 系（architecture / ai-antipattern / supervisor）は claude/opus で判断・レビュー品質を担保。
@@ -24,5 +41,8 @@ persona_providers:
     provider: claude-terminal
     model: opus
   supervisor:
+    provider: claude-terminal
+    model: opus
+  pure-reviewer:
     provider: claude-terminal
     model: opus
