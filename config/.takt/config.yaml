@@ -3,7 +3,7 @@
 # プロバイダ・モデル・言語を全プロジェクト共通で定義する。
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 
-provider: claude
+provider: claude-terminal
 language: ja
 
 # Persona 単位で provider / model を切り替える（安定ベースライン）。
@@ -13,16 +13,16 @@ language: ja
 #   各リポジトリの project .takt/config.yaml に persona_providers override を足す（global は触らない）。
 persona_providers:
   planner:
-    provider: claude
+    provider: claude-terminal
     model: opus
   coder:
     provider: codex
   architecture-reviewer:
-    provider: claude
+    provider: claude-terminal
     model: opus
   ai-antipattern-reviewer:
-    provider: claude
+    provider: claude-terminal
     model: opus
   supervisor:
-    provider: claude
+    provider: claude-terminal
     model: opus
