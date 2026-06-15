@@ -18,6 +18,7 @@ in
     gzip
     ripgrep
     terraform
+    tmux
     tree
     unzip
     uv
