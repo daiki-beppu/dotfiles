@@ -23,11 +23,18 @@ logging:
 workflow_command_gates:
   custom_scripts: true
 
+# ── Provider options ──
+# claude-terminal は Claude Code transcript を polling するため、重いレビューで
+# 15分 default timeout に当たりやすい。30分に延ばして false abort を避ける。
+provider_options:
+  claude_terminal:
+    timeout_ms: 1800000
+
 # Persona 単位で provider / model を切り替える（安定ベースライン）。
+# - top-level provider は claude-terminal。claude -p / SDK 経路は使わない。
 # - coder は Codex に寄せて Claude のトークン消費を抑える。
-# - planner / reviewer 系（architecture / ai-antipattern / supervisor）は claude/opus で判断・レビュー品質を担保。
-# - Codex の rate limit 等で一時的に coder を Claude へ逃がす場合は、この global ではなく
-#   各リポジトリの project .takt/config.yaml に persona_providers override を足す（global は触らない）。
+# - planner / reviewer 系は claude-terminal/opus で判断・レビュー品質を担保。
+# - リポジトリ単位で coder も Claude Code に寄せる場合は project .takt/config.yaml で override する。
 persona_providers:
   planner:
     provider: claude-terminal
@@ -43,6 +50,15 @@ persona_providers:
   supervisor:
     provider: claude-terminal
     model: opus
+  pure-review:
+    provider: claude-terminal
+    model: opus
   pure-reviewer:
+    provider: claude-terminal
+    model: opus
+  coding-review:
+    provider: claude-terminal
+    model: opus
+  coding-reviewer:
     provider: claude-terminal
     model: opus
