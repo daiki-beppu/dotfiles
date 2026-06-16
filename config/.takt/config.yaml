@@ -23,17 +23,15 @@ logging:
 workflow_command_gates:
   custom_scripts: true
 
-# Persona 単位で provider / model を切り替える（安定ベースライン）。
-# - top-level provider は claude（claude -p 経路）。
-# - coder は Codex に寄せて Claude のトークン消費を抑える。
-# - planner / reviewer 系は claude/opus で判断・レビュー品質を担保。
-# - リポジトリ単位で coder も Claude に寄せる場合は project .takt/config.yaml で override する。
+# Persona 単位で provider / model を切り替える。
+# - 全 persona を claude/opus に統一（フル Opus 構成）。
 persona_providers:
   planner:
     provider: claude
     model: opus
   coder:
-    provider: codex
+    provider: claude
+    model: opus
   architecture-reviewer:
     provider: claude
     model: opus
