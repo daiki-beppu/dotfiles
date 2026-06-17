@@ -2,8 +2,15 @@
 #
 # プロバイダ・モデル・言語を全プロジェクト共通で定義する。
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
+#
+# 構成方針: Codex + Claude Opus のハイブリッド
+# - default = claude / opus（未指定 persona は全て Opus に乗る）
+# - 計画・実装の doer 系だけを Codex に override
+#   → 「考えるのは Codex（高速・論理的）／レビュー・受け入れ検査は Opus（整合性・簡素化）」
 
+# デフォルト = Opus。persona_providers に出てこない persona は全てここに従う。
 provider: claude
+model: opus
 language: ja
 
 # ── Observability（OTLP エクスポート / フェーズ単位 usage 計測）──
@@ -23,33 +30,25 @@ logging:
 workflow_command_gates:
   custom_scripts: true
 
-# Persona 単位で provider / model を切り替える。
-# - 全 persona を claude/opus に統一（フル Opus 構成）。
+# Persona 単位で provider を切り替える。
+# ここに列挙するのは Codex に寄せる doer/planner 系だけ。
+# レビュー系・supervisor・MAGI・research 分析系は default(claude/opus) を継承するため列挙しない。
+# codex のモデルは Codex CLI 側の設定に従う（model 未指定）。
 persona_providers:
+  # 計画系（高速・論理的チェック）
   planner:
-    provider: claude
-    model: opus
+    provider: codex
+  architect-planner:
+    provider: codex
+  test-planner:
+    provider: codex
+  research-planner:
+    provider: codex
+  # 調査実行（research 系 workflow 用・任意）
+  research-digger:
+    provider: codex
+  # 実装系（生成速度）
   coder:
-    provider: claude
-    model: opus
-  architecture-reviewer:
-    provider: claude
-    model: opus
-  ai-antipattern-reviewer:
-    provider: claude
-    model: opus
-  supervisor:
-    provider: claude
-    model: opus
-  pure-review:
-    provider: claude
-    model: opus
-  pure-reviewer:
-    provider: claude
-    model: opus
-  coding-review:
-    provider: claude
-    model: opus
-  coding-reviewer:
-    provider: claude
-    model: opus
+    provider: codex
+  terraform-coder:
+    provider: codex
