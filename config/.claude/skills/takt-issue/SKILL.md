@@ -117,7 +117,7 @@ sed -n '1,220p' .takt/tasks.yaml
 
 #### 複数 issue を同時に回す場合
 
-`takt add` を直列で N 回叩いて、N 個の task を `tasks.yaml` に `status: pending` で並べる。実行は Step 3 で扱うが、Claude Code 側で `run_in_background: true` の Bash を N 個投げれば並列に走る（takt CLI 自体に concurrency 機能もあるが、設定方法は要追加調査。最末尾の TODO 参照）。
+`takt add` を直列で N 回叩いて、N 個の task を `tasks.yaml` に `status: pending` で並べる。実行は Step 3 の **単一 `takt -q run`** が担当する。グローバル設定（`~/.takt/config.yaml`）に `concurrency: 3` を宣言済みなので、1 回の `takt -q run` が pending を **最大 3 task 並列**で消化する（ワーカーが空くたびに `task_poll_interval_ms` 間隔で次の pending を取得）。**`takt run` を N 個多重起動しない**。
 
 ```bash
 takt add '#<N1>'
@@ -127,7 +127,7 @@ takt add '#<N2>'
 # ...
 ```
 
-各 task の `worktree_path` / `branch` / `run_slug` は `tasks.yaml` に出る。`name` prefix が共通になるので、完了検知は Step 4 の prefix poll で一括で待てる。
+各 task の `worktree_path` / `branch` / `run_slug` は `tasks.yaml` に出る。`name` prefix が共通になるので、完了検知は Step 4 の prefix poll で一括で待てる。並列実行の仕様詳細（`concurrency` / `task_poll_interval_ms` の範囲・graceful shutdown）は `~/.claude/skills/takt/SKILL.md` の「並列実行」節を参照。
 
 #### TTY で対話的に選びたい場合（オプション）
 
@@ -165,10 +165,13 @@ tail -80 "$LOG"
 
 #### 複数 task pending の場合
 
-複数 issue を Step 2 で追加した場合、`takt -q run` の挙動には 2 経路ある:
+複数 issue を Step 2 で追加しても、**起動は単一の `takt -q run` 1 回だけ**でよい。takt CLI の worker pool（`runAllTasks` → `claimNextTasks(concurrency)` → `runWithWorkerPool`）が pending を並列実行する。
 
-- **Claude Code 側で並列化**: 各 task の slug を控えて、Claude Code の `run_in_background: true` Bash で N 個の `takt -q run` を投げる。skill のデフォルト経路
-- **takt CLI の concurrency 機能に委ねる**: takt CLI 自体に worker pool による並列実行機能があり（`runAllTasks` → `claimNextTasks(concurrency)` → `runWithWorkerPool`）、本来は 1 回の `takt -q run` で複数 pending を並列実行できる。ただし concurrency 設定の場所（`.takt/config.yaml` のキー名 / CLI flag / 環境変数）が現時点で未確認。**TODO**: 確認できたら本セクションを「1 コマンドで並列化」経路に書き換える
+- グローバル設定（`~/.takt/config.yaml`、dotfiles 実体は `config/.takt/config.yaml`）で `concurrency: 3` / `task_poll_interval_ms: 500` を宣言済み。よって 1 回の `takt -q run` が pending を最大 3 task 並列で消化し、ワーカーが空くたびに 500ms 間隔で次の pending を取得する
+- `concurrency` は `1〜10`、`task_poll_interval_ms` は `100〜5000`（zod 検証）。並列度を一時的に変えたいときはグローバル設定の `concurrency` を編集する（CLI flag は無い）
+- **`takt -q run` を `run_in_background` で N 個投げる旧手順は使わない**。多重起動すると各プロセスが個別に `claimNextTasks` するため実効並列度が `concurrency × 起動数` に膨らみ、worktree 競合やトークン消費の暴走を招く
+- ログは単一プロセスなので `/tmp/takt_<slug>.log` も 1 本にまとまる。`concurrency > 1` のときは takt が task ごとに色分けラベルを付けるので、`tail -80` でもどの行がどの task か判別できる
+- 完了検知は Step 4 の `name` prefix poll で全 task をまとめて待つ（単一プロセスでも `tasks.yaml` の各 task の `status` は独立に更新される）
 
 ### 4. 長時間監視
 
@@ -363,4 +366,4 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - PR 作成・積み上げ後は必ず Step 5-C で `gh pr checks --watch` を background 実行で投げて GitHub Actions の完了を待つ（`tasks.yaml` poll と同じ「完了時 1 通知」パターン）。CI fail なら `gh run view <run-id> --log-failed` で原因を確認し、修正 push → 5-C 再実行までを skill 内で完結させる
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。builtin の `default` / `default-mini` には spillover 自動起票がないので、スコープ外発見は必ず `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
 - ローカルブランチ削除は PR merge 後に `clean-branch` スキルへ委譲（merge 前に消さない）
-- 複数 issue を同時に回すときは `takt add` を直列で N 回叩いて `tasks.yaml` に並べ、`takt -q run` を Claude Code の `run_in_background: true` で N 個投げる。完了検知は `name` prefix の単一 poll で全件まとめて待つ
+- 複数 issue を同時に回すときは `takt add` を直列で N 回叩いて `tasks.yaml` に並べ、`takt -q run` を **1 回だけ** background 起動する。グローバル設定の `concurrency: 3` により単一プロセスが pending を最大 3 並列で消化するので、`takt run` を多重起動してはならない（実効並列度が膨らみ worktree 競合・トークン暴走を招く）。完了検知は `name` prefix の単一 poll で全件まとめて待つ
