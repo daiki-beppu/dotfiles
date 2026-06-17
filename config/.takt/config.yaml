@@ -4,13 +4,13 @@
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
 # 構成方針: Codex + Claude Opus のハイブリッド
-# - default = claude / opus（未指定 persona は全て Opus に乗る）
+# - default = claude / opus 4.6 (1M)（未指定 persona は全て Opus に乗る）
 # - 計画・実装の doer 系だけを Codex に override
 #   → 「考えるのは Codex（高速・論理的）／レビュー・受け入れ検査は Opus（整合性・簡素化）」
 
 # デフォルト = Opus。persona_providers に出てこない persona は全てここに従う。
 provider: claude
-model: opus
+model: claude-opus-4-6[1m]   # Opus を 4.6 (1M context) に固定
 language: ja
 
 # ── Observability（OTLP エクスポート / フェーズ単位 usage 計測）──
