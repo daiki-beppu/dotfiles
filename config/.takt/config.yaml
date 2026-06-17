@@ -13,6 +13,12 @@ provider: claude
 model: claude-opus-4-6[1m]   # Opus を 4.6 (1M context) に固定
 language: ja
 
+# ── 実行制御（並列駆動）──
+# takt run / watch のタスクを並列実行する。1=逐次、2-10=ワーカープール。
+# 空いたワーカーが次のタスクを取得。Ctrl+C は実行中タスクの完了を待つ（graceful shutdown）。
+concurrency: 3               # 最大3タスクを同時実行（1-10）
+task_poll_interval_ms: 500   # 新規タスク検出のポーリング間隔（100-5000ms）
+
 # ── Observability（OTLP エクスポート / フェーズ単位 usage 計測）──
 # OTEL_EXPORTER_OTLP_ENDPOINT 環境変数を設定すると spans/metrics が送信される。
 # 未設定でも monitor・session_log・usage_events_phase は動作する。
@@ -33,22 +39,29 @@ workflow_command_gates:
 # Persona 単位で provider を切り替える。
 # ここに列挙するのは Codex に寄せる doer/planner 系だけ。
 # レビュー系・supervisor・MAGI・research 分析系は default(claude/opus) を継承するため列挙しない。
-# codex のモデルは Codex CLI 側の設定に従う（model 未指定）。
+# codex persona は default の Claude model を継承しないよう、Codex 対応 model を明示する。
 persona_providers:
   # 計画系（高速・論理的チェック）
   planner:
     provider: codex
+    model: gpt-5.5
   architect-planner:
     provider: codex
+    model: gpt-5.5
   test-planner:
     provider: codex
+    model: gpt-5.5
   research-planner:
     provider: codex
+    model: gpt-5.5
   # 調査実行（research 系 workflow 用・任意）
   research-digger:
     provider: codex
+    model: gpt-5.5
   # 実装系（生成速度）
   coder:
     provider: codex
+    model: gpt-5.5
   terraform-coder:
     provider: codex
+    model: gpt-5.5
