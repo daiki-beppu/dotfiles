@@ -128,6 +128,8 @@ takt add '#<N2>'
 
 各 task の `worktree_path` / `branch` / `run_slug` は `tasks.yaml` に出る。`name` prefix が共通になるので、完了検知は Step 4 の prefix poll で一括で待てる。並列実行の仕様詳細（`concurrency` / `task_poll_interval_ms` の範囲・graceful shutdown）は `~/.claude/skills/takt/SKILL.md` の「並列実行」節を参照。
 
+全 task 完了後のレビュー・修正は Step 5 の「複数 task の並列レビュー（Phase 2 dispatch）」で Agent ごとに並列実行する。
+
 #### TTY で対話的に選びたい場合（オプション）
 
 workflow 選択 UI（カテゴリ → workflow の 2 段選択）を矢印キーで選びたい場合は、ローカルターミナルで `takt add '#<N>'` を直接叩く。Claude Code の Bash ツールからは TTY が無いので使えない経路。
@@ -232,6 +234,66 @@ ls .takt/runs/<run_slug>/reports/     # peer-review のレポート一覧
 ### 5. 完了後処理
 
 PR 作成（auto-commit / push / `gh pr create` または既存 PR への `gh pr comment` 追記）は **takt CLI 本体の `postExecutionFlow` が workflow 完了直後に自動実行する**。skill 側で手動の `gh pr create` / `gh pr edit` は基本不要。品質チェックは builtin の peer-review subworkflow（arch-review / ai-antipattern-review / supervise の並列レビュー）が担当する。
+
+#### 複数 task の並列レビュー（Phase 2 dispatch）
+
+Step 4 で複数 task が完了した場合、5-C〜5-F + Step 6 を **Agent tool で task ごとにサブエージェントを並列起動**する。各エージェントが独立して CI 監視 → レビュー → 修正 → クリーンアップを完走するため、直列処理に比べて wall-clock time が約 1/N になる。
+
+**起動条件**: completed task が **2 件以上**。1 件なら従来通り 5-A 以降を直列実行（Agent 起動オーバーヘッドが不要）。
+
+**手順**:
+
+1. `tasks.yaml` から completed task の情報を収集:
+
+```bash
+ruby -ryaml -e '
+data = YAML.load_file(".takt/tasks.yaml")
+data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
+  puts "#{t["name"]} | worktree=#{t["worktree_path"]} | branch=#{t["branch"]} | run_slug=#{t["run_slug"]}"
+}'
+```
+
+2. 各 task に対し Agent tool を **1 メッセージで並列起動**（`run_in_background: true`）。プロンプトテンプレート:
+
+```
+<repo_name> の PR レビュー〜クリーンアップを実行してください。
+
+## 情報
+- repo root: <repo_root>
+- worktree: <worktree_path>
+- branch: <branch>
+- run_slug: <run_slug>
+
+## 手順（repo root で実行）
+
+1. PR 番号取得
+   gh pr list --head "<branch>" --json number -q '.[0].number'
+
+2. CI 監視（run_in_background, timeout 2400000ms）
+   gh pr checks <PR#> --watch --interval 30
+   - fail → gh run view <run-id> --log-failed → worktree で修正 → push → 再監視
+
+3. レビュー（run_in_background, timeout 3600000ms）
+   takt -q -t "#<PR#>" -w review-takt-default > /tmp/takt_review_<PR#>.log 2>&1
+
+4. 判定
+   RUN_SLUG=$(ls -t .takt/runs/ | head -1)
+   cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
+   - APPROVE → Step 6 へ
+   - REJECT → Step 5 へ
+
+5. 修正ループ（REJECT 時のみ、run_in_background, timeout 3600000ms）
+   takt -q -t "#<PR#>" -w review-fix-takt-default > /tmp/takt_reviewfix_<PR#>.log 2>&1
+
+6. クリーンアップ
+   takt list --non-interactive --action delete --branch <branch> --yes
+
+7. 最終結果を報告: status / PR URL / review verdict / 修正回数
+```
+
+3. 全エージェント完了後、結果をまとめてユーザーに報告
+
+**注意**: サブエージェント内では `takt -t` による直接実行のみ使う（`takt add` / `takt run` は不要）。`-t` は `tasks.yaml` のキューを経由しないので複数エージェント間の競合は起きない。
 
 #### 5-A. 新規 PR（base = main / master）
 
@@ -429,7 +491,8 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - PR 作成・積み上げ後は必ず Step 5-C で `gh pr checks --watch` を background 実行で投げて GitHub Actions の完了を待つ（`tasks.yaml` poll と同じ「完了時 1 通知」パターン）。CI fail なら `gh run view <run-id> --log-failed` で原因を確認し、修正 push → 5-C 再実行までを skill 内で完結させる
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。builtin の `default` / `default-mini` には spillover 自動起票がないので、スコープ外発見は必ず `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
 - ローカルブランチ削除は PR merge 後に `clean-branch` スキルへ委譲（merge 前に消さない）
-- 複数 issue を同時に回すときは `takt add` を直列で N 回叩いて `tasks.yaml` に並べ、`takt -q run` を **1 回だけ** background 起動する。グローバル設定の `concurrency: 3` により単一プロセスが pending を最大 3 並列で消化するので、`takt run` を多重起動してはならない（実効並列度が膨らみ worktree 競合・トークン暴走を招く）。完了検知は `name` prefix の単一 poll で全件まとめて待つ
+- 複数 issue を同時に回すときは `takt add` を直列で N 回叩いて `tasks.yaml` に並べ、`takt -q run` を **1 回だけ** background 起動する（Phase 1）。グローバル設定の `concurrency: 3` により単一プロセスが pending を最大 3 並列で消化するので、`takt run` を多重起動してはならない（実効並列度が膨らみ worktree 競合・トークン暴走を招く）。完了検知は `name` prefix の単一 poll で全件まとめて待つ
+- 複数 task 完了後のレビュー・修正は Agent tool で task ごとにサブエージェントを並列起動する（Phase 2 dispatch）。各エージェントが `takt -t` で直接実行するため `tasks.yaml` の競合は起きない。単一 task のときは Agent 起動不要で直列実行
 - Step 5-C（CI pass）後は必ず Step 5-D〜F（自動レビュー → 判定 → 修正）を実行する。レビューを省略しない
 - Step 5-D の `review-takt-default` で APPROVE なら 5-F（review-fix）は実行しない。修正不要で即完了
 - Step 5-F の内部ループ制御は `review-fix-takt-default` の `loop_monitors` に委譲する（最大 5 周、supervisor 打ち切り）。skill 側で反復カウンタは持たない
