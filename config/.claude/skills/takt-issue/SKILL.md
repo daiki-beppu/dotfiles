@@ -196,18 +196,33 @@ cat > /tmp/wait_takt_<slug>.sh <<'EOF'
 #!/usr/bin/env bash
 set -u
 cd <repo path>
-echo "[wait_takt] start $(date '+%H:%M:%S')"
+PREFIX="<task-name-prefix>"
+EXPECTED=<expected_count>
+STARTED=$(date +%s)
+echo "[wait_takt] start $(date '+%H:%M:%S') (${EXPECTED} tasks)"
 until ruby -ryaml -e '
 data = YAML.load_file(".takt/tasks.yaml")
-tasks = data["tasks"].select { |t| t["name"].start_with?("<task-name-prefix>") }
-exit(tasks.length >= <expected_count> && tasks.all? { |t| %w[completed failed aborted].include?(t["status"]) } ? 0 : 1)
-'; do sleep 30; done
+tasks = data["tasks"].select { |t| t["name"].start_with?(ARGV[0]) }
+exit(tasks.length >= ARGV[1].to_i && tasks.all? { |t| %w[completed failed aborted].include?(t["status"]) } ? 0 : 1)
+' "$PREFIX" "$EXPECTED"; do
+  ELAPSED=$(( $(date +%s) - STARTED ))
+  MINS=$(( ELAPSED / 60 ))
+  SECS=$(( ELAPSED % 60 ))
+  ruby -ryaml -e '
+data = YAML.load_file(".takt/tasks.yaml")
+tasks = data["tasks"].select { |t| t["name"].start_with?(ARGV[0]) }
+summary = tasks.map { |t| "#{t["name"].split("-")[0..2].join("-")}:#{t["status"]}" }.join(" | ")
+puts summary
+' "$PREFIX"
+  printf "[wait_takt] %dm%02ds elapsed\n" "$MINS" "$SECS"
+  sleep 30
+done
 echo "[wait_takt] DONE $(date '+%H:%M:%S')"
 ruby -ryaml -e '
 data = YAML.load_file(".takt/tasks.yaml")
-tasks = data["tasks"].select { |t| t["name"].start_with?("<task-name-prefix>") }
+tasks = data["tasks"].select { |t| t["name"].start_with?(ARGV[0]) }
 tasks.each { |t| puts "[#{t["status"]}] #{t["name"]} workflow=#{t["workflow"]} run_slug=#{t["run_slug"]}" }
-'
+' "$PREFIX"
 EOF
 chmod +x /tmp/wait_takt_<slug>.sh
 ```
