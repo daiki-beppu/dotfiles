@@ -44,6 +44,23 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/reject-grep.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/reject-raw-pm.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
