@@ -279,31 +279,37 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
 - branch: <branch>
 - run_slug: <run_slug>
 
-## 手順（repo root で実行）
+## 手順
 
-1. PR 番号取得
+1. PR 番号取得（repo root で実行）
    gh pr list --head "<branch>" --json number -q '.[0].number'
 
-2. CI 監視（run_in_background, timeout 2400000ms）
+2. CI 監視（repo root で実行、run_in_background, timeout 2400000ms）
    gh pr checks <PR#> --watch --interval 30
    - fail → gh run view <run-id> --log-failed → worktree で修正 → push → 再監視
 
-3. レビュー（run_in_background, timeout 3600000ms）
+3. レビュー（repo root で実行、run_in_background, timeout 3600000ms）
    takt -q -t "#<PR#>" -w review-takt-default > /tmp/takt_review_<PR#>.log 2>&1
 
-4. 判定
+4. 判定 → APPROVE まで review-fix ループ（最大 3 周）
    RUN_SLUG=$(ls -t .takt/runs/ | head -1)
    cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
+   → PR コメントに投稿: gh pr comment <PR#> --body "## 🔍 takt review ..."
    - APPROVE → Step 6 へ
-   - REJECT → Step 5 へ
+   - REJECT → Step 5 → Step 3 に戻る（round++ して再レビュー）
+   - 3 周超え → 最終結果を報告して終了（人手判断を仰ぐ）
 
-5. 修正ループ（REJECT 時のみ、run_in_background, timeout 3600000ms）
-   takt -q -t "#<PR#>" -w review-fix-takt-default > /tmp/takt_reviewfix_<PR#>.log 2>&1
+5. 修正（REJECT 時、**worktree で実行**、run_in_background, timeout 3600000ms）
+   cd <worktree_path>
+   takt -q -t "#<PR#>" -w review-fix-takt-default > /tmp/takt_reviewfix_<PR#>_round<N>.log 2>&1
+   ⚠ repo root（main）で実行すると coder が main を汚染する。必ず worktree 内から実行
+   → 完了後、summary + supervisor-validation を PR コメントに投稿
+   → Step 3（再レビュー）に戻る
 
 6. クリーンアップ
    takt list --non-interactive --action delete --branch <branch> --yes
 
-7. 最終結果を報告: status / PR URL / review verdict / 修正回数
+7. 最終結果を報告: status / PR URL / review verdict / 修正ラウンド数
 ```
 
 3. 全エージェント完了後、結果をまとめてユーザーに報告
@@ -398,19 +404,46 @@ cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
 
 `tail -80 "$REVIEW_LOG"` で末尾も確認し、takt 自体のエラーがないか見る。
 
-#### 5-E. 判定
-
-`review-summary.md` の `## 総合判定:` を確認:
-
-- **APPROVE** → PR URL + review-summary の要点をユーザーに報告 → Step 6（クリーンアップ）へ
-- **REJECT** → 指摘内容をユーザーに共有し、Step 5-F へ進む旨を伝える
-
-#### 5-F. review-fix 起動（REJECT 時のみ）
-
-`review-fix-takt-default` で再レビュー + 修正ループを自動実行する。
+レビュー結果を PR コメントに投稿する:
 
 ```bash
-FIX_LOG="/tmp/takt_reviewfix_${PR_NUM}.log"
+REVIEW_FILE=$(ls .takt/runs/${RUN_SLUG}/reports/*review-summary.md)
+gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
+## 🔍 takt review (review-takt-default)
+
+$(cat "$REVIEW_FILE")
+COMMENT
+)"
+```
+
+#### 5-E. 判定 → review-fix ループ
+
+`review-summary.md` の `## 総合判定:` を確認し、**APPROVE になるまで 5-F → 5-D を繰り返す**（最大 3 周。超えたら人手判断を仰ぐ）。
+
+```
+REVIEW_ROUND=1
+
+loop:
+  判定を読む
+  ├─ APPROVE → ユーザーに報告 → Step 6（クリーンアップ）へ
+  └─ REJECT
+       ├─ REVIEW_ROUND >= 3 → ユーザーに状況を報告し人手判断を仰ぐ
+       └─ REVIEW_ROUND < 3
+            → 5-F（review-fix）実行
+            → 5-D（再レビュー）実行
+            → REVIEW_ROUND++
+            → loop に戻る
+```
+
+#### 5-F. review-fix 起動（REJECT 時）
+
+`review-fix-takt-default` で再レビュー + 修正ループを自動実行する。**必ず PR ブランチの worktree 内から実行する**。repo root（main の作業ツリー）から実行すると coder が main 上にファイルを作成・変更してしまい、main を汚染する。
+
+```bash
+# takt が作成した worktree を使う（tasks.yaml の worktree_path）
+cd <worktree_path>
+
+FIX_LOG="/tmp/takt_reviewfix_${PR_NUM}_round${REVIEW_ROUND}.log"
 ```
 
 `run_in_background: true` で実行（timeout は `3600000ms` = 60 分）:
@@ -426,15 +459,22 @@ takt -q -t "#${PR_NUM}" -w review-fix-takt-default > "$FIX_LOG" 2>&1
 4. 最大 5 周ループ（`loop_monitors` の supervisor が非生産的と判断したら打ち切り）
 5. supervise → COMPLETE or fix_supervisor
 
-完了通知が届いたら最終結果を確認:
+完了通知が届いたら結果を PR コメントに投稿:
 
 ```bash
 RUN_SLUG=$(ls -t .takt/runs/ | head -1)
-cat .takt/runs/${RUN_SLUG}/reports/*supervisor-validation.md
-cat .takt/runs/${RUN_SLUG}/reports/*summary.md
+SUMMARY_FILE=$(ls .takt/runs/${RUN_SLUG}/reports/*summary.md)
+VALIDATION_FILE=$(ls .takt/runs/${RUN_SLUG}/reports/*supervisor-validation.md 2>/dev/null)
+gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
+## 🔧 takt review-fix round ${REVIEW_ROUND}
+
+$(cat "$SUMMARY_FILE")
+$([ -f "$VALIDATION_FILE" ] && echo -e "\n---\n" && cat "$VALIDATION_FILE" || true)
+COMMENT
+)"
 ```
 
-結果をユーザーに報告 → Step 6（クリーンアップ）へ。
+修正後、**Step 5-D に戻って再レビュー**を実行する。再レビューの結果が APPROVE ならループ終了、REJECT なら再度 5-F へ。
 
 ### 6. クリーンアップ
 
