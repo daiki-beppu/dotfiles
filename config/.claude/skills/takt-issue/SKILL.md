@@ -291,7 +291,7 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
 3. レビュー（repo root で実行、run_in_background, timeout 3600000ms）
    takt -q -t "#<PR#>" -w review-takt-default > /tmp/takt_review_<PR#>.log 2>&1
 
-4. 判定 → APPROVE まで review-fix ループ（最大 3 周）
+4. 判定 → APPROVE まで fix ループ（最大 3 周）
    RUN_SLUG=$(ls -t .takt/runs/ | head -1)
    cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
    → PR コメントに投稿: gh pr comment <PR#> --body "## 🔍 takt review ..."
@@ -299,12 +299,10 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
    - REJECT → Step 5 → Step 3 に戻る（round++ して再レビュー）
    - 3 周超え → 最終結果を報告して終了（人手判断を仰ぐ）
 
-5. 修正（REJECT 時、**worktree で実行**、run_in_background, timeout 3600000ms）
+5. 修正（REJECT 時、**worktree で実行**）
    cd <worktree_path>
-   takt -q -t "#<PR#>" -w review-fix-takt-default > /tmp/takt_reviewfix_<PR#>_round<N>.log 2>&1
-   ⚠ repo root（main）で実行すると coder が main を汚染する。必ず worktree 内から実行
-   → 完了後、summary + supervisor-validation を PR コメントに投稿
-   → Step 3（再レビュー）に戻る
+   review-summary.md の指摘事項を読み、コードを直接修正する（takt は使わない）
+   修正 → commit → push → PR コメントに修正内容を投稿 → Step 3（再レビュー）に戻る
 
 6. クリーンアップ
    takt list --non-interactive --action delete --branch <branch> --yes
@@ -314,7 +312,7 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
 
 3. 全エージェント完了後、結果をまとめてユーザーに報告
 
-**注意**: サブエージェント内では `takt -t` による直接実行のみ使う（`takt add` / `takt run` は不要）。`-t` は `tasks.yaml` のキューを経由しないので複数エージェント間の競合は起きない。
+**注意**: サブエージェント内ではレビュー（`review-takt-default`）のみ `takt -t` で実行する。fix はサブエージェントが worktree 内で直接コード修正する（`takt add` / `takt run` / `review-fix-takt-default` は不要）。
 
 #### 5-A. 新規 PR（base = main / master）
 
@@ -416,7 +414,7 @@ COMMENT
 )"
 ```
 
-#### 5-E. 判定 → review-fix ループ
+#### 5-E. 判定 → fix ループ
 
 `review-summary.md` の `## 総合判定:` を確認し、**APPROVE になるまで 5-F → 5-D を繰り返す**（最大 3 周。超えたら人手判断を仰ぐ）。
 
@@ -429,47 +427,51 @@ loop:
   └─ REJECT
        ├─ REVIEW_ROUND >= 3 → ユーザーに状況を報告し人手判断を仰ぐ
        └─ REVIEW_ROUND < 3
-            → 5-F（review-fix）実行
+            → 5-F（サブエージェント fix）実行
             → 5-D（再レビュー）実行
             → REVIEW_ROUND++
             → loop に戻る
 ```
 
-#### 5-F. review-fix 起動（REJECT 時）
+#### 5-F. サブエージェント fix（REJECT 時）
 
-`review-fix-takt-default` で再レビュー + 修正ループを自動実行する。**必ず PR ブランチの worktree 内から実行する**。repo root（main の作業ツリー）から実行すると coder が main 上にファイルを作成・変更してしまい、main を汚染する。
+`review-summary.md` の指摘事項に基づき、サブエージェントが **worktree 内で直接コードを修正** する。takt の `review-fix-takt-default` は使わない（takt 起動のオーバーヘッドと Codex のトークン消費を回避）。
 
-```bash
-# takt が作成した worktree を使う（tasks.yaml の worktree_path）
-cd <worktree_path>
-
-FIX_LOG="/tmp/takt_reviewfix_${PR_NUM}_round${REVIEW_ROUND}.log"
-```
-
-`run_in_background: true` で実行（timeout は `3600000ms` = 60 分）:
-
-```bash
-takt -q -t "#${PR_NUM}" -w review-fix-takt-default > "$FIX_LOG" 2>&1
-```
-
-`review-fix-takt-default` の内部フロー:
-1. gather（対象情報収集）
-2. reviewers（7 並列: arch / security / QA / testing / AI-antipattern / pure / coding）
-3. needs_fix → fix（coder = Codex が修正）→ ai-antipattern 事前チェック → reviewers に戻る
-4. 最大 5 周ループ（`loop_monitors` の supervisor が非生産的と判断したら打ち切り）
-5. supervise → COMPLETE or fix_supervisor
-
-完了通知が届いたら結果を PR コメントに投稿:
+1. `review-summary.md` の全文を読む:
 
 ```bash
 RUN_SLUG=$(ls -t .takt/runs/ | head -1)
-SUMMARY_FILE=$(ls .takt/runs/${RUN_SLUG}/reports/*summary.md)
-VALIDATION_FILE=$(ls .takt/runs/${RUN_SLUG}/reports/*supervisor-validation.md 2>/dev/null)
-gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
-## 🔧 takt review-fix round ${REVIEW_ROUND}
+cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
+```
 
-$(cat "$SUMMARY_FILE")
-$([ -f "$VALIDATION_FILE" ] && echo -e "\n---\n" && cat "$VALIDATION_FILE" || true)
+2. worktree 内でコードを修正（**必ず worktree で実行**。repo root で修正すると main を汚染する）:
+
+```bash
+cd <worktree_path>
+```
+
+指摘の重要度順（REJECT 原因 → WARNING → INFO）に該当ファイルを直接編集する。
+
+3. 修正をコミットして push:
+
+```bash
+git add -A
+git commit -m "fix: address review findings round ${REVIEW_ROUND}"
+git push
+```
+
+4. 修正内容を PR コメントに投稿:
+
+```bash
+gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
+## 🔧 fix round ${REVIEW_ROUND}
+
+review-summary の指摘事項に基づき修正しました。
+
+### 修正内容
+- (修正した内容をリスト)
+
+再レビューを実行します。
 COMMENT
 )"
 ```
@@ -526,8 +528,8 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **`Auto-create PR? [Y/n]` は Y を選ぶ**: takt CLI 本体の postExecutionFlow が PR を作る経路を有効化するため。workflow 側に PR 作成 step は存在しないので二重起動の懸念はない
 - **既存 PR 積み上げは人手**: postExecutionFlow は既存 PR を検出すると `gh pr comment` でコメント追記するだけで base ブランチへの merge は行わない。積み上げ運用なら Step 5-B の手動 merge 手順を実行する
 - **Codex review の厳しさ**: dotfiles の `persona_providers.coder.provider: codex` は `coder` persona だけを Codex に振っており、reviewer 系は Claude（デフォルト）。Codex でレビューを回しているわけではないため、過剰指摘ループが起きるなら原因は reviewer instruction 側（builtin の `facets/instructions/review-*.md` や `ai-antipattern-review.md`）の判定基準にある。必要なら eject して「軽微 APPROVE / 重大のみ ABORT」を明記する
-- **レビュー workflow の使い分け**: `review-takt-default`（read-only 7 観点）で先に判定し、REJECT 時のみ `review-fix-takt-default`（レビュー + 修正ループ一体）を起動する。`review-fix-takt-default` は内部で再レビューするため、report を PR コメントに転記する必要はない
-- **レビュー込みの実行時間**: 実装（20-40 分）+ レビュー（10-20 分）+ 修正ループ（REJECT 時のみ、最大 5 周）。最悪ケースで 2-3 時間。全て `run_in_background` で起動するので呼び出し元の token 消費は最小限
+- **レビューと修正の分離**: `review-takt-default`（read-only 7 観点）で判定し、REJECT 時はサブエージェントが worktree 内で直接コード修正を行い、再度 `review-takt-default` で再レビューする。`review-fix-takt-default` は使わない（takt 起動オーバーヘッドと Codex トークン消費の回避）
+- **レビュー込みの実行時間**: 実装（20-40 分）+ レビュー（10-20 分）+ 修正ループ（REJECT 時のみ、サブエージェント fix + 再レビュー × 最大 3 周）。fix がサブエージェント直接実行のため takt 起動不要で各ラウンド高速化
 
 ## Rules
 
@@ -549,6 +551,6 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - 複数 issue を同時に回すときは `takt add` を直列で N 回叩いて `tasks.yaml` に並べ、`takt -q run` を **1 回だけ** background 起動する（Phase 1）。グローバル設定の `concurrency: 3` により単一プロセスが pending を最大 3 並列で消化するので、`takt run` を多重起動してはならない（実効並列度が膨らみ worktree 競合・トークン暴走を招く）。完了検知は `name` prefix の単一 poll で全件まとめて待つ
 - 複数 task 完了後のレビュー・修正は Agent tool で task ごとにサブエージェントを並列起動する（Phase 2 dispatch）。各エージェントが `takt -t` で直接実行するため `tasks.yaml` の競合は起きない。単一 task のときは Agent 起動不要で直列実行
 - Step 5-C（CI pass）後は必ず Step 5-D〜F（自動レビュー → 判定 → 修正）を実行する。レビューを省略しない
-- Step 5-D の `review-takt-default` で APPROVE なら 5-F（review-fix）は実行しない。修正不要で即完了
-- Step 5-F の内部ループ制御は `review-fix-takt-default` の `loop_monitors` に委譲する（最大 5 周、supervisor 打ち切り）。skill 側で反復カウンタは持たない
-- レビュー / 修正の takt ログも `tail -80` で必要時のみ読む（token budget guard は実装フェーズと同じ）
+- Step 5-D の `review-takt-default` で APPROVE なら 5-F（fix）は実行しない。修正不要で即完了
+- Step 5-F の fix はサブエージェントが worktree 内で直接実行する。`review-fix-takt-default` は使わない。外側のループ（5-E）が最大 3 周を制御する
+- レビューの takt ログは `tail -80` で必要時のみ読む（token budget guard は実装フェーズと同じ）。fix はサブエージェント直接実行のため takt ログなし
