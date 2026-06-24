@@ -3,14 +3,10 @@
 # プロバイダ・モデル・言語を全プロジェクト共通で定義する。
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
-# 構成方針: Codex + Claude Opus のハイブリッド
-# - default = claude / opus 4.6 (1M)（未指定 persona は全て Opus に乗る）
-# - 計画・実装の doer 系だけを Codex に override
-#   → 「考えるのは Codex（高速・論理的）／レビュー・受け入れ検査は Opus（整合性・簡素化）」
+# 構成方針: 一時的に全 persona を Codex に統一
+# 理由: Claude Code がレートリミット中のため。
 
-# デフォルト = Opus。persona_providers に出てこない persona は全てここに従う。
-provider: claude
-model: claude-opus-4-6[1m]   # Opus を 4.6 (1M context) に固定
+provider: codex
 language: ja
 
 # ── 実行制御（並列駆動）──
@@ -35,33 +31,3 @@ logging:
 # ── コマンド品質ゲート ──
 workflow_command_gates:
   custom_scripts: true
-
-# Persona 単位で provider を切り替える。
-# ここに列挙するのは Codex に寄せる doer/planner 系だけ。
-# レビュー系・supervisor・MAGI・research 分析系は default(claude/opus) を継承するため列挙しない。
-# codex persona は default の Claude model を継承しないよう、Codex 対応 model を明示する。
-persona_providers:
-  # 計画系（高速・論理的チェック）
-  planner:
-    provider: codex
-    model: gpt-5.5
-  architect-planner:
-    provider: codex
-    model: gpt-5.5
-  test-planner:
-    provider: codex
-    model: gpt-5.5
-  research-planner:
-    provider: codex
-    model: gpt-5.5
-  # 調査実行（research 系 workflow 用・任意）
-  research-digger:
-    provider: codex
-    model: gpt-5.5
-  # 実装系（生成速度）
-  coder:
-    provider: codex
-    model: gpt-5.5
-  terraform-coder:
-    provider: codex
-    model: gpt-5.5

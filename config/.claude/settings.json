@@ -31,7 +31,7 @@
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-opus-4-6[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -40,6 +40,23 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/copy-env.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/reject-grep.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/reject-raw-pm.sh",
             "timeout": 5
           }
         ]
