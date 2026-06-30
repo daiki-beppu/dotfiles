@@ -3,10 +3,18 @@
 # プロバイダ・モデル・言語を全プロジェクト共通で定義する。
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
-# 構成方針: 一時的に全 persona を Codex に統一
-# 理由: Claude Code がレートリミット中のため。
+# 構成方針: Codex + Claude ハイブリッド
+# coder/planner は Codex の gpt-5、レビュー系・supervisor は Claude
 
-provider: codex
+provider: claude
+
+persona_providers:
+  coder:
+    provider: codex
+    model: gpt-5
+  planner:
+    provider: codex
+    model: gpt-5
 language: ja
 
 # ── 実行制御（並列駆動）──
