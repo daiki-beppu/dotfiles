@@ -150,7 +150,21 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    | `## 影響ファイル` が **10 ファイル以上** | 分割推奨 |
    | 要件の中に **独立した機能領域が 2 つ以上** 混在 | 分割推奨 |
 
-   該当時は「この issue はスコープが大きいため、sub-issue に分割することを推奨します」と提示し、分割案を 1-2 文ずつ提案する。ユーザーが承認すれば sub-issue を個別に起票し、元 issue は親 issue として残す。却下されればそのまま起票する。
+   該当時は「この issue はスコープが大きいため、sub-issue に分割することを推奨します」と提示し、分割案を 1-2 文ずつ提案する。ユーザーが承認すれば以下の手順で処理する。却下されればそのまま起票する。
+
+   1. 元 issue を親として先に（または通常どおり）起票する
+   2. 分割案ごとに子 issue を個別に起票する
+   3. 各子 issue を `issue-organize` skill と同じ GraphQL `addSubIssue` mutation で親に接続する（`gh issue edit --add-sub-issue` は未サポートのため使わない）
+
+      ```bash
+      PARENT_ID=$(gh api repos/$OWNER/$REPO/issues/$PARENT --jq '.node_id')
+      CHILD_ID=$(gh api repos/$OWNER/$REPO/issues/$CHILD --jq '.node_id')
+      gh api graphql -f query="mutation {
+        addSubIssue(input: { issueId: \"$PARENT_ID\", subIssueId: \"$CHILD_ID\" }) {
+          issue { number } subIssue { number }
+        }
+      }"
+      ```
 
 4. **タイトル生成**: 簡潔で具体的な日本語タイトル（50 文字以内目安）。**将来 PR タイトルに直結するため、スコープを正確に反映した表現にする**（takt-issue のスコープ外判定基準が「PR タイトルが変わるか」であるため）
 
