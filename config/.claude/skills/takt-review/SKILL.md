@@ -4,7 +4,7 @@ description: >-
   takt の review-takt-default で PR を 7 観点自動レビューし、REJECT なら worktree で fix → 再レビューを最大 3 周回す。
   CI 監視 → レビュー → 判定 → fix ループを一気通貫で実行する。
   「takt レビュー」「PR レビューして」「レビュー回して」など、takt 経由の PR レビュー意図で発動。
-  takt-issue の完了後処理（Phase 2）からも呼ばれる。
+  単体起動専用（takt-issue からの自動呼び出しは廃止。takt-issue は CI green で完了する）。
 ---
 
 # takt-review
@@ -13,11 +13,12 @@ description: >-
 
 takt の `review-takt-default` workflow で PR を自動レビューし、指摘があれば worktree 内で修正 → 再レビューを繰り返すスキル。CI pass 確認からレビュー完了（APPROVE）または人手エスカレーション（3 周 REJECT）までを担当する。
 
-takt-issue の Step 5-C〜5-F に相当するフェーズを独立スキルとして切り出したもの。takt-issue からの呼び出し、または単体での PR レビューに使える。
+もともと takt-issue の完了後処理から切り出されたスキルだが、現在 takt-issue からの自動呼び出しは行われない（takt-issue は CI green + クリーンアップで完了する）。ユーザーが明示的にレビューを依頼したときに単体で起動する。
+
+**worktree の再作成**: takt-issue は完了時に worktree を削除するため、takt-issue 経由の PR に対して本スキルを回す場合、fix 用の worktree が存在しないことが多い。REJECT で fix が必要になったら `git worktree add <repo-parent>/takt-worktrees/<slug> <branch>` で再作成してから修正する。
 
 ## When to Use
 
-- takt-issue の完了後処理（Phase 2 dispatch）から呼ばれたとき
 - ユーザーが「takt でレビューして」「PR #N をレビュー」「レビュー回して」と依頼したとき
 - CI pass 済みの PR に対して takt の 7 観点レビューを手動で回したいとき
 
@@ -206,7 +207,7 @@ COMMENT
 - **APPROVE なら fix 不要**: Step 2 で APPROVE なら Step 4 は実行しない。即完了
 - **表面的な修正は禁止**: 指摘行だけを直して終わらせず、根本原因・同型箇所・回帰検証まで確認する
 - **CI fail がスコープ外の場合**: flaky test 等は修正せず、ユーザーに報告して判断を仰ぐ
-- **クリーンアップは呼び出し元の責務**: このスキルは `takt list --action delete` を実行しない。takt-issue から呼ばれた場合は takt-issue 側で、単体実行の場合はユーザーが別途クリーンアップする
+- **クリーンアップは呼び出し元の責務**: このスキルは `takt list --action delete` を実行しない。worktree（fix 用に再作成したものを含む）の削除はユーザーが別途行う（再作成した worktree は `git worktree remove` で片付ける）
 - **`npx` は不要**: `takt` を直接実行する
 
 ## Rules
