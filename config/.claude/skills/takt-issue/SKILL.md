@@ -433,7 +433,7 @@ Claude Code では `Bash` の `run_in_background: true` で投げる（timeout `
 - **exit ≠ 0** → 失敗 check を `gh pr checks ${PR_NUMBER}` で特定し、`gh run view <run-id> --log-failed` で失敗ログを取得。**worktree 内で修正**（repo root で修正すると main を汚染する）→ commit → push → CI 監視を再実行。fix ループは最大 3 周、超過したら人手判断を仰ぐ
 - CI fail が対象 issue のスコープ外（flaky test 等）と判断した場合はユーザーに報告して判断を仰ぐ
 
-7 観点自動レビュー（takt-review スキル）は本 skill では起動しない。ユーザーが明示的に依頼した場合のみ別途起動する（Step 6 で worktree を削除済みのため、fix が必要になったら worktree の再作成が要る）。
+7 観点自動レビュー（takt-review スキル）は本 skill では起動しない。ユーザーが明示的に依頼した場合のみ別途起動する（takt-review は read-only。レビュー結果を報告するだけで fix はしない）。
 
 ### 6. クリーンアップ
 
@@ -444,7 +444,7 @@ takt list --non-interactive --action delete --branch takt/<N>/<slug> --yes
 
 ローカルブランチ `takt/<N>/<slug>` は PR が merge されたあとに `clean-branch` スキルで一括削除する（merge 前に削除すると PR の差分元が失われる）。
 
-クリーンアップ後に takt-review を回す場合、fix 用の worktree は失われているため `git worktree add` で再作成が必要になる（takt-review スキル側の注意書きを参照）。
+クリーンアップ後に takt-review を回しても問題ない。takt-review は read-only（レビュー結果を報告するだけで fix はしない）ため、worktree の再作成は不要。
 
 ### 7. スコープ外の発見は別 issue 化
 
@@ -488,7 +488,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - **PR 作成で終わらない**: takt CLI の postExecutionFlow が `gh pr create` した後に GitHub Actions が走る。workflow 内のレビューはコード読みだけで CI を回さないため、必ず Step 5-C の CI 監視で green を確認してから完了とする
 - **`Auto-create PR? [Y/n]` は Y を選ぶ**: takt CLI 本体の postExecutionFlow が PR を作る経路を有効化するため。workflow 側に PR 作成 step は存在しないので二重起動の懸念はない
 - **既存 PR 積み上げは人手**: postExecutionFlow は既存 PR を検出すると `gh pr comment` でコメント追記するだけで base ブランチへの merge は行わない。積み上げ運用なら Step 5-B の手動 merge 手順を実行する
-- **7 観点レビューは対象外**: takt-review スキルは本 skill から呼ばない。ユーザーが明示的に依頼した場合のみ別途起動する。その時点で worktree は Step 6 で削除済みのため、fix が必要なら `git worktree add` での再作成が要る
+- **7 観点レビューは対象外**: takt-review スキルは本 skill から呼ばない。ユーザーが明示的に依頼した場合のみ別途起動する。takt-review は read-only（レビュー結果を報告するだけで fix はしない）
 - **実行時間の目安**: 実装（20-40 分）+ CI（数分〜十数分）+ fix ループ（CI fail 時のみ、最大 3 周）
 
 ## Rules

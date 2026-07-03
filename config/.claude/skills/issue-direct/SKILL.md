@@ -103,7 +103,7 @@ EOF
 
 - **exit 0**(全 green) → Step 6 へ
 - **exit ≠ 0** → `gh pr checks <PR#>` で失敗 check を特定し、`gh run view <run-id> --log-failed` で失敗ログを取得
-  - worktree 内で修正する。指摘行だけを直さず「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す(takt-review の fix プラクティスを踏襲)
+  - worktree 内で修正する。指摘行だけを直さず「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
   - commit → push → Step 4 を再実行、ラウンド +1
   - **3 周を超えたら**ユーザーに状況を報告し人手判断を仰ぐ(自動で回し続けない)
   - CI fail が対象 issue のスコープ外(flaky test 等)と判断した場合もユーザーに報告し判断を仰ぐ
