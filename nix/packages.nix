@@ -127,4 +127,12 @@ in
     mkdir -p "$HOME/.takt"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
   '';
+
+  # ── takt CLI ──
+  # nixpkgs に takt パッケージは存在しないため、Nix 管理下の bun で
+  # グローバルインストールし、darwin-rebuild switch のたびに最新化する
+  home.activation.installTakt = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    export PATH="${pkgs.bun}/bin:$PATH"
+    "${pkgs.bun}/bin/bun" install -g takt@latest
+  '';
 }
