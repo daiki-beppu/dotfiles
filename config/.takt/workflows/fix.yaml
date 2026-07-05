@@ -15,6 +15,8 @@ steps:
       - coding
     edit: true
     persona: coder
+    provider: codex
+    model: gpt-5
     policy:
       - coding
       - testing
@@ -42,6 +44,8 @@ steps:
       - review
     edit: false
     persona: supervisor
+    provider: codex
+    model: gpt-5
     policy: review
     provider_options:
       claude:
@@ -72,6 +76,8 @@ steps:
       - coding
     edit: true
     persona: coder
+    provider: codex
+    model: gpt-5
     policy:
       - coding
       - testing
