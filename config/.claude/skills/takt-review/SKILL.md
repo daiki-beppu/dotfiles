@@ -54,9 +54,17 @@ PR_NUMBER=<PR#>
 ```
 
 - **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUMBER} --watch --interval 30 > /tmp/ci_pr${PR_NUMBER}.log 2>&1` を投げる（timeout `2400000ms` = 40 分）。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否（0=green）。
-- **Codex / その他 CLI**: `nohup gh pr checks ${PR_NUMBER} --watch --interval 30 > /tmp/ci_pr${PR_NUMBER}.log 2>&1 & echo $! > /tmp/ci_pr${PR_NUMBER}.pid` で投げ、`kill -0 $(cat /tmp/ci_pr${PR_NUMBER}.pid)` が false になったら完了。
+- **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を 1 コマンドにまとめて実行する。`kill -0` を 1 回だけ確認して次に進むと CI 完了前に後続を実行してしまう:
 
-完了したら（Claude Code は再呼び出し / Codex は `kill -0` が false）、`gh pr checks ${PR_NUMBER}` を 1 回だけ実行して結果を確認する:
+  ```bash
+  nohup gh pr checks ${PR_NUMBER} --watch --interval 30 > /tmp/ci_pr${PR_NUMBER}.log 2>&1 &
+  echo $! > /tmp/ci_pr${PR_NUMBER}.pid
+  while kill -0 "$(cat /tmp/ci_pr${PR_NUMBER}.pid)" 2>/dev/null; do sleep 30; done
+  ```
+
+  コマンドの実行環境に timeout があり `while` が途中で打ち切られた場合は、同じ `while kill -0 ...` の行だけ再実行すればよい（pid の生存確認のみでべき等）。
+
+完了したら（Claude Code は再呼び出し / Codex は上記コマンドの return）、`gh pr checks ${PR_NUMBER}` を 1 回だけ実行して結果を確認する:
 
 - **exit 0** → 全 check pass。Step 2 へ
 - **exit ≠ 0** → 失敗 check を `gh pr checks ${PR_NUMBER}` で特定し、`gh run view <run-id> --log-failed` で失敗ログを取得。修正は worktree で行い、push 後に Step 1 を再実行
@@ -75,14 +83,24 @@ REVIEW_LOG="/tmp/takt_review_${PR_NUM}.log"
 `review-takt-default` も完了までブロックして exit する。stdout はログに逃がし、background に投げる（timeout `3600000ms` = 60 分）:
 
 - **Claude Code**: `Bash` の `run_in_background: true` で下記コマンドを投げる。exit 時に自動再呼び出しされるので poll しない。
-- **Codex / その他 CLI**: `nohup <下記コマンド> & echo $! > /tmp/takt_review_${PR_NUM}.pid` で投げ、`kill -0 $(cat /tmp/takt_review_${PR_NUM}.pid)` が false になったら完了。
 
 ```bash
 cd <repo_root>
 takt -q -t "#${PR_NUM}" -w review-takt-default > "$REVIEW_LOG" 2>&1
 ```
 
-完了したら（Claude Code は再呼び出し / Codex は `kill -0` が false）`review-summary.md` を読む:
+- **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を 1 コマンドにまとめて実行する。起動だけして待たずに次へ進むと `review-summary.md` がまだ存在せず後続が失敗する:
+
+```bash
+cd <repo_root>
+nohup takt -q -t "#${PR_NUM}" -w review-takt-default > "$REVIEW_LOG" 2>&1 &
+echo $! > /tmp/takt_review_${PR_NUM}.pid
+while kill -0 "$(cat /tmp/takt_review_${PR_NUM}.pid)" 2>/dev/null; do sleep 30; done
+```
+
+コマンドの実行環境に timeout があり `while` が途中で打ち切られた場合は、同じ `while kill -0 ...` の行だけ再実行すればよい（べき等）。
+
+完了したら（Claude Code は再呼び出し / Codex は上記コマンドの return）`review-summary.md` を読む:
 
 ```bash
 RUN_SLUG=$(ls -t .takt/runs/ | head -1)

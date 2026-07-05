@@ -60,7 +60,9 @@ takt run --ignore-exceed    # max_steps 超過しても継続
 
 各 task について `.takt/clone-meta/` に worktree を作成し、workflow を起動する。
 進行中の status は `.takt/tasks.yaml` の `status` フィールド（`running` → `completed` /
-`failed` / `aborted`）に反映される。長時間 workflow の完了検知は status を poll する。
+`failed` / `aborted`）に反映される。`takt run` は pending task を全て消化してから exit するため、
+長時間 workflow の完了検知は `status` を外部から poll せず、この exit をそのまま使う
+（background 実行 + exit 検知。詳細は `takt-issue` skill を参照）。
 
 **`takt run` 1 コマンドで pending を並列消化する**。`concurrency`（後述の設定ファイル節）が
 `1` なら逐次、`2` 以上ならワーカープールで最大 `concurrency` 件を同時実行し、ワーカーが空くたびに
@@ -308,7 +310,7 @@ tasks:
     run_slug: 20251201-143022-abc         # 実行 ID（.takt/runs/<run_slug>/ に紐づく）
 ```
 
-長時間 workflow の完了検知は `status` フィールドを poll する。
+長時間 workflow の完了検知は `takt run` 自体の exit を使う（`status` フィールドを外部から poll する必要はない）。
 名前は task 説明文先頭から自動生成（記号除去、80 文字程度で truncate）。
 
 ### 実行ログ（`.takt/runs/<run_slug>/`）
