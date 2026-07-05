@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""takt-usage-report — takt run のトークン消費を横断集計する。
+
+対象ルート配下の .takt/runs/<run>/ を走査し、meta.json(workflow / status /
+startTime)と logs/*-usage-events.phase.jsonl(phase 粒度 usage イベント)を
+突合して、workflow 別 / phase 別 / step 別 / 日次 / top-N run を集計する。
+
+usage:
+  takt-usage-report [ROOT ...] [--days N] [--top N] [--json]
+
+ROOT を省略すると ~/01-dev と ~/02-yt を走査する。
+phase jsonl が無い run(observability 無効期間の run)は「計測なし」として
+件数のみ報告する。
+"""
+
+import argparse
+import json
+import os
+import sys
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+
+DEFAULT_ROOTS = ["~/01-dev", "~/02-yt"]
+
+# 走査から除外するディレクトリ(.takt を含み得ないか、巨大なもの)
+PRUNE_DIRS = {
+    "node_modules", ".git", "dist", "build", "out", "result",
+    ".venv", "venv", ".next", ".cache", ".Trash", "Library",
+}
+
+
+def find_run_dirs(roots):
+    """roots 配下の .takt/runs/<run>/ を列挙する。"""
+    seen = set()
+    for root in roots:
+        root = os.path.realpath(os.path.expanduser(root))
+        for dirpath, dirnames, _ in os.walk(root):
+            if os.path.basename(dirpath) == ".takt":
+                dirnames[:] = []  # .takt 配下は runs だけ見れば良い
+                runs_dir = os.path.join(dirpath, "runs")
+                if not os.path.isdir(runs_dir):
+                    continue
+                for name in sorted(os.listdir(runs_dir)):
+                    run_dir = os.path.join(runs_dir, name)
+                    real = os.path.realpath(run_dir)
+                    if os.path.isdir(run_dir) and real not in seen:
+                        seen.add(real)
+                        yield run_dir
+            else:
+                dirnames[:] = [d for d in dirnames if d not in PRUNE_DIRS]
+
+
+def load_run(run_dir):
+    """1 run 分の meta と phase イベントを読む。meta 不在なら None。"""
+    meta_path = os.path.join(run_dir, "meta.json")
+    try:
+        with open(meta_path) as f:
+            meta = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    events = []
+    logs_dir = os.path.join(run_dir, "logs")
+    if os.path.isdir(logs_dir):
+        for name in os.listdir(logs_dir):
+            if not name.endswith("-usage-events.phase.jsonl"):
+                continue
+            try:
+                with open(os.path.join(logs_dir, name)) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            except OSError:
+                continue
+
+    return {
+        "path": run_dir,
+        "workflow": meta.get("workflow", "(unknown)"),
+        "status": meta.get("status", "(unknown)"),
+        "start_time": meta.get("startTime", ""),
+        "events": events,
+    }
+
+
+def usage_of(event):
+    """usage を provider 差を吸収して正規化する。
+
+    codex: cached_input_tokens は input_tokens の内数。
+    claude: cache_read/cache_creation_input_tokens は input_tokens の外数
+    (total_tokens にも含まれない)ため、input に合算して揃える。
+    """
+    u = event.get("usage") or {}
+    input_ = u.get("input_tokens", 0) or 0
+    output = u.get("output_tokens", 0) or 0
+    cache_read = u.get("cache_read_input_tokens", 0) or 0
+    cache_creation = u.get("cache_creation_input_tokens", 0) or 0
+    if cache_read or cache_creation:
+        input_ += cache_read + cache_creation
+        cached = cache_read
+    else:
+        cached = u.get("cached_input_tokens", 0) or 0
+    return {
+        "total": input_ + output,
+        "input": input_,
+        "output": output,
+        "cached": cached,
+    }
+
+
+def aggregate(runs, top_n):
+    agg = {
+        "runs_measured": 0,
+        "runs_unmeasured": 0,
+        "grand": defaultdict(int),
+        "by_workflow": defaultdict(lambda: defaultdict(int)),
+        "by_phase": defaultdict(lambda: defaultdict(int)),
+        "by_step": defaultdict(lambda: defaultdict(int)),
+        "by_day": defaultdict(lambda: defaultdict(int)),
+        "top_runs": [],
+    }
+    for run in runs:
+        run_total = 0
+        for e in run["events"]:
+            u = usage_of(e)
+            run_total += u["total"]
+            for key in ("total", "input", "output", "cached"):
+                agg["grand"][key] += u[key]
+                agg["by_workflow"][run["workflow"]][key] += u[key]
+                agg["by_phase"][e.get("phase", "(unknown)")][key] += u[key]
+                agg["by_step"][e.get("step", "(unknown)")][key] += u[key]
+
+        if run["events"]:
+            agg["runs_measured"] += 1
+            agg["by_workflow"][run["workflow"]]["runs"] += 1
+            day = run["start_time"][:10] or "(no date)"
+            agg["by_day"][day]["runs"] += 1
+            agg["by_day"][day]["total"] += run_total
+            agg["top_runs"].append({
+                "total": run_total,
+                "workflow": run["workflow"],
+                "status": run["status"],
+                "start_time": run["start_time"],
+                "path": run["path"],
+            })
+        else:
+            agg["runs_unmeasured"] += 1
+
+    agg["top_runs"].sort(key=lambda r: -r["total"])
+    agg["top_runs"] = agg["top_runs"][:top_n]
+    return agg
+
+
+def fmt(n):
+    return f"{n:,}"
+
+
+def pct(part, whole):
+    return f"{100 * part / whole:.1f}%" if whole else "-"
+
+
+def print_markdown(agg, roots, days):
+    grand = agg["grand"]
+    scope = f"直近 {days} 日" if days else "全期間"
+    print(f"# takt usage report ({scope})")
+    print()
+    print(f"- 対象ルート: {', '.join(roots)}")
+    print(f"- 計測あり run: {agg['runs_measured']} / 計測なし run: {agg['runs_unmeasured']}")
+    print(f"- 総トークン: **{fmt(grand['total'])}**"
+          f" (cached {fmt(grand['cached'])} = {pct(grand['cached'], grand['input'])} of input)")
+    print()
+
+    print("## workflow 別")
+    print()
+    print("| workflow | runs | total | avg/run | input | cached% | output |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for wf, v in sorted(agg["by_workflow"].items(), key=lambda x: -x[1]["total"]):
+        runs = v.get("runs", 0)
+        avg = v["total"] // runs if runs else 0
+        print(f"| {wf} | {runs} | {fmt(v['total'])} | {fmt(avg)} |"
+              f" {fmt(v['input'])} | {pct(v['cached'], v['input'])} | {fmt(v['output'])} |")
+    print()
+
+    print("## phase 別")
+    print()
+    print("| phase | total | share | input | cached% | output |")
+    print("| --- | ---: | ---: | ---: | ---: | ---: |")
+    for ph, v in sorted(agg["by_phase"].items(), key=lambda x: -x[1]["total"]):
+        print(f"| {ph} | {fmt(v['total'])} | {pct(v['total'], grand['total'])} |"
+              f" {fmt(v['input'])} | {pct(v['cached'], v['input'])} | {fmt(v['output'])} |")
+    print()
+
+    print("## step 別 (top 15)")
+    print()
+    print("| step | total | share |")
+    print("| --- | ---: | ---: |")
+    for st, v in sorted(agg["by_step"].items(), key=lambda x: -x[1]["total"])[:15]:
+        print(f"| {st} | {fmt(v['total'])} | {pct(v['total'], grand['total'])} |")
+    print()
+
+    print("## 日次推移")
+    print()
+    print("| date | runs | total |")
+    print("| --- | ---: | ---: |")
+    for day, v in sorted(agg["by_day"].items()):
+        print(f"| {day} | {v['runs']} | {fmt(v['total'])} |")
+    print()
+
+    print(f"## top {len(agg['top_runs'])} runs")
+    print()
+    print("| total | workflow | status | start | run dir |")
+    print("| ---: | --- | --- | --- | --- |")
+    for r in agg["top_runs"]:
+        print(f"| {fmt(r['total'])} | {r['workflow']} | {r['status']} |"
+              f" {r['start_time'][:10]} | {r['path']} |")
+    print()
+
+    print("---")
+    print()
+    print("step×phase の run 単位 drill-down は takt 同梱ツールで:")
+    print()
+    print("    node ~/.bun/install/global/node_modules/takt/dist/commands/analyze-usage.js <run dir>/logs")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="takt run のトークン消費を横断集計する")
+    parser.add_argument("roots", nargs="*", default=None, help=f"走査ルート (default: {' '.join(DEFAULT_ROOTS)})")
+    parser.add_argument("--days", type=int, default=None, help="直近 N 日の run のみ集計")
+    parser.add_argument("--top", type=int, default=10, help="top run の表示件数 (default: 10)")
+    parser.add_argument("--json", action="store_true", help="markdown の代わりに JSON を出力")
+    args = parser.parse_args()
+
+    roots = args.roots or DEFAULT_ROOTS
+    cutoff = None
+    if args.days is not None:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
+
+    runs = []
+    for run_dir in find_run_dirs(roots):
+        run = load_run(run_dir)
+        if run is None:
+            continue
+        if cutoff and run["start_time"]:
+            try:
+                started = datetime.fromisoformat(run["start_time"].replace("Z", "+00:00"))
+            except ValueError:
+                started = None
+            if started and started < cutoff:
+                continue
+        runs.append(run)
+
+    agg = aggregate(runs, args.top)
+
+    if args.json:
+        out = {
+            "roots": roots,
+            "days": args.days,
+            "runs_measured": agg["runs_measured"],
+            "runs_unmeasured": agg["runs_unmeasured"],
+            "grand": dict(agg["grand"]),
+            "by_workflow": {k: dict(v) for k, v in agg["by_workflow"].items()},
+            "by_phase": {k: dict(v) for k, v in agg["by_phase"].items()},
+            "by_step": {k: dict(v) for k, v in agg["by_step"].items()},
+            "by_day": {k: dict(v) for k, v in agg["by_day"].items()},
+            "top_runs": agg["top_runs"],
+        }
+        json.dump(out, sys.stdout, ensure_ascii=False, indent=2)
+        print()
+    else:
+        print_markdown(agg, roots, args.days)
+
+
+if __name__ == "__main__":
+    main()
