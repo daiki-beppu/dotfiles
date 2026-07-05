@@ -71,6 +71,8 @@ step を実行する「役割・視点」。YAML 形式。
 | `task-decomposition` | タスク分解の指針 |
 | `terraform` | Terraform 規約 |
 
+上記は builtin。これに加えカスタム policy として `pre-review-checklist`（提出前セルフ監査 8 項目、`lite` workflow の implement / review で使用。実体は dotfiles の `config/.takt/facets/policies/`）を持つ。
+
 ## knowledge（13 件）
 
 ドメイン知識・方法論。Markdown。
@@ -111,7 +113,7 @@ step 実行時に AI に渡される具体的指示。Markdown。カテゴリ別
 
 | 名前 | 用途 |
 |------|------|
-| `test-design` | テスト設計（builtin。`default` / `default-mini` では未使用、`backend-cqrs` 系などで使用） |
+| `test-design` | テスト設計（builtin。`default` / `lite` では未使用、`backend-cqrs` 系などで使用） |
 | `test-design-review` | テスト設計レビュー（builtin。同上） |
 | `write-tests-first` | テストファースト実装（write_tests / write_tests_fix） |
 | `review-test` | テスト実装レビュー |
