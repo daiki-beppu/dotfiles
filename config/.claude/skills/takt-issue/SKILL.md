@@ -325,7 +325,11 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
    gh pr list --head "<branch>" --json number -q '.[0].number'
 
 2. CI 監視（takt-issue スキル Step 5-C 相当）
-   gh pr checks <PR#> --watch --interval 30 > /tmp/ci_pr<PR#>.log 2>&1 を run_in_background で直接投げ(wrapper 不要)、exit の自動再呼び出しで完了を待つ。
+   待機前に gh pr view <PR#> --json mergeable,mergeStateStatus を確認し、CONFLICTING/DIRTY なら
+   worktree で base を merge/rebase してコンフリクトを解消してから進む（CI 監視より優先）。
+   mergeable なら gh pr checks <PR#> --watch --interval 30 > /tmp/ci_pr<PR#>.log 2>&1 を
+   run_in_background で直接投げ(wrapper 不要)、exit の自動再呼び出しで完了を待つ。
+   完了時も mergeable を再確認してから合否判定する（checks の合否だけで判断しない）。
    fail なら失敗ログを gh run view <run-id> --log-failed で取得し、
    worktree 内で修正 → commit → push → 再監視（最大 3 周。超過・スコープ外 fail は報告して停止）
 
@@ -379,6 +383,25 @@ PR 番号は 5-A の `pr_url` 末尾、または `gh pr list --head takt/<N>/<sl
 PR_NUMBER=<PR#>
 ```
 
+**待機を始める前に mergeable を確認する**。base とコンフリクトしていると checks がいつまでも揃わず `--watch` が完了しないまま伸び続けることがあるため、待つ前に弾いておく:
+
+```bash
+gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeable) mergeStateStatus=\(.mergeStateStatus)"'
+```
+
+`mergeable=CONFLICTING`（または `mergeStateStatus=DIRTY`）なら、CI 監視より先に worktree（`tasks.yaml` の `worktree_path`）でコンフリクトを解消する:
+
+```bash
+cd <worktree_path>
+git fetch origin <base_branch>
+git merge origin/<base_branch>   # 解消しづらい場合は git rebase origin/<base_branch>
+# コンフリクトマーカーを解消してから
+git add -A && git commit
+git push
+```
+
+解消後、上記の mergeable 確認を再実行し `MERGEABLE` になってから以下に進む。
+
 - **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUMBER} --watch --interval 30 > /tmp/ci_pr${PR_NUMBER}.log 2>&1` を投げる（timeout `2400000ms` = 40 分）。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否（0=green）。
 - **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を 1 コマンドにまとめて実行する。`kill -0` を 1 回だけ確認して次に進むと CI 完了前に後続を実行してしまう:
 
@@ -390,10 +413,15 @@ PR_NUMBER=<PR#>
 
   コマンドの実行環境に timeout があり `while` が途中で打ち切られた場合は、同じ `while kill -0 ...` の行だけ再実行すればよい（pid の生存確認のみでべき等）。
 
-完了したら（Claude Code は再呼び出し / Codex は上記コマンドの return）、`gh pr checks ${PR_NUMBER}` を 1 回だけ実行して結果を確認する:
+完了したら（Claude Code は再呼び出し / Codex は上記コマンドの return）、**まず mergeable を再確認してから** `gh pr checks ${PR_NUMBER}` で結果を確認する（待機中に base が進んでコンフリクトが発生していることがあるため、checks の合否だけで判断しない）:
 
-- **exit 0** → 全 check pass。Step 6 に進む
-- **exit ≠ 0** → 失敗 check を `gh pr checks ${PR_NUMBER}` で特定し、`gh run view <run-id> --log-failed` で失敗ログを取得。**worktree 内で修正**（repo root で修正すると main を汚染する）→ commit → push → CI 監視を再実行。fix ループは最大 3 周、超過したら人手判断を仰ぐ
+```bash
+gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeable) mergeStateStatus=\(.mergeStateStatus)"'
+```
+
+- **mergeable=CONFLICTING** → checks の結果に関わらず上記の解消手順を行い、push 後に CI 監視をやり直す
+- **mergeable=MERGEABLE** かつ **exit 0** → 全 check pass。Step 6 に進む
+- **mergeable=MERGEABLE** かつ **exit ≠ 0** → 失敗 check を `gh pr checks ${PR_NUMBER}` で特定し、`gh run view <run-id> --log-failed` で失敗ログを取得。**worktree 内で修正**（repo root で修正すると main を汚染する）→ commit → push → CI 監視を再実行。fix ループは最大 3 周、超過したら人手判断を仰ぐ
 - CI fail が対象 issue のスコープ外（flaky test 等）と判断した場合はユーザーに報告して判断を仰ぐ
 
 7 観点自動レビュー（takt-review スキル）は本 skill では起動しない。ユーザーが明示的に依頼した場合のみ別途起動する（takt-review は read-only。レビュー結果を報告するだけで fix はしない）。
@@ -471,6 +499,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - レビュー結果は `.takt/runs/<run_slug>/reports/` 配下のレポート（builtin の peer-review が出力する `architecture-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` 等）に出力される。完了後はこれを Read で読んでユーザーに表示する。PR URL は `tasks.yaml` の `pr_url` または `gh pr list --head takt/<N>/<slug>` で取得する
 - 既存 PR 積み上げ（5-B）は builtin に無いため skill 側で手動 merge → `gh pr edit` を実行する。新規 PR 作成（5-A）は postExecutionFlow に任せ、`gh pr create` を手動実行しない
 - PR 作成・積み上げ後は Step 5-C の CI 監視で green を確認してから完了とする。CI 監視は前景で `--watch` せず、`gh pr checks --watch` を wrapper なしで redirect 付き background 投げする（Claude Code は exit の自動再呼び出し / Codex は pid の `kill -0`）
+- CI 監視は checks の合否だけで判断しない。待機の前後で `gh pr view --json mergeable,mergeStateStatus` を確認し、`CONFLICTING`/`DIRTY` なら checks の結果に関わらずコンフリクト解消を優先する（base とコンフリクトしていると checks がいつまでも揃わず待機が伸び続けることがあるため）
 - CI fail 時は worktree 内で修正する（repo root で修正すると main を汚染する）。fix ループは最大 3 周、超過やスコープ外 fail（flaky 等）はユーザーに報告して判断を仰ぐ
 - 7 観点自動レビュー（takt-review スキル）は実行しない。ユーザーが明示的に依頼した場合のみ別途起動する
 - 現 issue のスコープ外の問題を見つけても worktree 内で直接修正しない。builtin の `default` / `default-mini` には spillover 自動起票がないので、スコープ外発見は必ず `issue` スキルで別 issue として起票し、次回の takt サイクルに回す（判断基準: 「PR タイトルが変わるか?」変わるならスコープ外）
