@@ -24,7 +24,7 @@ takt CLI を一切使わず、Claude Code のみで GitHub issue を実装し PR
 | worktree 置き場 | `$REPO_ROOT/.worktrees/<slug>/`(dotfiles CLAUDE.md 規約)。`.gitignore` に `.worktrees/` が無ければ追加 |
 | worktree の重複作成 | 作成前に `git worktree list` で確認。Codex / Claude Desktop 等が対象 issue 用に既に作成済みならそれを再利用し新規作成をスキップ |
 | main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` で `git pull --ff-only` |
-| CI 監視 | 前景で `--watch` を直接叩かない。background + poll、完了時 1 通知 |
+| CI 監視 | 前景で `--watch` を直接叩かない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げ。完了は Claude Code=自動再呼び出し / Codex=pid の `kill -0` |
 | fix ループ | 最大 3 周。超えたら人手判断を仰ぐ |
 | スコープ | PR 作成 → CI green まで。レビュー・マージ・worktree 削除はスコープ外 |
 
@@ -79,25 +79,18 @@ EOF
 
 PR は常に **draft** で作成する(CI 通過前にレビュアーへ通知を飛ばさないため)。CI green を確認した後、Step 6 で自動的に ready for review 化する。
 
-### 4. CI 監視(background + poll)
+### 4. CI 監視(background、poll しない)
 
-takt-review スキルと同じパターンを使う。前景で `--watch` しない。
+`gh pr checks <PR#> --watch` は CI 完了までブロックして exit する。takt-review Step 1 と同じく **wrapper スクリプトで包まず** redirect 付きで直接 background に投げる(前景で `--watch` しない。stdout はログに逃がす)。
 
 ```bash
 PR_NUM=<PR#>
-cat > /tmp/wait_ci_pr${PR_NUM}.sh <<EOF
-#!/usr/bin/env bash
-set -u
-cd <repo_root>
-echo "[wait_ci] start \$(date '+%H:%M:%S') PR=#${PR_NUM}"
-gh pr checks ${PR_NUM} --watch --interval 30
-EXIT=\$?
-echo "[wait_ci] DONE \$(date '+%H:%M:%S') exit=\$EXIT"
-exit \$EXIT
-EOF
 ```
 
-`bash /tmp/wait_ci_pr${PR_NUM}.sh` を `Bash` の `run_in_background: true` で起動する(timeout 目安 `2400000ms` = 40 分)。`chmod +x` は使わない(`Bash(chmod *)` が permission の ask ルールに該当し、毎回確認プロンプトが出るため。`bash` 経由の実行なら実行権限は不要)。ポーリング中は他作業に context を使ってよい(前景で sleep 待ちしない)。
+- **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green)。wrapper を作らないので `chmod` も不要。
+- **Codex / その他 CLI**: `nohup gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1 & echo $! > /tmp/ci_pr${PR_NUM}.pid` で投げ、`kill -0 $(cat /tmp/ci_pr${PR_NUM}.pid)` が false になったら完了。
+
+待機中は他作業に context を使ってよい(前景で sleep 待ちしない)。
 
 ### 5. 判定 → fix ループ(最大 3 周)
 
@@ -127,7 +120,7 @@ CI green を確認したら `gh pr ready <PR#>` で ready for review 化し、PR
 - worktree は `$REPO_ROOT/.worktrees/<slug>/` に作成し、`.gitignore` に `.worktrees/` が無ければ追加する
 - PR は常に `--draft` で作成し、本文に `Closes #<N>` を含める
 - CI green を確認したら `gh pr ready <PR#>` で自動的に ready for review 化する(ユーザー確認は不要)
-- CI 監視は前景で `--watch` しない。background 起動 + poll で完了時 1 通知を受ける
+- CI 監視は前景で `--watch` しない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げし、Claude Code は exit の自動再呼び出しで完了を受ける(poll しない)。Codex は pid の `kill -0` を粗い間隔で確認する
 - CI red 時は worktree 内で直接修正し、根本原因ベースで直す。fix ループは最大 3 周、超過したら人手判断を仰ぐ
 - CI fail がスコープ外(flaky 等)と判断した場合はユーザーに報告し判断を仰ぐ
 - CI green の確認と ready for review 化で完了とする。レビュー・マージ・worktree 削除は行わない
