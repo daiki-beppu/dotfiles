@@ -31,16 +31,7 @@
       "/Users/daikibeppu/01-dev/dotfiles"
     ]
   },
-  "autoMode": {
-    "allow": [
-      "$defaults",
-      "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30 > log 2>&1`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only checks with no side effects, used by the takt-issue/takt-review/issue-direct skills",
-      "Detaching a background monitor via `nohup <cmd> > log 2>&1 & echo $! > pidfile`, used by the same skills when the calling CLI has no exit-triggered auto-resume",
-      "`kill -0 <pid>` to check whether a previously recorded background process is still alive. Signal 0 only checks existence and does not terminate the process",
-      "Background `takt -q run > log 2>&1` (or `nohup`-wrapped) to execute takt workflows without blocking the foreground, per the takt-issue skill"
-    ]
-  },
-  "model": "claude-opus-4-6[1m]",
+  "model": "opus[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -122,5 +113,14 @@
   "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30 > log 2>&1`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only checks with no side effects, used by the takt-issue/takt-review/issue-direct skills",
+      "Detaching a background monitor via `nohup <cmd> > log 2>&1 & echo $! > pidfile`, used by the same skills when the calling CLI has no exit-triggered auto-resume",
+      "`kill -0 <pid>` to check whether a previously recorded background process is still alive. Signal 0 only checks existence and does not terminate the process",
+      "Background `takt -q run > log 2>&1` (or `nohup`-wrapped) to execute takt workflows without blocking the foreground, per the takt-issue skill"
+    ]
+  }
 }
