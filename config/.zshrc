@@ -66,7 +66,7 @@ npm-publish() {
 export BROWSER="$HOME/.local/bin/open-browser"
 
 # Vite+ bin (https://viteplus.dev)
-. "$HOME/.vite-plus/env"
+[ -f "$HOME/.vite-plus/env" ] && . "$HOME/.vite-plus/env"
 export PATH="$HOME/.local/bin:$PATH"
 
 # direnv hook
