@@ -1,14 +1,13 @@
 { pkgs, lib, ... }:
 
 let
-  dotfilesDir = "/Users/daikibeppu/01-dev/dotfiles/config";
+  dotfilesDir = "/Users/mba/01-dev/dotfiles/config";
 in
 {
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
     bun
-    nodejs_22
     xz
     cocoapods
     codex
@@ -46,18 +45,8 @@ in
 
     settings = {
       user.name = "daiki-beppu";
-      user.email = "d.beppu@allsmile.co.jp";
-      push.autoSetupRemote = true;
+      user.email = "beppu.engineer@gmail.com";
       init.defaultBranch = "main";
-      credential.helper = "store";
-      "credential \"https://github.com\"".helper = [
-        ""
-        "!/opt/homebrew/bin/gh auth git-credential"
-      ];
-      "credential \"https://gist.github.com\"".helper = [
-        ""
-        "!/opt/homebrew/bin/gh auth git-credential"
-      ];
     };
 
     ignores = [
@@ -136,9 +125,6 @@ in
     link_force "${dotfilesDir}/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
     link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
-
-    # WezTerm
-    link_force "${dotfilesDir}/.wezterm.lua" "$HOME/.wezterm.lua"
 
     # takt
     mkdir -p "$HOME/.takt"
