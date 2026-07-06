@@ -23,8 +23,8 @@
       ...
     }:
     let
-      username = "mba";
-      hostname = "mba";
+      username = "daikibeppu";
+      hostname = "MacBook-Pro-3";
       system = "aarch64-darwin";
     in
     {

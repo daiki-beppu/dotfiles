@@ -27,8 +27,8 @@
     ],
     "defaultMode": "plan",
     "additionalDirectories": [
-      "/Users/mba/.claude",
-      "/Users/mba/01-dev/dotfiles"
+      "/Users/daikibeppu/.claude",
+      "/Users/daikibeppu/01-dev/dotfiles"
     ]
   },
   "autoMode": {
@@ -89,7 +89,12 @@
     "claude-code-setup@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
-    "frontend-design@claude-plugins-official": true
+    "frontend-design@claude-plugins-official": true,
+    "allsmile-tools@allsmile-marketplace": true,
+    "superpowers@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "qodo-skills@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "openai-codex": {
