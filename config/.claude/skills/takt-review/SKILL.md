@@ -156,12 +156,21 @@ COMMENT
 
 `review-summary.md` の指摘事項に基づき、**worktree 内で直接コードを修正** する。
 
-1. `review-summary.md` の全文を読む:
+1. `review-summary.md` の全文と、7 個別レポートの指摘部分を読む:
 
 ```bash
 RUN_SLUG=$(ls -t .takt/runs/ | head -1)
-cat .takt/runs/${RUN_SLUG}/reports/*review-summary.md
+cat .takt/runs/${RUN_SLUG}/reports/review-summary.md
+# 個別レポート（各数 KB の Markdown。jsonl ログとは別物なので全文読んでよい）
+cat .takt/runs/${RUN_SLUG}/reports/{architecture,security,qa,testing,ai-antipattern,pure,coding}-review.md
 ```
+
+summary の指摘（new / persists）に加えて、個別レポートから次の 2 種を拾い、fix 対象リストに含める:
+
+- **今回修正するファイルと同じファイルへの警告・非ブロッキング指摘** — 次ラウンドで新規指摘に昇格しやすい（実測: 再 REJECT の 77% が前回と同じファイルへの新規指摘）
+- **改善提案のうち PR スコープ内で数分で対応できるもの** — スコープ外のものは対応せず、PR コメントで「対応しない理由」を 1 行ずつ明記する
+
+存在しないレポートがあっても続行してよい（`cat` の個別失敗は無視）。
 
 2. worktree 内でコードを修正（**必ず worktree で実行**。repo root で修正すると main を汚染する）:
 
@@ -187,7 +196,28 @@ cd <worktree_path>
 
 コミット前に `git diff` を読み、各 REJECT について「原因 → 修正 → 検証」が説明できる状態にする。WARNING/INFO も同じ根本原因に属するものは合わせて処理する。
 
-3. 修正をコミットして push:
+3. **自己監査（再レビュー前ゲート）**: レビュアーは「マージベースからの累積差分全体 +
+   関係箇所」を毎回再走査する。fix した行だけでなく、自分の fix を含めた累積差分全体を
+   レビュアーと同じ視点で監査してから再レビューに出す:
+
+   ```bash
+   # レビュアーが見るのと同じ差分を取る
+   git diff $(git merge-base origin/main HEAD)..HEAD
+   ```
+
+   - リポジトリに `.takt/facets/policies/pre-review-checklist.md` が存在する場合は、
+     その監査 8 項目（挙動⇔テスト 1:1、兄弟入口の貫通、ドキュメント突き合わせ等）を
+     累積差分全体に対して照合する。存在しないリポジトリでは次の最低限 4 点を照合する:
+     1. 変更した観測可能な挙動それぞれに対応するテストがあるか
+     2. 変更した契約（データ形式・config キー・API）が同責務の全入口に貫通しているか
+     3. 変更内容と矛盾するドキュメント・コメント・CHANGELOG の旧記述が残っていないか
+     4. fix で追加した catch / fallback が失敗を握りつぶしていないか
+   - fix によって未使用になったコード（import・引数・変数）が残っていないか累積差分を確認する
+   - リポジトリのテスト・lint を全実行して green を確認する（コマンドはリポジトリの
+     CLAUDE.md / package.json / pyproject.toml から特定する）
+   - 自己監査で見つけた問題は、この時点で fix に含める（再レビュー後に直す機会はない）
+
+4. 修正をコミットして push:
 
 ```bash
 git add -A
@@ -195,27 +225,31 @@ git commit -m "fix: address review findings"
 git push
 ```
 
-4. 修正内容を PR コメントに投稿:
+5. 修正内容を PR コメントに投稿:
 
 ```bash
 gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
 ## 🔧 fix
 
-review-summary の指摘事項に基づき、根本原因と同型箇所を確認して修正しました。
+### 指摘ごとの解消根拠
+| finding_id | 原因 | 修正（ファイル:行 / commit） | 検証 |
+|---|---|---|---|
+| SUM-NEW-... | (根本原因 1 文) | \`path/to/file.ts:42\` | (追加・更新したテスト名 or 実行した確認) |
 
-### 修正内容
-- (修正した内容をリスト)
+### 個別レポートの警告・改善提案への対応
+- 対応済み: (同一ファイルの警告で fix に含めたもの)
+- 対応しない: (改善提案のうちスコープ外としたもの — 理由を 1 行ずつ)
 
-### 根本原因・横展開
-- (主要な根本原因と、同型箇所を確認した範囲)
-
-### 検証
-- (実行した test / check / 手動確認)
+### 自己監査
+- 累積差分（merge-base 起点）に対するチェックリスト照合: (結果)
+- test / lint: (実行コマンドと結果)
 
 再レビューを 1 回だけ実行します。
 COMMENT
 )"
 ```
+
+表の finding_id は `review-summary.md` の表記をそのまま使うこと（`SUM-NEW-*` / `ARCH-*` / `PURE-*` などレビューごとに形式が異なるが、変換しない）。
 
 修正後、**Step 2 に戻って再レビューを 1 回だけ**実行する。再レビューでも REJECT なら、それ以上 fix せず人手判断を仰ぐ。
 
@@ -223,7 +257,8 @@ COMMENT
 
 - **fix は 1 回のみ**: REJECT → fix → 再レビューは 1 周だけ。再レビューでも REJECT ならループさせず、結果を報告して人手判断に回す
 - **`review-fix-takt-default` は使わない**: takt 起動オーバーヘッドと Codex トークン消費の回避のため、fix は worktree 内で直接実行する
-- **review ログは全文読まない**: `tail -80` で末尾のみ。`review-summary.md` だけ全文読んでよい
+- **review ログ（jsonl / trace.md）は全文読まない**: `tail -80` で末尾のみ。
+  `reports/` 配下の Markdown（summary + 7 個別レポート）は各数 KB なので全文読んでよい
 - **worktree で修正**: repo root で修正すると main を汚染する。必ず worktree 内で `cd` してから編集
 - **takt -q の位置**: `-q` はトップレベル option。`takt -q -t ...` の順で指定
 - **レビューの takt ログ**: `.takt/runs/**/logs/*.jsonl` と `trace.md` は全文表示しない。`wc` / `du` / `tail -80` で絞る
