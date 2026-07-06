@@ -122,6 +122,9 @@ in
     mkdir -p "$HOME/.local/bin"
     link_force "${dotfilesDir}/.local/bin/open-browser" "$HOME/.local/bin/open-browser"
 
+    # takt トークン消費の横断集計
+    link_force "${dotfilesDir}/.local/bin/takt-usage-report" "$HOME/.local/bin/takt-usage-report"
+
     # zsh-abbr
     mkdir -p "$HOME/.config/zsh-abbr"
     link_force "${dotfilesDir}/.config/zsh-abbr/user-abbreviations" "$HOME/.config/zsh-abbr/user-abbreviations"
