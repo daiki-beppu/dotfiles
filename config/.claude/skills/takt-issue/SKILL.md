@@ -159,6 +159,8 @@ PR 作成は takt CLI 本体の `postExecutionFlow` が workflow 完了後に自
 
 `default` / `lite` のいずれも **スコープ外発見の自動 issue 起票機能を持たない**。スコープ外を見つけたときは Step 7 の人手手順（`issue` スキルへの引き渡し）で対応する旨をユーザーに伝える。
 
+`takt:manual` ラベルの issue はこの skill のスコープ外（workflow を回さず手動実装が妥当と `issue` skill が判定済み）。起動せずその旨をユーザーに伝える。
+
 #### provider 構成 (参考)
 
 グローバル config では `planner` / `coder` persona を Codex（gpt-5）、その他（`supervisor` / reviewer 系）を Claude に振るハイブリッド構成。ただし `lite` workflow は全 step で `provider: codex` を明示しており、review も Codex で走る。詳細と rate limit リカバリ手順は `~/.claude/skills/takt/SKILL.md` の `persona_providers` セクションを参照。
@@ -352,7 +354,7 @@ data["tasks"].select { |t| t["status"] == "completed" }.each { |t|
 skill 側ですべきことは:
 
 1. `tasks.yaml` の status が `completed` になったら `tasks.yaml` の `pr_url` フィールドを読む。空のときは `gh pr list --head takt/<N>/<slug> --json url -q '.[0].url'` で取得
-2. PR URL と `.takt/runs/<run_slug>/reports/` 配下のレビューレポート（builtin の peer-review が出力する `architecture-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` など）を Read で読んでレビュー結果をユーザーに表示
+2. PR URL と `.takt/runs/<run_slug>/reports/` 配下のレビューレポート（builtin の peer-review が出力する `architect-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` など）を Read で読んでレビュー結果をユーザーに表示
 3. `status: failed` で workflow 自体が落ちている場合は失敗ログを確認し、`fix` step でリカバリ済みか、人手介入が必要かを判断
 4. PR 作成自体が失敗（auth エラー等）した場合は `tasks.yaml` の `prFailed: true` で検出できる。その時は手動で `gh pr create` するか、`/commit-commands:commit-push-pr` を親 repo で叩いてリカバリ
 
@@ -500,7 +502,7 @@ takt の実行中・完了後にスコープ外の問題に気付いたら、**w
 - `takt run` は stdout をログにリダイレクトして background 起動し、前景で stdout を読まない。Claude Code は `run_in_background: true` で `takt -q run > log 2>&1` を直接投げる（`nohup`/`&` 不要）。Codex は `nohup ... &` で detach し pid を控える
 - 完了検知に別 wait スクリプト・エージェント側の 30s 進捗ループ・`ScheduleWakeup`・`Monitor` を作らない。`takt -q run` は全 task 消化後に exit するので、Claude Code は exit の自動再呼び出しを待ち（poll しない）、Codex は `while kill -0 "$(cat pidfile)" 2>/dev/null; do sleep 30; done` を 1 コマンドとして実行しプロセス終了までブロックする。禁止されるのは「エージェントが複数ターンに分けて `kill -0` を再チェックする」進捗ループであり、1 コマンド内で完結する `while` ループは該当しない（`kill -0` を 1 回だけ見て次に進んではならない）
 - `.takt/runs/**/logs/*.jsonl` と `trace.md` は全文表示しない。必要時は `wc` / `du` / `jq` / `tail -80` で絞る
-- レビュー結果の所在は workflow で異なる。`default` は `.takt/runs/<run_slug>/reports/` 配下のレポート（peer-review が出力する `architecture-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` 等）、`lite` は review step の structured_output（verdict / feedback。run ログに記録され、レポートファイルは出力されない）。完了後は入手できる方を読んでユーザーに表示する。PR URL は `tasks.yaml` の `pr_url` または `gh pr list --head takt/<N>/<slug>` で取得する
+- レビュー結果の所在は workflow で異なる。`default` は `.takt/runs/<run_slug>/reports/` 配下のレポート（peer-review が出力する `architect-review.md` / `ai-antipattern-review.md` / `supervisor-validation.md` 等）、`lite` は review step の structured_output（verdict / feedback。run ログに記録され、レポートファイルは出力されない）。完了後は入手できる方を読んでユーザーに表示する。PR URL は `tasks.yaml` の `pr_url` または `gh pr list --head takt/<N>/<slug>` で取得する
 - 既存 PR 積み上げ（5-B）は builtin に無いため skill 側で手動 merge → `gh pr edit` を実行する。新規 PR 作成（5-A）は postExecutionFlow に任せ、`gh pr create` を手動実行しない
 - PR 作成・積み上げ後は Step 5-C の CI 監視で green を確認してから完了とする。CI 監視は前景で `--watch` せず、`gh pr checks --watch` を wrapper なしで redirect 付き background 投げする（Claude Code は exit の自動再呼び出し / Codex は pid の `kill -0`）
 - CI 監視は checks の合否だけで判断しない。待機の前後で `gh pr view --json mergeable,mergeStateStatus` を確認し、`CONFLICTING`/`DIRTY` なら checks の結果に関わらずコンフリクト解消を優先する（base とコンフリクトしていると checks がいつまでも揃わず待機が伸び続けることがあるため）

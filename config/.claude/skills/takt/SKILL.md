@@ -255,14 +255,17 @@ persona_providers:
   coder:
     provider: codex
     model: gpt-5
+  planner:
+    provider: codex
+    model: gpt-5
 ```
 
 - キーは YAML 上はスネークケース（`persona_providers` / `provider_options`）で書くが、
   takt 内部では camelCase に正規化される
 - persona 単位で上書きできるフィールドは `provider` / `model` / `provider_options`
-- 上の例は実装で最も動く `coder` persona（write_tests / implement / ai_fix / fix 等）
-  を Codex の `gpt-5` に振り、Claude Code Max のトークン枠を温存しつつ Codex 側の
-  デフォルトモデル変更の影響を受けない運用構成
+- 上の例は実装で最も動く `coder` persona（write_tests / implement / ai_fix / fix 等）と
+  プランニングの `planner` を Codex の `gpt-5` に振り、Claude Code Max のトークン枠を
+  レビュー・監督に温存しつつ Codex 側のデフォルトモデル変更の影響を受けない運用構成
 - reviewer 系 4 persona（requirements / testing / ai-antipattern / architecture）を
   Codex に振るなど他構成も可能。トークン消費とレビュー品質のバランスで使い分ける
 
