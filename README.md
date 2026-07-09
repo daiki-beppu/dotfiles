@@ -21,10 +21,11 @@ ln -sf ~/01-dev/dotfiles ~/.dotfiles
 
 # 4. 初回ビルド（nix-darwin + Home Manager + Homebrew cask 全て）
 cd ~/01-dev/dotfiles
-nix run nix-darwin -- switch --flake .#mba
+nix run nix-darwin -- switch --flake .
+# ホスト名が一致しない場合は .#mba / .#MacBook-Pro-3 を明示する
 
 # 5. 2回目以降
-sudo darwin-rebuild switch --flake ~/01-dev/dotfiles#mba
+sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 ```
 
 ## 管理構成
@@ -37,6 +38,8 @@ sudo darwin-rebuild switch --flake ~/01-dev/dotfiles#mba
 | **Nix (home.activation)** | シンボリンク管理 (.zshrc, .zprofile, .claude/*) |
 | **Homebrew (brews)** | nixpkgs にないツール (ni, proto, turso) |
 | **Homebrew (casks)** | GUI アプリ (Arc, Claude, Cursor, Figma 等) |
+
+対応ホスト: `mba` = MacBook Air（user `mba`）、`MacBook-Pro-3` = MacBook Pro（user `daikibeppu`）。
 
 ## ファイル構成
 
@@ -66,7 +69,7 @@ dotfiles/
 | CLI ツール追加 | `nix/packages.nix` の `home.packages` に追加 |
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
 | nixpkgs にないツール追加 | `flake.nix` の `brews` に追加 |
-| 変更を適用 | `sudo darwin-rebuild switch --flake ~/01-dev/dotfiles#mba` |
+| 変更を適用 | `sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
 | 全依存を最新化 | `nix flake update --flake ~/01-dev/dotfiles` |
 | ロールバック | `sudo darwin-rebuild switch --rollback` |
