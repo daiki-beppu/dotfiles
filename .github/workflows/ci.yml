@@ -8,17 +8,12 @@ on:
 jobs:
   nix-eval:
     name: Nix flake evaluation
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
       - name: Evaluate darwin configuration
-        run: |
-          nix eval .#darwinConfigurations --apply builtins.attrNames
-          for host in $(nix eval --raw .#darwinConfigurations --apply 'a: builtins.concatStringsSep " " (builtins.attrNames a)'); do
-            echo "evaluating $host"
-            nix eval ".#darwinConfigurations.\"$host\".system.drvPath"
-          done
+        run: bash scripts/check.sh nix-eval
 
   shellcheck:
     name: ShellCheck (severity=error)
@@ -27,9 +22,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Run shellcheck
-        run: |
-          shellcheck --severity=error \
-            config/.claude/hooks/*.sh \
-            config/.claude/statusline-command.sh \
-            config/.local/bin/open-browser
+      - name: Run shellcheck and link-manifest drift check
+        run: bash scripts/check.sh shellcheck links
