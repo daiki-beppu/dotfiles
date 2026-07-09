@@ -120,13 +120,10 @@
 
                   taps = [
                     "manaflow-ai/cmux"
-                    "libsql/sqld"
-                    "tursodatabase/tap"
                   ];
 
                   brews = [
                     "ni"
-                    "tursodatabase/tap/turso"
                   ];
 
                   casks = [

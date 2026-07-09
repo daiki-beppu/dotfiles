@@ -27,6 +27,8 @@ in
     tree
     unzip
     uv
+    sqld
+    turso-cli
     zsh-abbr
 
     # Python + youtube-channels 自動化に必要なパッケージ
