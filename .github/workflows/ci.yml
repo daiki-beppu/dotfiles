@@ -8,7 +8,7 @@ on:
 jobs:
   nix-eval:
     name: Nix flake evaluation
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@v16
