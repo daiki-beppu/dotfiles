@@ -66,19 +66,19 @@ brews = [
 パッケージの追加・削除・変更後は以下を実行して反映する:
 
 ```bash
-sudo darwin-rebuild switch --flake ~/01-dev/dotfiles#mba
+sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 ```
 
 **注意:** `sudo` が必要（nix-darwin はシステム設定を変更するため）。
 `nix` コマンドが `sudo` 環境で見つからない場合はフルパスを使う:
 
 ```bash
-sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/01-dev/dotfiles#mba
+sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/01-dev/dotfiles
 ```
 
 初回のみ `nix run nix-darwin --` 経由で実行する。2回目以降は `darwin-rebuild` が PATH に入る。
 
-**`#mba` について:** `#mba` は `flake.nix` 先頭の `hostname` 変数（`hostname = "mba"`）を指すフラグメントで、`darwinConfigurations.${hostname}` から生成される。個人 ID ではないので通常は触らない。この dotfiles をフォークして自分用にリネームする場合のみ、`flake.nix` の `hostname` と `username` を合わせて変更する。
+**マルチホスト構成について:** `--flake <path>` だけで、実行マシンの hostname に一致する `darwinConfigurations.<hostname>` が自動選択される。現在対応しているのは `mba`（MacBook Air / user `mba`）と `MacBook-Pro-3`（MacBook Pro / user `daikibeppu`）。新マシンを追加する場合は `flake.nix` の `hosts` attrset に 1 行追加するだけでよい。ホスト名が一致しない環境で試す場合のみ `.#mba` / `.#MacBook-Pro-3` のように明示する。
 
 ## 依存の更新
 

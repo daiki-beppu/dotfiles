@@ -27,8 +27,8 @@
     ],
     "defaultMode": "auto",
     "additionalDirectories": [
-      "/Users/mba/.claude",
-      "/Users/mba/01-dev/dotfiles"
+      "~/.claude",
+      "~/01-dev/dotfiles"
     ]
   },
   "model": "claude-opus-4-6[1M]",

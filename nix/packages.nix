@@ -1,7 +1,12 @@
-{ pkgs, lib, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 let
-  dotfilesDir = "/Users/mba/01-dev/dotfiles/config";
+  dotfilesDir = "${config.home.homeDirectory}/01-dev/dotfiles/config";
 in
 {
   home.stateVersion = "24.11";
@@ -24,19 +29,21 @@ in
     uv
 
     # Python + youtube-channels 自動化に必要なパッケージ
-    (python314.withPackages (ps: with ps; [
-      google-api-python-client
-      google-auth-oauthlib
-      google-auth-httplib2
-      pandas
-      matplotlib
-      seaborn
-      schedule
-      python-dotenv
-      pillow
-      google-genai
-      pyyaml
-    ]))
+    (python314.withPackages (
+      ps: with ps; [
+        google-api-python-client
+        google-auth-oauthlib
+        google-auth-httplib2
+        pandas
+        matplotlib
+        seaborn
+        schedule
+        python-dotenv
+        pillow
+        google-genai
+        pyyaml
+      ]
+    ))
   ];
 
   # ── git 設定 ──
@@ -96,7 +103,10 @@ in
       local src="$1"
       local dst="$2"
       if [ ! -L "$dst" ] || [ "$(readlink "$dst")" != "$src" ]; then
-        rm -rf "$dst"
+        if [ -e "$dst" ] || [ -L "$dst" ]; then
+          mv "$dst" "$dst.backup-before-link"
+          echo "Backed up: $dst -> $dst.backup-before-link"
+        fi
         ln -sf "$src" "$dst"
         echo "Linked: $dst -> $src"
       fi
