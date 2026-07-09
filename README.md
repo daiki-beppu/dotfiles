@@ -21,7 +21,7 @@ ln -sf ~/01-dev/dotfiles ~/.dotfiles
 
 # 4. 初回ビルド（nix-darwin + Home Manager + Homebrew cask 全て）
 cd ~/01-dev/dotfiles
-nix run nix-darwin -- switch --flake .
+sudo nix run nix-darwin -- switch --flake .
 # ホスト名が一致しない場合は .#mba / .#MacBook-Pro-3 を明示する
 
 # 5. 2回目以降
@@ -35,7 +35,7 @@ sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 | **Nix (nixpkgs)** | CLI ツール (git, gh, ffmpeg, uv 等) |
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
-| **Nix (home.activation)** | シンボリンク管理 (.zshrc, .zprofile, .claude/*) |
+| **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .wezterm.lua, .local/bin/*, .config/zsh-abbr/*, .claude/*, .takt/*) |
 | **Homebrew (brews)** | nixpkgs にないツール (ni, turso) |
 | **Homebrew (casks)** | GUI アプリ (Arc, Claude, Cursor, Figma 等) |
 
@@ -50,16 +50,29 @@ dotfiles/
 ├── nix/
 │   └── packages.nix       # Home Manager 設定（パッケージ, git, シンボリンク）
 ├── config/
+│   ├── .zshenv            # zsh 環境変数（全セッション共通）
 │   ├── .zshrc             # zsh 設定
 │   ├── .zprofile          # PATH 設定（Homebrew + Nix）
+│   ├── .wezterm.lua       # WezTerm 設定
+│   ├── .local/bin/        # open-browser, takt-usage-report
+│   ├── .config/
+│   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
+│   ├── .takt/             # takt 設定
+│   │   ├── config.yaml
+│   │   ├── workflows/
+│   │   ├── facets/
+│   │   └── schemas/
 │   └── .claude/           # Claude Code 設定
 │       ├── CLAUDE.md
 │       ├── settings.json
+│       ├── skills-lock.json
 │       ├── statusline-command.sh
 │       ├── hooks/
 │       └── skills/
-└── docs/
-    └── manual-setup.md    # 手動設定ガイド
+├── docs/
+│   ├── manual-setup.md         # 手動設定ガイド
+│   └── takt-usage-baseline.md  # takt 運用状況のベースライン記録
+└── plans/                 # improve 監査に基づく実装プラン群
 ```
 
 ## よくある操作
