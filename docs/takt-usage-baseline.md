@@ -71,10 +71,19 @@ claude は `cache_read/cache_creation_input_tokens` が input 外数のため in
 
 実測に基づく概算効果。上から効果が大きい順:
 
-1. **レビュー観点統合(review-lite 自作)** — gather → 統合レビュアー 1〜2 体 → supervise の
-   カスタム workflow を `config/.takt/workflows/` に作成し、takt-review skill をこれに切替。
+1. **レビュー観点統合(review-lite 自作)** — **実施済み（Plan 015、2026-07-09）**。
+   gather → 統合レビュアー 1〜2 体 → supervise のカスタム workflow
+   `config/.takt/workflows/review-lite.yaml` を作成し、`takt-review` skill のデフォルトを
+   これに切替した（対応表・設計判断は同ファイル冒頭コメントを参照。7 観点版
+   `review-takt-default` は明示依頼時のみ、`takt-review` skill の「フル版」節に温存）。
    観点数と同時に phase2_report 回数(= report ファイル数)も減るため、
-   1 run 1,600万 → 400〜500万の見込み(**約 -70%**)。7 観点版は明示依頼時のみ。
+   1 run 1,600万 → 400〜500万の見込み(**約 -70%**)。
+
+   **効果測定プロトコル**: `review-lite` を使ったレビュー run が 5〜10 回たまった時点で
+   `takt-usage-report --days 7` を実行し、レビュー系 run の平均トークンを baseline
+   （1 run 約 1,600 万）と比較する。目標は 500 万以下。未達なら統合構成（policy/instruction
+   の組み合わせ）を見直す。本 Plan では実 PR での試運転は実施していない（トークン消費を
+   伴うためユーザー運用に委ねた）。
 2. **レビュー頻度の運用ルール化** — 265 run 中どれだけが必要だったか。対象 PR を
    絞るだけで比例削減(現状レビューが全体の 83%)。
 3. **default-mini の draft 内 1st レビュー除去** — `ai-antipattern-review-1st` + `ai-antipattern-fix`
