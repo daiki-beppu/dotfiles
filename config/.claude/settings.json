@@ -25,13 +25,13 @@
       "Bash(mv *)",
       "Bash(chmod *)"
     ],
-    "defaultMode": "plan",
+    "defaultMode": "auto",
     "additionalDirectories": [
       "/Users/mba/.claude",
       "/Users/mba/01-dev/dotfiles"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-opus-4-6[1M]",
   "hooks": {
     "SessionStart": [
       {
@@ -70,7 +70,7 @@
   },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": false,
     "learning-output-style@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
     "qodo-skills@claude-plugins-official": false,
@@ -109,6 +109,26 @@
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
+  "skillOverrides": {
+    "agents-sdk": "off",
+    "aqua-improve": "off",
+    "caveman": "off",
+    "cloudflare-email-service": "off",
+    "diagnose": "off",
+    "durable-objects": "off",
+    "evidence-record": "off",
+    "handoff": "off",
+    "prototype": "off",
+    "release-tweet": "off",
+    "sandbox-sdk": "off",
+    "to-prd": "off",
+    "triage": "off",
+    "turnstile-spin": "off",
+    "web-perf": "off",
+    "workers-best-practices": "off",
+    "wrangler": "off",
+    "zoom-out": "off"
+  },
   "autoMode": {
     "allow": [
       "$defaults",
