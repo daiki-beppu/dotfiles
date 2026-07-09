@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 3dbd88e..HEAD -- flake.nix nix/ config/.claude/hooks/ config/.claude/statusline-command.sh config/.local/bin/ .github/`
+> **Drift check (run first)**: `git diff --stat eaeb7ff..HEAD -- flake.nix nix/ config/.claude/hooks/ config/.claude/statusline-command.sh config/.local/bin/ .github/`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +19,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: dx
-- **Planned at**: commit `3dbd88e`, 2026-07-09
+- **Planned at**: commit `eaeb7ff`, 2026-07-09（`3dbd88e` 版から hostname 変更を反映して更新）
 
 ## Why this matters
 
@@ -28,13 +28,13 @@
 ## Current state
 
 - `.github/` — 存在しない。`ls .github` → `No such file or directory`（2026-07-09 確認済み）。
-- `flake.nix` — リポジトリのエントリポイント。現在 `darwinConfigurations."MacBook-Pro-3"` の 1 構成のみ定義:
+- `flake.nix` — リポジトリのエントリポイント。現在 `darwinConfigurations."mba"` の 1 構成のみ定義:
 
 ```nix
 # flake.nix:25-31
     let
-      username = "daikibeppu";
-      hostname = "MacBook-Pro-3";
+      username = "mba";
+      hostname = "mba";
       system = "aarch64-darwin";
     in
     {
@@ -48,14 +48,15 @@
   - `config/.claude/hooks/sync-codex-skills.sh`
   - `config/.claude/statusline-command.sh`
   - `config/.local/bin/open-browser`
+- `config/.local/bin/takt-usage-report` は Python スクリプト（shebang `#!/usr/bin/env python3`）であり shellcheck の対象外。
 - shellcheck の現状（2026-07-09、shellcheck 0.11.0 で確認済み）: `--severity=error` では **6 本すべて指摘ゼロ（exit 0）**。`--severity=warning` では 2 ファイルに指摘あり。したがって CI ゲートは `--severity=error` で開始する（今日から green）。warning 対応はこの plan のスコープ外（Maintenance notes 参照）。
-- flake の評価は成功する（2026-07-09 確認済み）: `nix eval .#darwinConfigurations --apply builtins.attrNames` → `[ "MacBook-Pro-3" ]`。
+- flake の評価は成功する（2026-07-09、commit `eaeb7ff` で確認済み）: `nix eval .#darwinConfigurations --apply builtins.attrNames` → `[ "mba" ]`。
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| flake 評価（ローカル検証） | `nix eval .#darwinConfigurations."MacBook-Pro-3".system.drvPath` | `"/nix/store/....drv"` 形式の文字列が出力され exit 0 |
+| flake 評価（ローカル検証） | `nix eval .#darwinConfigurations."mba".system.drvPath` | `"/nix/store/....drv"` 形式の文字列が出力され exit 0（`options.json` に関する warning が 1 行出るのは既知・正常） |
 | shellcheck（ローカル検証） | `nix run nixpkgs#shellcheck -- --severity=error config/.claude/hooks/*.sh config/.claude/statusline-command.sh config/.local/bin/open-browser` | 出力なし、exit 0 |
 | workflow 構文検証 | `nix run nixpkgs#actionlint -- .github/workflows/ci.yml` | 出力なし、exit 0 |
 
@@ -134,7 +135,7 @@ jobs:
 
 ローカルで CI と同じコマンドを実行して green になることを確認:
 
-**Verify 1**: `nix eval .#darwinConfigurations."MacBook-Pro-3".system.drvPath` → `"/nix/store/....drv"` が出力され exit 0
+**Verify 1**: `nix eval .#darwinConfigurations."mba".system.drvPath` → `"/nix/store/....drv"` が出力され exit 0
 **Verify 2**: `nix run nixpkgs#shellcheck -- --severity=error config/.claude/hooks/*.sh config/.claude/statusline-command.sh config/.local/bin/open-browser` → 出力なし、exit 0
 
 ### Step 3: 否定テスト（ゲートが機能する証拠）
@@ -153,7 +154,7 @@ Machine-checkable. ALL must hold:
 
 - [ ] `.github/workflows/ci.yml` が存在する
 - [ ] `nix run nixpkgs#actionlint -- .github/workflows/ci.yml` が exit 0
-- [ ] `nix eval .#darwinConfigurations."MacBook-Pro-3".system.drvPath` が exit 0
+- [ ] `nix eval .#darwinConfigurations."mba".system.drvPath` が exit 0
 - [ ] `nix run nixpkgs#shellcheck -- --severity=error config/.claude/hooks/*.sh config/.claude/statusline-command.sh config/.local/bin/open-browser` が exit 0
 - [ ] `git status` で in-scope 外のファイルに変更がない
 - [ ] `plans/README.md` のステータス行を更新した
