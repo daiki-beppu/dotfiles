@@ -27,7 +27,11 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 `--keep-zshrc` 必須（インストーラに dotfiles 管理の .zshrc を上書きさせない）。
 
-## 4. アプリの初期設定
+## 4. Vite+ のインストール（任意）
+
+Nix 管理外。公式手順（https://viteplus.dev）でインストールすると `~/.vite-plus/env` が生成され、`.zshenv` がガード付きで自動的に読み込む。未インストールの状態でもシェルはエラーなく起動する。
+
+## 5. アプリの初期設定
 
 | アプリ | 設定内容 |
 |-------|---------|

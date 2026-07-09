@@ -45,9 +45,9 @@ precmd() {
 
   # タイトルを設定
   if [[ -n "$branch" ]]; then
-    print -Pn "\e]2;[${branch}][${dir}]\a"
+    print -n "\e]2;[${branch}][${dir}]\a"
   else
-    print -Pn "\e]2;[${dir}]\a"
+    print -n "\e]2;[${dir}]\a"
   fi
 }
 
@@ -75,10 +75,6 @@ npm-publish() {
 
 # ターミナルからの URL オープン時の振り分け（認証系 → Chrome、その他 → cmux）
 export BROWSER="$HOME/.local/bin/open-browser"
-
-# Vite+ bin (https://viteplus.dev)
-. "$HOME/.vite-plus/env"
-export PATH="$HOME/.local/bin:$PATH"
 
 # direnv hook
 eval "$(direnv hook zsh)"
