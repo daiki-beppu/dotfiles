@@ -61,6 +61,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/sync-codex-skills.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
