@@ -27,6 +27,7 @@ in
     tree
     unzip
     uv
+    zsh-abbr
 
     # Python + youtube-channels 自動化に必要なパッケージ
     (python314.withPackages (

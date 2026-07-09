@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 3dbd88e..HEAD -- config/.zshrc nix/packages.nix README.md docs/manual-setup.md`
+> **Drift check (run first)**: `git diff --stat 69c32b4..HEAD -- config/.zshrc nix/packages.nix README.md docs/manual-setup.md`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -19,11 +19,11 @@
 - **Risk**: LOW
 - **Depends on**: plans/002-multi-host-flake.md（`nix/packages.nix` を両 plan が触るため、コンフリクト回避で 002 を先に）
 - **Category**: bug
-- **Planned at**: commit `3dbd88e`, 2026-07-09
+- **Planned at**: commit `3dbd88e`, 2026-07-09（refreshed at `69c32b4`, 2026-07-09 — nodejs_22 の revert 消滅と行番号ずれを反映）
 
 ## Why this matters
 
-このリポジトリの存在意義は「新しい Mac を宣言的にセットアップできること」（README 冒頭）。しかし `.zshrc` は 2 つの未宣言依存を無条件 source しており、README 手順どおりにセットアップした新品マシンでは**インタラクティブシェルの起動が毎回エラーを吐く**: ① oh-my-zsh（どこからもインストールされず、manual-setup.md にも記載なし）② zsh-abbr（`/opt/homebrew/share/...` を source するが flake の `brews` に無い。現在のマシンでは過去の手動 `brew install` の残骸で動いているだけ — 2026-07-09 確認済み）。さらに README と manual-setup.md は **proto で Node.js を入れる手順**を案内するが、proto はどこからもインストールされず（flake の brews は `ni` と `turso` のみ）、しかも Nix が `nodejs_22` を提供済みなので手順自体が stale。
+このリポジトリの存在意義は「新しい Mac を宣言的にセットアップできること」（README 冒頭）。しかし `.zshrc` は 2 つの未宣言依存を無条件 source しており、README 手順どおりにセットアップした新品マシンでは**インタラクティブシェルの起動が毎回エラーを吐く**: ① oh-my-zsh（どこからもインストールされず、manual-setup.md にも記載なし）② zsh-abbr（`/opt/homebrew/share/...` を source するが flake の `brews` に無い。現在のマシンでは過去の手動 `brew install` の残骸で動いているだけ — 2026-07-09 確認済み）。さらに README と manual-setup.md は **proto で Node.js を入れる手順**を案内するが、proto はどこからもインストールされず（flake の brews は `ni` と `turso` のみ）、しかも Node.js は brews の `ni`（Homebrew formula）の依存として自動導入されるので手順自体が stale（2026-07-09 確認: `brew deps ni` に `node` が含まれ、実機の node は `/opt/homebrew/bin/node`。かつて `nix/packages.nix` にあった `nodejs_22` は commit `27f1e3e` の revert で消えており、Nix 側からは提供されていない）。
 
 ## Current state
 
@@ -49,7 +49,7 @@ source $ZSH/oh-my-zsh.sh
 source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
 ```
 
-- `flake.nix:121-124` — brews に zsh-abbr は無い:
+- `flake.nix:127-130` — brews に zsh-abbr は無い:
 
 ```nix
               brews = [
@@ -58,17 +58,19 @@ source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
               ];
 ```
 
-- `nix/packages.nix:9-25` — `home.packages` の CLI ツール群（アルファベット順。ここに `zsh-abbr` を追加する）。nixpkgs には `zsh-abbr` パッケージが存在する。
-- `README.md:38` — 「| **Homebrew (brews)** | nixpkgs にないツール (ni, proto, turso) |」← proto は実際には brews に無い
-- `docs/manual-setup.md:20-28` — 「## 3. proto で Node.js をインストール」節（`proto install node lts` 等）← proto はどこからもインストールされない。Node.js は `nix/packages.nix:10` の `nodejs_22` が提供済み
+- `nix/packages.nix:14-29` — `home.packages` の CLI ツール群（概ねアルファベット順だが `xz` が `bun` の直後にある等の例外あり。`uv` の直後に `zsh-abbr` を追加する）。nixpkgs には `zsh-abbr` パッケージが存在する。
+- `README.md:39` — 「| **Homebrew (brews)** | nixpkgs にないツール (ni, proto, turso) |」← proto は実際には brews に無い
+- `docs/manual-setup.md:20-28` — 「## 3. proto で Node.js をインストール」節（`proto install node lts` 等）← proto はどこからもインストールされない。Node.js は brews の `ni` が Homebrew 依存として導入する
 - リポジトリ方針（README「管理構成」表）: nixpkgs にあるものは Nix で、無いものだけ Homebrew で管理する。zsh-abbr は nixpkgs にあるので **Nix 管理を選ぶ**。
+- **注意（2026-07-09 判明）**: nixpkgs の zsh-abbr は unfree ライセンス（CC-BY-NC-SA-4.0 + Hippocratic License 3）のため、`flake.nix:49` の `allowUnfreePredicate`（現在 `[ "terraform" ]` のみ）に `"zsh-abbr"` を追加しないと評価が拒否される。terraform で既にある前例に従い allowlist 追加で対応する。
+- **注意（同上）**: パッケージの share パスは `share/zsh/zsh-abbr/zsh-abbr.zsh`（`share/zsh-abbr/...` ではない）。ビルド済み store path で確認済み。
 - home-manager は `useUserPackages = true`（`flake.nix:163`）なので、home.packages の share ファイルは `/etc/profiles/per-user/$USER/share/` 配下に現れる。
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| zsh-abbr が nixpkgs にあり share パスを持つ確認 | `nix build nixpkgs#zsh-abbr --no-link --print-out-paths` → `ls "$(nix build nixpkgs#zsh-abbr --no-link --print-out-paths)/share/zsh-abbr/"` | `zsh-abbr.zsh` が一覧に含まれる |
+| zsh-abbr の share パス確認（レジストリ nixpkgs は本 flake の config を見ないため env var で許可） | `out=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure nixpkgs#zsh-abbr --no-link --print-out-paths) && ls "$out/share/zsh/zsh-abbr/"` | `zsh-abbr.zsh` が一覧に含まれる |
 | flake 評価 | `nix eval '.#darwinConfigurations."mba".system.drvPath'`（002 未実施なら `"MacBook-Pro-3"`） | exit 0 |
 | zshrc 構文検査 | `zsh -n config/.zshrc` | 出力なし、exit 0 |
 
@@ -77,6 +79,7 @@ source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
 **In scope**（変更してよいファイル）:
 - `config/.zshrc`
 - `nix/packages.nix`（`home.packages` への 1 パッケージ追加のみ）
+- `flake.nix`（`allowUnfreePredicate` のリストへの `"zsh-abbr"` 1 語追加のみ）
 - `README.md`（brews の記述 1 箇所）
 - `docs/manual-setup.md`
 
@@ -96,9 +99,10 @@ source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
 
 ### Step 1: zsh-abbr を Nix 管理に追加する
 
-`nix/packages.nix` の `home.packages` リスト（アルファベット順を維持、`uv` の後）に `zsh-abbr` を追加。
+1. `flake.nix:49` の `allowUnfreePredicate` のリスト `[ "terraform" ]` を `[ "terraform" "zsh-abbr" ]` に変更（zsh-abbr は CC-BY-NC-SA-4.0 + HL3 の unfree。terraform と同じ前例踏襲）。
+2. `nix/packages.nix` の `home.packages` リストの `uv` の直後（python ブロックの前）に `zsh-abbr` を追加。
 
-**Verify**: `nix eval '.#darwinConfigurations."mba".system.drvPath'` → exit 0（Plan 002 未実施の環境では `"MacBook-Pro-3"` で代替）
+**Verify**: `nix eval '.#darwinConfigurations."mba".system.drvPath'` → exit 0（この評価が zsh-abbr を含むため、predicate が効いていなければここで unfree エラーになる）
 
 ### Step 2: .zshrc の zsh-abbr source をパス探索＋ガード付きにする
 
@@ -106,7 +110,7 @@ source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
 
 ```zsh
 # zsh-abbr（Nix 管理。旧 brew 環境のパスはフォールバック）
-for _abbr in "/etc/profiles/per-user/$USER/share/zsh-abbr/zsh-abbr.zsh" \
+for _abbr in "/etc/profiles/per-user/$USER/share/zsh/zsh-abbr/zsh-abbr.zsh" \
              "/opt/homebrew/share/zsh-abbr/zsh-abbr.zsh"; do
   if [ -f "$_abbr" ]; then
     source "$_abbr"
@@ -138,7 +142,7 @@ fi
 
 ### Step 4: manual-setup.md に oh-my-zsh 手順を追加し、proto 節を削除する
 
-- `docs/manual-setup.md:20-28` の「## 3. proto で Node.js をインストール」節を丸ごと削除（Node.js は Nix の `nodejs_22` が提供。proto はどこからもインストールされない）
+- `docs/manual-setup.md:20-28` の「## 3. proto で Node.js をインストール」節を丸ごと削除（Node.js は brews の `ni` が Homebrew 依存として導入する。proto はどこからもインストールされない）
 - 同じ位置に新しい節を追加:
 
 ```markdown
@@ -155,11 +159,11 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 - 後続節の番号を整合させる（現在の「## 4. アプリの初期設定」はそのまま 4 で維持できる）
 
-**Verify**: `rg -n 'proto' docs/manual-setup.md` → マッチなし（exit 1）。`rg -n 'keep-zshrc' docs/manual-setup.md` → 1 件
+**Verify**: `rg -n 'proto' docs/manual-setup.md` → マッチなし（exit 1）。`rg -n 'keep-zshrc' docs/manual-setup.md` → 2 件（インストールコマンドと説明行。追加する節自体が 2 回含む）
 
 ### Step 5: README の brews 記述から proto を外す
 
-`README.md:38` の「(ni, proto, turso)」→「(ni, turso)」。
+`README.md:39` の「(ni, proto, turso)」→「(ni, turso)」。
 
 **Verify**: `rg -n 'proto' README.md` → ヒットは `--proto '=https'`（curl フラグ、`README.md:13`）のみ
 
@@ -178,14 +182,15 @@ Machine-checkable. ALL must hold:
 - [ ] `rg -n 'source /opt/homebrew/share/zsh-abbr' config/.zshrc` がマッチなし（無条件 source の消滅）
 - [ ] `rg -n 'proto' docs/manual-setup.md` がマッチなし
 - [ ] flake 評価（Commands 表）が exit 0
-- [ ] `git status` で in-scope 4 ファイル以外に変更がない
+- [ ] `rg 'zsh-abbr' flake.nix` が allowUnfreePredicate の行にヒット
+- [ ] `git status` で in-scope 5 ファイル以外に変更がない
 - [ ] `plans/README.md` のステータス行を更新した
 
 ## STOP conditions
 
 Stop and report back (do not improvise) if:
 
-- `nix build nixpkgs#zsh-abbr` の出力に `share/zsh-abbr/zsh-abbr.zsh` が無い（Step 2 の Nix パスが成立しない — brews 方式への切替は設計判断なので報告）
+- zsh-abbr のビルド出力（Commands 表のコマンド）に `share/zsh/zsh-abbr/zsh-abbr.zsh` が無い（Step 2 の Nix パスが成立しない — brews 方式への切替は設計判断なので報告）
 - `nix/packages.nix` が Current state の抜粋から大きく変わっている（Plan 002 実施後は `dotfilesDir` が `config.home.homeDirectory` 由来になっているのは想定内。それ以外の構造変化は STOP）
 - `zsh -ic 'echo ok'` が現行マシンでエラーを出す（既存環境を壊した可能性）
 

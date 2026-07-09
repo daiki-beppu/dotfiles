@@ -17,15 +17,15 @@
    - システム設定 → キーボード → キーボードショートカット
    - Spotlight → 「Spotlight 検索を表示」のチェックを外す
 
-## 3. proto で Node.js をインストール
+## 3. oh-my-zsh のインストール
+
+`.zshrc` がテーマ（eastwood）と git plugin に使用。未インストールだとシェル起動時に警告が出る。
 
 ```bash
-# 最新の LTS をインストール
-proto install node lts
-
-# デフォルトバージョンを設定
-proto use node lts
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
 ```
+
+`--keep-zshrc` 必須（インストーラに dotfiles 管理の .zshrc を上書きさせない）。
 
 ## 4. アプリの初期設定
 

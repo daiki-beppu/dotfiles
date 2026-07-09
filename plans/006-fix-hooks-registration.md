@@ -7,7 +7,8 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 3dbd88e..HEAD -- config/.claude/settings.json config/.claude/hooks/`
+> **Drift check (run first)**: `git diff --stat 69c32b4..HEAD -- config/.claude/settings.json config/.claude/hooks/`
+> （3dbd88e→69c32b4 間の settings.json の差分は hooks キー外（Plan 002 由来）であることをレビュアーが確認済み）
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -19,7 +20,7 @@
 - **Risk**: LOW
 - **Depends on**: plans/002-multi-host-flake.md（settings.json を両 plan が触るためコンフリクト回避。002 を先に）
 - **Category**: bug
-- **Planned at**: commit `3dbd88e`, 2026-07-09
+- **Planned at**: commit `3dbd88e`, 2026-07-09（refreshed at `69c32b4`, 2026-07-09 — hooks キーの現状一致を再確認）
 
 ## Why this matters
 

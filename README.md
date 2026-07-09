@@ -36,7 +36,7 @@ sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (home.activation)** | シンボリンク管理 (.zshrc, .zprofile, .claude/*) |
-| **Homebrew (brews)** | nixpkgs にないツール (ni, proto, turso) |
+| **Homebrew (brews)** | nixpkgs にないツール (ni, turso) |
 | **Homebrew (casks)** | GUI アプリ (Arc, Claude, Cursor, Figma 等) |
 
 対応ホスト: `mba` = MacBook Air（user `mba`）、`MacBook-Pro-3` = MacBook Pro（user `daikibeppu`）。
