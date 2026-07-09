@@ -2,6 +2,7 @@
   pkgs,
   lib,
   config,
+  hostConfig,
   ...
 }:
 
@@ -47,7 +48,7 @@ in
         pyyaml
       ]
     ))
-  ];
+  ] ++ (hostConfig.extraPackages pkgs);
 
   # ── git 設定 ──
   programs.git = {
@@ -55,7 +56,7 @@ in
 
     settings = {
       user.name = "daiki-beppu";
-      user.email = "beppu.engineer@gmail.com";
+      user.email = hostConfig.gitEmail;
       init.defaultBranch = "main";
     };
 

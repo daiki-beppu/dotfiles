@@ -24,6 +24,11 @@
     }:
     let
       system = "aarch64-darwin";
+      # ホスト差分の注入点（3 つ）:
+      #   - gitEmail: home-manager 側の git user.email を上書き（未指定ならデフォルトの private email）
+      #   - extraPackages: pkgs -> [ ... ] 形式で home.packages に追加パッケージを足す
+      #   - extraModules: nix-darwin モジュールのリストを追加（casks / system.defaults のホスト分割等）
+      # PR #65 型の変更（ホスト固有のハードコード）は今後ここに入れる。
       hosts = {
         "MacBook-Pro-3" = {
           username = "daikibeppu";
@@ -34,7 +39,14 @@
       };
       mkDarwin =
         hostname:
-        { username }:
+        hostAttrs:
+        let
+          username = hostAttrs.username;
+          hostConfig = {
+            gitEmail = hostAttrs.gitEmail or "beppu.engineer@gmail.com";
+            extraPackages = hostAttrs.extraPackages or (pkgs: [ ]);
+          };
+        in
         nix-darwin.lib.darwinSystem {
           inherit system;
 
@@ -165,9 +177,10 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "backup";
+              home-manager.extraSpecialArgs = { inherit hostConfig; };
               home-manager.users.${username} = import ./nix/packages.nix;
             }
-          ];
+          ] ++ (hostAttrs.extraModules or [ ]);
         };
     in
     {
