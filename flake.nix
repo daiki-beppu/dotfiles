@@ -46,7 +46,7 @@
                 nix.enable = false;
 
                 # BSL ライセンスの terraform を個別許可（nixpkgs unfree 制限の回避）
-                nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "terraform" ];
+                nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "terraform" "zsh-abbr" ];
 
                 # システム設定
                 system.stateVersion = 5;

@@ -10,10 +10,21 @@ ZSH_THEME="eastwood"
 # Plugins
 plugins=(git)
 
-source $ZSH/oh-my-zsh.sh
+if [ -f "$ZSH/oh-my-zsh.sh" ]; then
+  source "$ZSH/oh-my-zsh.sh"
+else
+  echo "warning: oh-my-zsh 未インストール（docs/manual-setup.md 参照）" >&2
+fi
 
-# zsh-abbr
-source /opt/homebrew/share/zsh-abbr/zsh-abbr.zsh
+# zsh-abbr（Nix 管理。旧 brew 環境のパスはフォールバック）
+for _abbr in "/etc/profiles/per-user/$USER/share/zsh/zsh-abbr/zsh-abbr.zsh" \
+             "/opt/homebrew/share/zsh-abbr/zsh-abbr.zsh"; do
+  if [ -f "$_abbr" ]; then
+    source "$_abbr"
+    break
+  fi
+done
+unset _abbr
 
 # abbr: パイプや && の後でも展開可能にする
 ABBR_REGULAR_ABBREVIATION_GLOB_PREFIXES+=(
