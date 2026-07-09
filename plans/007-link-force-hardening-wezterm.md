@@ -188,7 +188,7 @@ Machine-checkable. ALL must hold:
 - [ ] `nix eval '.#darwinConfigurations."mba".system.drvPath'` が exit 0
 - [ ] `nix eval '.#darwinConfigurations."MacBook-Pro-3".system.drvPath'` が exit 0
 - [ ] `rg -c 'wezterm' nix/packages.nix` → 1 以上
-- [ ] `rg -c 'MISSING_SOURCES' nix/packages.nix` → 3（初期化・記録・集約チェック）
+- [ ] `rg -c 'MISSING_SOURCES' nix/packages.nix` → 4（初期化・記録・集約チェックの条件・エラーメッセージ）
 - [ ] シナリオテスト PASS 1〜5
 - [ ] `git status` で変更が `nix/packages.nix` のみ
 - [ ] `plans/README.md` の 007 行を更新
