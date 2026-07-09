@@ -100,13 +100,23 @@ in
   # home.activation で dotfiles リポジトリへ直接リンクする
   # これにより全ファイルが直接編集可能な状態を保てる
   home.activation.linkDotfiles = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    MISSING_SOURCES=""
     link_force() {
       local src="$1"
       local dst="$2"
+      if [ ! -e "$src" ]; then
+        echo "ERROR: link source missing: $src" >&2
+        MISSING_SOURCES="$MISSING_SOURCES $src"
+        return 0
+      fi
       if [ ! -L "$dst" ] || [ "$(readlink "$dst")" != "$src" ]; then
         if [ -e "$dst" ] || [ -L "$dst" ]; then
-          mv "$dst" "$dst.backup-before-link"
-          echo "Backed up: $dst -> $dst.backup-before-link"
+          local backup="$dst.backup-before-link"
+          if [ -e "$backup" ] || [ -L "$backup" ]; then
+            backup="$backup.$(date +%s)"
+          fi
+          mv "$dst" "$backup"
+          echo "Backed up: $dst -> $backup"
         fi
         ln -sf "$src" "$dst"
         echo "Linked: $dst -> $src"
@@ -117,6 +127,7 @@ in
     link_force "${dotfilesDir}/.zshenv" "$HOME/.zshenv"
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
+    link_force "${dotfilesDir}/.wezterm.lua" "$HOME/.wezterm.lua"
 
     # ブラウザ振り分けスクリプト
     mkdir -p "$HOME/.local/bin"
@@ -143,6 +154,11 @@ in
     link_force "${dotfilesDir}/.takt/workflows" "$HOME/.takt/workflows"
     link_force "${dotfilesDir}/.takt/facets" "$HOME/.takt/facets"
     link_force "${dotfilesDir}/.takt/schemas" "$HOME/.takt/schemas"
+
+    if [ -n "$MISSING_SOURCES" ]; then
+      echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2
+      exit 1
+    fi
   '';
 
   # ── takt CLI ──
