@@ -12,7 +12,7 @@ fi
 FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 
 case "$FILE_PATH" in
-  */config/.claude/skills/*) ;;
+  */.claude/skills/*) ;;
   *) exit 0 ;;
 esac
 
