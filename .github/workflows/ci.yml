@@ -22,5 +22,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Run shellcheck and link-manifest drift check
-        run: bash scripts/check.sh shellcheck links
+      - name: Run shellcheck, link-manifest drift, and skill/workflow contract checks
+        run: bash scripts/check.sh shellcheck links contracts
