@@ -56,7 +56,7 @@ check_shellcheck() {
     [ -f "$f" ] || continue
     local shebang
     shebang="$(head -c 100 "$f" 2>/dev/null | head -1)"
-    if printf '%s' "$shebang" | rg -q '^#!.*\b(ba)?sh\b'; then
+    if printf '%s' "$shebang" | grep -qE '^#!.*/(env[[:space:]]+)?(ba)?sh([[:space:]]|$)'; then
       local excluded=0
       local ex
       for ex in "${SHELLCHECK_EXCLUDE[@]:-}"; do
@@ -105,14 +105,14 @@ check_links() {
       echo "MISSING: nix/packages.nix references \${dotfilesDir}/$rel but config/$rel does not exist" >&2
       status=1
     fi
-  done < <(rg -o 'link_force "\$\{dotfilesDir\}/([^"]+)"' -r '$1' "$manifest")
+  done < <(sed -nE 's|^.*link_force "[$][{]dotfilesDir[}]/([^"]+)".*$|\1|p' "$manifest")
 
   echo "-- checking top-level config/ regular files are referenced in manifest (warning only) --"
   local f base
   for f in config/.[!.]*; do
     [ -f "$f" ] || continue
     base="$(basename "$f")"
-    if ! rg -q -- "$base" "$manifest"; then
+    if ! grep -qF -- "$base" "$manifest"; then
       echo "WARNING: config/$base is a top-level file not referenced in $manifest (possibly not deployed)" >&2
     fi
   done
@@ -164,7 +164,7 @@ check_contracts() {
   for f in "$workflows_dir"/*.yaml; do
     [ -f "$f" ] || continue
     base="$(basename "$f" .yaml)"
-    name="$(rg -No '^name: (.+)' -r '$1' "$f" | head -1)"
+    name="$(sed -nE 's/^name: (.+)$/\1/p' "$f" | head -1)"
     if [ -z "$name" ]; then
       echo "MISSING: $f has no top-level 'name:' field" >&2
       status=1
@@ -205,7 +205,7 @@ check_contracts() {
       /^#### workflow 判断基準/ { flag=1; next }
       flag && /^#{1,4} / { flag=0 }
       flag && /^\|/
-    ' config/.claude/skills/takt-issue/SKILL.md | rg -o '`([a-z0-9-]+)`' -r '$1')
+    ' config/.claude/skills/takt-issue/SKILL.md | grep -oE '`[a-z0-9-]+`' | tr -d '`')
 
   # 2. takt/SKILL.md "## Workflow" table (table rows only).
   while IFS= read -r n; do
@@ -214,16 +214,16 @@ check_contracts() {
       /^## Workflow$/ { flag=1; next }
       flag && /^#{1,2} / { flag=0 }
       flag && /^\|/
-    ' config/.claude/skills/takt/SKILL.md | rg -o '`([a-z0-9-]+)`' -r '$1')
+    ' config/.claude/skills/takt/SKILL.md | grep -oE '`[a-z0-9-]+`' | tr -d '`')
 
   # 3. `-w <name>` flags across all takt-family skill docs.
   while IFS= read -r n; do
     [ -n "$n" ] && referenced["$n"]=1
-  done < <(rg -oNIP -r '$1' -- '-w ([a-z0-9-]+)' \
+  done < <(grep -ohE -e '-w [a-z0-9-]+' \
       config/.claude/skills/takt-issue/SKILL.md \
       config/.claude/skills/takt-review/SKILL.md \
       config/.claude/skills/takt/SKILL.md \
-      config/.claude/skills/takt/references/*.md 2>/dev/null || true)
+      config/.claude/skills/takt/references/*.md 2>/dev/null | sed 's/^-w //' || true)
 
   echo "-- checking referenced workflow names resolve --"
   for n in "${!referenced[@]}"; do
@@ -234,23 +234,29 @@ check_contracts() {
   done
 
   echo "-- checking schema_ref resolves under $schemas_dir --"
-  local file sref
-  while IFS=: read -r file sref; do
-    [ -z "$sref" ] && continue
-    if [ ! -f "$schemas_dir/$sref.json" ]; then
-      echo "MISSING: $file references schema_ref '$sref' but $schemas_dir/$sref.json does not exist" >&2
-      status=1
-    fi
-  done < <(rg -No '^\s*schema_ref: ([a-z0-9-]+)\s*$' -r '$1' "$workflows_dir"/*.yaml)
+  local sref
+  for f in "$workflows_dir"/*.yaml; do
+    [ -f "$f" ] || continue
+    while IFS= read -r sref; do
+      [ -z "$sref" ] && continue
+      if [ ! -f "$schemas_dir/$sref.json" ]; then
+        echo "MISSING: $f references schema_ref '$sref' but $schemas_dir/$sref.json does not exist" >&2
+        status=1
+      fi
+    done < <(sed -nE 's/^[[:space:]]*schema_ref:[[:space:]]*([a-z0-9-]+)[[:space:]]*$/\1/p' "$f")
+  done
 
   echo "-- checking policy: references (warning only if unresolved -- may be builtin facets) --"
   local pol
-  while IFS=: read -r file pol; do
-    [ -z "$pol" ] && continue
-    if [ ! -f "$policies_dir/$pol.md" ]; then
-      echo "WARNING: $file references policy '$pol' with no local file at $policies_dir/$pol.md (assumed builtin facet)" >&2
-    fi
-  done < <(rg -No '^\s*policy: ([a-z0-9-]+)\s*$' -r '$1' "$workflows_dir"/*.yaml)
+  for f in "$workflows_dir"/*.yaml; do
+    [ -f "$f" ] || continue
+    while IFS= read -r pol; do
+      [ -z "$pol" ] && continue
+      if [ ! -f "$policies_dir/$pol.md" ]; then
+        echo "WARNING: $f references policy '$pol' with no local file at $policies_dir/$pol.md (assumed builtin facet)" >&2
+      fi
+    done < <(sed -nE 's/^[[:space:]]*policy:[[:space:]]*([a-z0-9-]+)[[:space:]]*$/\1/p' "$f")
+  done
 
   for f in "$workflows_dir"/*.yaml; do
     [ -f "$f" ] || continue
