@@ -26,6 +26,12 @@ steps:
     persona: coder
     provider: codex
     edit: true
+    # レビュー差し戻しで再実行するたびに、coder の推論性能を段階的に上げる。
+    promotion:
+      - at: 2
+        model: gpt-5.6-terra
+      - at: 3
+        model: gpt-5.6-sol
     pass_previous_response: true
     policy: pre-review-checklist
     instruction: |

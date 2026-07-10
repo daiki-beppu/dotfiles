@@ -4,17 +4,50 @@
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
 # 構成方針: Codex + Claude ハイブリッド
-# coder/planner は Codex の gpt-5、レビュー系・supervisor は Claude
+# planner は Sol、coder は Luna、レビュー系は Terra。supervisor は Claude。
 
 provider: claude
 
 persona_providers:
   coder:
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-luna
   planner:
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-sol
+  ai-antipattern-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  architecture-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  coding-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  cqrs-es-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  frontend-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  implementation-semantics-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  merge-readiness-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  qa-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  security-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  terraform-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
+  testing-reviewer:
+    provider: codex
+    model: gpt-5.6-terra
 language: ja
 
 # ── 実行制御（並列駆動）──

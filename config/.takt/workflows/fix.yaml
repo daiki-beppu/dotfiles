@@ -16,7 +16,13 @@ steps:
     edit: true
     persona: coder
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-luna
+    # supervisor の再指摘で同じ coder step が再実行されたら段階的に昇格する。
+    promotion:
+      - at: 2
+        model: gpt-5.6-terra
+      - at: 3
+        model: gpt-5.6-sol
     policy:
       - coding
       - testing
@@ -77,7 +83,13 @@ steps:
     edit: true
     persona: coder
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-luna
+    # supervisor の再指摘で同じ coder step が再実行されたら段階的に昇格する。
+    promotion:
+      - at: 2
+        model: gpt-5.6-terra
+      - at: 3
+        model: gpt-5.6-sol
     policy:
       - coding
       - testing
