@@ -1,4 +1,4 @@
-# lite で完了できなかった task の再走用 workflow（中量級エスカレーション）。
+# lite の一段上の堅牢版 workflow（中量級）。主用途は lite で完了できなかった task の再走。
 #
 # 位置付け:
 # - lite が needs_fix ループの空転 / max_steps 超過 / ABORT で完了できなかった task を、
@@ -17,8 +17,8 @@
 #   1 回発生する（スコープゲートに必要な意図的コスト）。implement は rules 1 個で Phase 3 なし、
 #   review は structured_output + `when:` で Phase 3 をスキップ（lite と同じ設計）
 # - 全 step provider: codex を明示（lite と挙動・トークン特性を揃える）
-name: retry
-description: lite で完了できなかった task の再走用（失敗原因分析 → 再計画 → ゼロから再実装 → レビュー）。スコープ過大なら分割提案を出して停止
+name: solid
+description: lite の一段上の堅牢版。lite で完了できなかった task の再走が主用途（失敗原因分析 → 再計画 → ゼロから再実装 → レビュー）。スコープ過大なら分割提案を出して停止
 max_steps: 12
 initial_step: plan
 loop_monitors:
@@ -48,8 +48,9 @@ steps:
     edit: false
     knowledge: architecture
     instruction: |
-      この task は一度 lite workflow で実行され、完了できなかったものの再走である。
-      前回の部分実装は存在しない（worktree はまっさら）。ゼロから実装する前提で計画すること。
+      この task は多くの場合、一度 lite workflow で実行され完了できなかったものの再走である
+      （最初から堅牢に回すために直接投入されることもある）。いずれの場合も前回の部分実装は
+      存在しない（worktree はまっさら）。ゼロから実装する前提で計画すること。
 
       手順:
       1. **失敗原因の分析**: task 記述に含まれる前回失敗の情報（review feedback / 中断理由 /
@@ -114,8 +115,8 @@ steps:
       実装者の自己監査を鵜呑みにせず、ポリシー「提出前セルフ監査チェックリスト」の
       8 項目を diff と実コードに対して独立に照合すること。
 
-      この task は lite で一度失敗した再走であるため、追加で以下を確認する:
-      - plan.md の「失敗原因への対策」が実装に反映されているか（前回と同じ欠陥の再発は needs_fix）
+      plan.md に「失敗原因への対策」が含まれる場合（lite 失敗からの再走）、追加で以下を確認する:
+      - 失敗原因への対策が実装に反映されているか（前回と同じ欠陥の再発は needs_fix）
 
       - 各項目の判定に根拠（ファイル:行）を付ける
       - テストを自分で実行し、green を確認する（実装者の貼った出力を信用しない）
