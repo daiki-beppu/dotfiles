@@ -1,0 +1,162 @@
+# lite で完了できなかった task の再走用 workflow（中量級エスカレーション）。
+#
+# 位置付け:
+# - lite が needs_fix ループの空転 / max_steps 超過 / ABORT で完了できなかった task を、
+#   **まっさらな worktree でゼロから再実装**するための受け皿。lite の部分実装は引き継がない
+#   （前回の worktree は Claude Code 層が破棄する。この workflow は新規 task として enqueue される）
+# - 前回失敗の情報（review feedback / ABORT 理由 / 空転した論点）は task 記述に含めて渡す。
+#   plan step がそれを失敗原因として分析し、同じ轍を踏まない計画を立てる
+# - lite との差分（+α）:
+#   * plan が失敗原因分析とスコープ判定を行い、「そもそも 1 task で通る規模か」をゲートする。
+#     過大なら scope_review が vertical slice 分割案を出して ABORT（分割起票は Claude Code 層）
+#   * implement は最初から model: gpt-5.6-sol（lite は 3 巡目でようやく sol に昇格）
+#   * implement ⇄ review の空転を loop_monitor（threshold 3）で検知し scope_review に逃がす
+#
+# トークン設計メモ:
+# - plan は分岐が 2 つあり自然言語 condition のため Phase 3（状態判定）の LLM 呼び出しが
+#   1 回発生する（スコープゲートに必要な意図的コスト）。implement は rules 1 個で Phase 3 なし、
+#   review は structured_output + `when:` で Phase 3 をスキップ（lite と同じ設計）
+# - 全 step provider: codex を明示（lite と挙動・トークン特性を揃える）
+name: retry
+description: lite で完了できなかった task の再走用（失敗原因分析 → 再計画 → ゼロから再実装 → レビュー）。スコープ過大なら分割提案を出して停止
+max_steps: 12
+initial_step: plan
+loop_monitors:
+  - cycle:
+      - implement
+      - review
+    threshold: 3
+    judge:
+      persona: supervisor
+      instruction: |
+        implement と review の往復が続いている。直近の review feedback の推移を確認し、
+        ループが生産的かを判定すること。
+        - 指摘件数が減っている、または毎回異なる新しい指摘が解消されている → 健全（進捗あり）
+        - 同一指摘の繰り返し、修正のたびに別の箇所が壊れる、feedback と実装が噛み合っていない
+          → 非生産的（改善なし）
+      rules:
+        - condition: 健全（進捗あり）
+          next: implement
+        - condition: 非生産的（改善なし）
+          next: scope_review
+steps:
+  - name: plan
+    tags:
+      - plan
+    persona: planner
+    provider: codex
+    edit: false
+    knowledge: architecture
+    instruction: |
+      この task は一度 lite workflow で実行され、完了できなかったものの再走である。
+      前回の部分実装は存在しない（worktree はまっさら）。ゼロから実装する前提で計画すること。
+
+      手順:
+      1. **失敗原因の分析**: task 記述に含まれる前回失敗の情報（review feedback / 中断理由 /
+         空転した論点）を読み、lite が完了できなかった根本原因を特定する
+         （スコープ過大 / 要件曖昧 / 設計判断の不在 / テスト戦略の不備 など）。
+         失敗情報が task 記述に無い場合はその旨を明記し、issue の要件だけから計画する
+      2. **スコープ判定**: この task が 1 回の workflow 実行（AFK）で完遂可能な規模かを判定する。
+         以下のいずれかに該当する場合は分割が必要と判断する:
+         - 要件が 8 件以上ある
+         - 影響ファイルが 10 を超える
+         - 独立した機能領域が混ざっている
+         - 失敗原因の分析結果がスコープ過大を示している
+      3. **再計画**: 完遂可能な規模なら、失敗原因への対策を明示した実装計画を立てる。
+         前回の轍を踏まないための設計判断（前回曖昧だった点の確定、空転した論点への結論）を
+         計画に必ず含める
+
+      計画を plan.md にまとめる。分割が必要と判定した場合は、その根拠を plan.md に記載して
+      報告する（分割案の詳細化は次の step が行う）。
+    output_contracts:
+      report:
+        - name: plan.md
+          format: plan
+    rules:
+      - condition: "実装計画が確定し、1 回の workflow 実行で完遂可能な規模だと判定した"
+        next: implement
+      - condition: "task のスコープが過大で、分割が必要だと判定した"
+        next: scope_review
+  - name: implement
+    tags:
+      - coding
+    persona: coder
+    provider: codex
+    # lite の失敗を経た task なので、最初から最高段の推論性能で実装する
+    # （lite は promotion で 3 巡目にようやく sol。ここでは昇格を待たない）。
+    model: gpt-5.6-sol
+    edit: true
+    required_permission_mode: edit
+    pass_previous_response: true
+    policy: pre-review-checklist
+    instruction: |
+      計画（plan.md）に従って実装・テスト追加・テスト実行を完了させること。
+      計画に記載された「失敗原因への対策」を実装に反映し、対応箇所を報告に明記する。
+
+      完了後、ポリシー「提出前セルフ監査チェックリスト」の 8 項目を根拠（ファイル:行）付きで
+      自己監査すること。
+
+      - 項目 1 の受入条件充足表（要件の引用 / 対応する実装行 / 対応するテスト）を応答の末尾に必ず含める
+      - テストの実行コマンドと green の出力を応答に貼る
+      - 未充足・未照合の項目が残る場合は完了を宣言せず、解消してから完了すること
+    rules:
+      - condition: "実装・テスト・セルフ監査 8 項目の照合がすべて完了した"
+        next: review
+  - name: review
+    tags:
+      - review
+    persona: architecture-reviewer
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    policy: pre-review-checklist
+    instruction: |
+      実装者の自己監査を鵜呑みにせず、ポリシー「提出前セルフ監査チェックリスト」の
+      8 項目を diff と実コードに対して独立に照合すること。
+
+      この task は lite で一度失敗した再走であるため、追加で以下を確認する:
+      - plan.md の「失敗原因への対策」が実装に反映されているか（前回と同じ欠陥の再発は needs_fix）
+
+      - 各項目の判定に根拠（ファイル:行）を付ける
+      - テストを自分で実行し、green を確認する（実装者の貼った出力を信用しない）
+      - 8 項目すべて pass かつ失敗原因への対策が確認できた場合のみ verdict を approved にする
+      - 1 項目でも fail があれば needs_fix とし、feedback に「違反項目番号 / 該当箇所 / 必要な修正」を列挙する
+      - チェックリスト外の指摘は、issue スコープ内の欠陥に限り needs_fix の理由にできる。
+        スコープ外の発見は followups に記録し、verdict の判定材料にしない
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.review.verdict == "approved"
+        next: COMPLETE
+      - when: structured.review.verdict == "needs_fix"
+        next: implement
+      - when: "true"
+        next: ABORT
+  - name: scope_review
+    tags:
+      - plan
+    persona: planner
+    provider: codex
+    edit: false
+    instruction: |
+      この task はスコープ過大（plan の判定、または implement ⇄ review の空転）により
+      実装を続行できない。実装せず、スコープを見直すこと:
+
+      1. 空転からの遷移の場合は review feedback の履歴から、plan からの遷移の場合は
+         plan.md の分割根拠から、それぞれ「なぜ 1 task で通らないか」を分析する
+      2. worktree に残っている資産（実装・テスト）と未達の受入条件を棚卸しする
+      3. この issue を takt workflow で AFK 実装可能な vertical slice に分割する案を作成する。
+         各 slice には参照資料 / 影響ファイル / 要件 / スコープ外 / 推奨 workflow を付ける
+      4. 結果をレポート（scope-review.md）にまとめる
+
+      新しい実装・修正は行わない。分割起票は Claude Code 層が行う。
+    output_contracts:
+      report:
+        - name: scope-review.md
+          format: scope-review
+    rules:
+      - condition: "スコープ見直し提案の作成が完了した"
+        next: ABORT
+        appendix: |
+          スコープ過大のため実装を中断。
+          分割提案は reports/scope-review.md を参照。分割起票は Claude Code 層で行うこと。
