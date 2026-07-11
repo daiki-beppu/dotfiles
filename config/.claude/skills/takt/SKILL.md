@@ -382,20 +382,23 @@ output_contract が出力される。
 
 ## Workflow
 
-運用する workflow は builtin の `default` とカスタムの `lite`（dotfiles 管理、builtin `default-mini` の代替）・`fix`（dotfiles 管理、単一 coder + supervisor の軽量修正フロー）の 3 種類。詳細な step 構成・ループ制御・dotfiles 内のカスタマイズは
+運用する workflow は用途別のカスタム 6 種類（すべて dotfiles 管理、`~/.takt/workflows/` への symlink 経由で全プロジェクト共通）。詳細な step 構成・ループ制御・dotfiles 内のカスタマイズは
 **`references/workflows.md` に記載しているのでそちらを参照する**（step 数が多く、本文に
 全てを並べると読みにくくなるため分離）。
 
 | workflow | step 数（親） | max_steps | 用途 |
 |----------|--------------|-----------|------|
-| `default` | 4 | 30 | テスト先行開発。plan → write_tests → draft → peer-review（draft / peer-review は subworkflow で実装・並列レビューを内包） |
-| `lite` | 3 | 8 | 軽量版（custom、`~/.takt/workflows/lite.yaml`）。plan → implement → review。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減 |
-| `fix` | 3（最大） | 15 | 軽量修正フロー（custom、`~/.takt/workflows/fix.yaml`）。fix → supervise → （必要なら）fix_supervisor → supervise。plan・テスト先行・並列レビューは行わない |
+| `feature` | 6 + loop_monitor | 20 | 新規開発（builtin `default` の代替）。plan → test_design → test_design_review → write_tests（red 実証） → implement → 統合レビュー。空転時は scope_review が分割案を出して停止 |
+| `improve` | 3 | 8 | 機能改善（既存機能の挙動変更・拡張）。lite の骨格 + 挙動変更影響表による回帰保護 |
+| `diagnose-fix` | 3 | 10 | 原因不明バグ。diagnose（実コマンドの red/green がゲート）→ 原因確定 + 修正小規模のみ自動 fix → supervise。条件未達は診断レポートを残して停止 |
+| `docs` | 2 | 6 | ドキュメント・skill 改善。implement → review（読み取り系コマンド実行による整合実証が必須） |
+| `lite` | 3 | 8 | 軽量版。plan → implement → review。refactor / chore / 迷ったらこれ。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減 |
+| `fix` | 3（最大） | 15 | 軽量修正フロー。fix → supervise → （必要なら）fix_supervisor → supervise。原因特定済みの小さな修正向け。plan・テスト先行なし |
 
-`lite` は全 step `provider: codex` を明示し、implement / review に自己監査 8 項目の policy `pre-review-checklist` を注入する。`fix` も全 step `provider: codex` / `model: gpt-5` を明示し、原因特定済みの小さな修正を coder が 1 回で実装、supervisor が検証、指摘があれば `fix_supervisor` で再修正して supervisor に戻るだけの単純ループ。`default` の draft / peer-review subworkflow は implement → ai-antipattern-review → fix のループと、最後に並列レビューを回す。いずれも **スコープ外の自動 issue 起票は持たない**。builtin の `default-mini` は lite 採用に伴い運用から外した（takt 本体には残っているので指名すれば使える）。
+全カスタム workflow が全 step `provider: codex` を明示する。コード系（feature / improve / lite）は implement / review に自己監査 8 項目の policy `pre-review-checklist` を注入し、レビューは structured_output（schema `review-verdict`）+ `when:` 式で決定論的に分岐する。スコープ外発見は review / supervise / diagnose の structured_output `followups` に記録される（**スコープ外の自動 issue 起票は持たない**。起票は Claude Code 層が `issue` skill で行う）。builtin の `default` は feature 採用、`default-mini` は lite 採用に伴い運用から外した（takt 本体には残っているので指名すれば使える）。
 
 カスタム workflow を作るときは `takt workflow init` で雛形を起こすか、builtin を
-`takt eject default` でコピーして手を入れる。検証は `takt workflow doctor`。
+`takt eject <name>` でコピーして手を入れる。検証は `takt workflow doctor`。
 
 ## Catalog（facet）
 
