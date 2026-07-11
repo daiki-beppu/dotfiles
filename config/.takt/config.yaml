@@ -4,7 +4,7 @@
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
 # 構成方針: Codex + Claude ハイブリッド
-# planner は Sol、coder は Luna、レビュー系は Terra。supervisor は Claude。
+# planner / diagnoser は Sol、coder は Luna、レビュー系は Terra。supervisor は Claude。
 
 provider: claude
 
@@ -13,6 +13,11 @@ persona_providers:
     provider: codex
     model: gpt-5.6-luna
   planner:
+    provider: codex
+    model: gpt-5.6-sol
+  # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
+  # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
+  diagnoser:
     provider: codex
     model: gpt-5.6-sol
   ai-antipattern-reviewer:

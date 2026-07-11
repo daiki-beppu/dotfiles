@@ -1,0 +1,98 @@
+# 機能改善（既存機能の挙動変更・拡張）用 workflow。lite の骨格に回帰保護を注入したもの。
+#
+# 用途の境界:
+# - 新規機能（既存挙動を触らない）→ feature
+# - 既存機能の意図的な挙動変更・拡張 → improve（この workflow）
+# - バグ修正（意図した挙動に戻す）→ fix / diagnose-fix
+# - refactor / chore（挙動を変えない）→ lite
+# - 公開インターフェース・データスキーマの変更を伴う改善 → feature（改善でも影響範囲の
+#   再設計になるため）
+#
+# 設計メモ:
+# - 機能改善の固有リスクは「意図した挙動変更」と「意図しない回帰」の区別。plan の
+#   挙動変更影響表を唯一の照合基準とし、implement は「変わらない側の実証」、review は
+#   「影響表に載っていない diff の検出」を義務化する
+# - トークン設計は lite.yaml と同一（rules 1 個の step は Phase 3 なし、review は
+#   structured_output + `when:` で Phase 3 を完全にスキップ、全 step provider: codex を明示）
+name: improve
+description: 機能改善（既存機能の挙動変更・拡張）用 workflow。挙動変更影響表で意図した変更と回帰を区別する。interface 変更を伴う場合は feature を使う
+max_steps: 8
+steps:
+  - name: plan
+    persona: planner
+    provider: codex
+    edit: false
+    instruction: |
+      実装計画を立てること。機能改善タスクなので、計画には**挙動変更影響表**を必ず含める:
+
+      - **変わる挙動**: before / after を具体的に（入力と出力・観測可能な振る舞いのレベルで）
+      - **変わってはならない隣接挙動**: 変更箇所に隣接し、影響を受けうるが維持すべき挙動の列挙
+      - **影響を受ける呼び出し元・利用者**: 変更対象を参照しているコード・設定・ドキュメント
+
+      公開インターフェース・データスキーマの変更が必要だと判明した場合は、その旨を明記して
+      計画を止める（この workflow のスコープ外。feature で回すべきタスク）。
+    rules:
+      - condition: "実装計画（挙動変更影響表を含む）が確定した"
+        next: implement
+  - name: implement
+    persona: coder
+    provider: codex
+    edit: true
+    # レビュー差し戻しで再実行するたびに、coder の推論性能を段階的に上げる。
+    promotion:
+      - at: 2
+        model: gpt-5.6-terra
+      - at: 3
+        model: gpt-5.6-sol
+    pass_previous_response: true
+    policy: pre-review-checklist
+    instruction: |
+      計画に従って実装・テスト追加・テスト実行を完了させること。機能改善タスクなので、
+      以下を追加で義務とする:
+
+      - **変わる側の実証**: 挙動変更影響表の「変わる挙動」それぞれに対応するテストを
+        追加・更新し、green を確認する
+      - **変わらない側の実証**: 影響表の「変わってはならない隣接挙動」を担保する既存テストを
+        実行し、green の出力を貼る。既存テストがない隣接挙動は、**変更前に**現状の挙動を
+        固定するテストを先に書いてから変更に着手する
+
+      完了後、ポリシー「提出前セルフ監査チェックリスト」の 8 項目を根拠（ファイル:行）付きで
+      自己監査すること。
+
+      - 項目 1 の受入条件充足表と、**挙動変更影響表（最終版）**を応答の末尾に必ず含める
+      - 未充足・未照合の項目が残る場合は完了を宣言せず、解消してから完了すること
+    rules:
+      - condition: "実装・テスト・影響表両側の実証・セルフ監査 8 項目の照合がすべて完了した"
+        next: review
+  - name: review
+    persona: architecture-reviewer
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    policy: pre-review-checklist
+    instruction: |
+      実装者の自己監査を鵜呑みにせず、ポリシー「提出前セルフ監査チェックリスト」の
+      8 項目を diff と実コードに対して独立に照合すること。機能改善タスクなので、
+      以下を追加で照合する:
+
+      - **影響表との突合**: diff のすべての変更が挙動変更影響表（実装者の応答末尾）の
+        「変わる挙動」に対応づくか確認する。**影響表に載っていない挙動変更を含む diff が
+        あれば needs_fix**（スコープ逸脱、または無自覚な回帰の疑い）
+      - **隣接挙動の実証確認**: 「変わってはならない隣接挙動」のテスト実行証跡があるか、
+        テストのない隣接挙動に現状固定テストが追加されているか確認する
+
+      - 各項目の判定に根拠（ファイル:行）を付ける
+      - 8 項目 + 上記 2 点すべて pass の場合のみ verdict を approved にする
+      - 1 項目でも fail があれば needs_fix とし、feedback に「違反項目番号 / 該当箇所 /
+        必要な修正」を列挙する
+      - チェックリスト外の指摘は、issue スコープ内の欠陥に限り needs_fix の理由にできる。
+        スコープ外の発見は followups に構造化して記録し、verdict の判定材料にしない
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.review.verdict == "approved"
+        next: COMPLETE
+      - when: structured.review.verdict == "needs_fix"
+        next: implement
+      - when: "true"
+        next: ABORT
