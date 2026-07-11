@@ -1,0 +1,64 @@
+# ドキュメント・skill 改善用の最軽量 workflow。
+#
+# 設計メモ:
+# - plan step なし（issue 本文が実質の計画。ドキュメント変更に計画往復は過剰）
+# - pre-review-checklist（約 5KB、コード監査用 8 項目）は attach しない。docs には空振りする
+#   ため、docs 専用のチェックを instruction に直書きする
+# - 対象の多くは SKILL.md 等「LLM が従う実行仕様」なので、review は記述と実挙動の整合を
+#   **実行で実証**する（読み取り系コマンド・パス・シンボルの実在確認は必須）。ただし副作用の
+#   あるコマンド例は実行禁止（--help / dry-run / 実装ソースとの突合で確認）
+# - トークン設計は lite.yaml と同一（implement は rules 1 個で Phase 3 なし、review は
+#   structured_output + `when:` で Phase 3 を完全にスキップ、全 step provider: codex を明示）
+name: docs
+description: ドキュメント・skill 改善用の最軽量 workflow（実装 → 整合実証レビューの 2 step）。コード変更を伴うタスクは lite / improve を使う
+max_steps: 6
+steps:
+  - name: implement
+    persona: coder
+    provider: codex
+    edit: true
+    instruction: |
+      issue の要求に従ってドキュメントを変更すること。
+
+      - 記述する内容（パス・コマンド・シンボル・手順・仕様）は、必ず実コード・実ファイルで
+        裏取りしてから書く。記憶や推測で書かない
+      - 変更対象がドキュメントのみであることを確認する（コード変更が必要だと判明した場合は
+        完了を宣言せず、その旨を報告する）
+      - 応答の末尾に「記述 → 裏取りに使った確認方法（実行したコマンド / 参照したファイル:行）」
+        の対応を列挙する
+    rules:
+      - condition: "ドキュメント変更と裏取りの列挙が完了した"
+        next: review
+  - name: review
+    persona: coding-reviewer
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    instruction: |
+      実装者の裏取りを鵜呑みにせず、変更されたドキュメントを実コードと独立に照合すること。
+      docs 専用チェック:
+
+      1. **整合の実証（必須）**: 変更・追記された記述のうち、パス・シンボル・読み取り系コマンドは
+         **実際に実行して**実在・実挙動を確認する（rg / ls / cat / --help 等）。実行した
+         コマンドと出力を feedback の根拠として記録する
+      2. **副作用コマンドの扱い**: ドキュメント中の副作用のあるコマンド例（push / merge /
+         create / delete 等）は**実行しない**。--help・dry-run・実装ソースとの突合で
+         フラグ・引数・挙動の記述が正しいか確認する
+      3. **既存ドキュメントとの整合**: 変更内容が他のドキュメント・skill の記述と重複・矛盾
+         していないか確認する（rg で関連記述を検索する）
+      4. **要求範囲の過不足**: issue の要求をすべてカバーしているか、要求外の変更が
+         紛れ込んでいないか確認する
+
+      - 実在しないパス・実行できないコマンド・実挙動と異なる記述が 1 件でもあれば verdict を
+        needs_fix とし、feedback に「該当箇所 / 実際の挙動（実行出力）/ 必要な修正」を列挙する
+      - スコープ外の発見（隣接ドキュメントの既存の誤りなど）は followups に記録し、
+        verdict の判定材料にしない
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.review.verdict == "approved"
+        next: COMPLETE
+      - when: structured.review.verdict == "needs_fix"
+        next: implement
+      - when: "true"
+        next: ABORT

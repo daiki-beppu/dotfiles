@@ -1,0 +1,65 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["root_cause_confirmed", "inconclusive"],
+      "description": "root_cause_confirmed は「実コマンドで再現を確認し、原因を特定した」場合のみ。再現未確認・複数仮説が残る場合は inconclusive"
+    },
+    "fix_scope": {
+      "type": "string",
+      "enum": ["small", "large"],
+      "description": "small は fix_scope_reasons の 4 条件をすべて満たす場合のみ。1 つでも根拠を書けなければ large。verdict が inconclusive なら large"
+    },
+    "root_cause": {
+      "type": "string",
+      "description": "特定した原因（ファイル:行と発生機序）。inconclusive の場合は最有力仮説と、棄却済み仮説の一覧"
+    },
+    "repro_command": {
+      "type": "string",
+      "description": "実際に実行して red を確認した再現コマンド（実 CLI 実行・curl 等の実コマンド。テストコマンドのみは不可）。未確立なら空文字"
+    },
+    "evidence": {
+      "type": "string",
+      "description": "repro_command の実行出力（バグが観測できる箇所の抜粋）。未確立なら試行した内容"
+    },
+    "fix_policy": {
+      "type": "string",
+      "description": "修正方針（root_cause_confirmed の場合。変更対象ファイルと修正内容の要点）。inconclusive なら空文字"
+    },
+    "fix_scope_reasons": {
+      "type": "array",
+      "description": "small 判定 4 条件それぞれの判定と根拠。①原因箇所が 3 ファイル以下に閉じている ②公開インターフェース・データスキーマ・依存パッケージの変更が不要 ③受入条件が repro_command の green 化で完結する ④修正方針が 1 つに定まっている",
+      "items": {
+        "type": "object",
+        "properties": {
+          "condition": { "type": "string" },
+          "met": { "type": "boolean" },
+          "reason": { "type": "string", "description": "判定根拠（ファイル:行等の観測事実）" }
+        },
+        "required": ["condition", "met", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "report_md": {
+      "type": "string",
+      "description": "人間向け診断レポート（Markdown）。元 issue へのコメントとしてそのまま使える形式で、再現手順・原因・根拠・修正方針・推奨 workflow（fix/improve/feature）を含める。fix へ自動遷移する場合は要約のみで可"
+    },
+    "followups": {
+      "type": "array",
+      "description": "診断中に見つけたスコープ外の問題（verdict の判定材料にしない）。起票判断は Claude Code 層が行う。なければ空配列",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "evidence": { "type": "string", "description": "根拠（ファイル:行、観測した挙動）" }
+        },
+        "required": ["title", "description", "evidence"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["verdict", "fix_scope", "root_cause", "repro_command", "evidence", "fix_policy", "fix_scope_reasons", "report_md", "followups"],
+  "additionalProperties": false
+}

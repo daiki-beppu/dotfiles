@@ -11,7 +11,7 @@ description: |
 
 ## Overview
 
-会話コンテキストから GitHub issue を「要件定義書 = 仕様書」として新規作成するスキル。会話の流れから適切なタイトル・本文・ラベルの仮説を組み立てたうえで、**起票前に必ず grilling スタイルのインタビュー（1 問ずつ・推奨回答つき・事実は聞かず調べる）でユーザーと内容を合意**し、合意した内容から本文を生成してユーザー確認後に `gh issue create` で作成する。本文はカテゴリ別テンプレ（bug / feature / refactor / chore / docs）と takt 最適化された共通コア構造（参照資料 / 影響ファイル / 要件 / スコープ外）に沿って生成し、`takt-issue` skill 経由の自動実装でも入力品質が担保される形に揃える。さらに **takt 適用判断（`default` / `lite` / takt 不要）を起票時に前倒し**し、対応ラベル（`takt:*`）と本文末尾の `## 実装方針（takt）` セクションの両方に記録することで、後工程（`takt-issue`）の判断コストを削減する。ラベル選定はリポジトリ固有の運用パターン（過去 issue から学習）と既存ラベルの description マッチングを組み合わせる。
+会話コンテキストから GitHub issue を「要件定義書 = 仕様書」として新規作成するスキル。会話の流れから適切なタイトル・本文・ラベルの仮説を組み立てたうえで、**起票前に必ず grilling スタイルのインタビュー（1 問ずつ・推奨回答つき・事実は聞かず調べる）でユーザーと内容を合意**し、合意した内容から本文を生成してユーザー確認後に `gh issue create` で作成する。本文はカテゴリ別テンプレ（bug / feature / refactor / chore / docs）と takt 最適化された共通コア構造（参照資料 / 影響ファイル / 要件 / スコープ外）に沿って生成し、`takt-issue` skill 経由の自動実装でも入力品質が担保される形に揃える。さらに **takt 適用判断（`feature` / `improve` / `diagnose-fix` / `fix` / `docs` / `lite` / takt 不要）を起票時に前倒し**し、対応ラベル（`takt:*`）と本文末尾の `## 実装方針（takt）` セクションの両方に記録することで、後工程（`takt-issue`）の判断コストを削減する。ラベル選定はリポジトリ固有の運用パターン（過去 issue から学習）と既存ラベルの description マッチングを組み合わせる。
 
 ## When to Use
 
@@ -144,8 +144,8 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
 
    ## 実装方針（takt）
    （Step 6 の takt 適用判断を記録する。本文末尾に固定で置き、上記の既存セクション名・順序は変えない＝plan.md instruction の抽出に干渉させない。issue 起票時の暫定判断であり、実行時に takt-issue 側で最終確認する）
-   - workflow: lite   （`default` / `lite` / `不要（手動実装が妥当）` のいずれか）
-   - 理由: 単一ファイルの bugfix、既存テストで挙動確認できるため
+   - workflow: fix   （`feature` / `improve` / `diagnose-fix` / `docs` / `lite` / `fix` / `不要（手動実装が妥当）` のいずれか）
+   - 理由: 原因特定済みの単一ファイル bugfix、既存テストで挙動確認できるため
    ```
 
    カテゴリ固有セクション群（コア構造内の `<カテゴリ固有セクション群>` に挿入する）:
@@ -218,17 +218,21 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
 
 5. **タイトル生成**: 簡潔で具体的な日本語タイトル（50 文字以内目安）。**将来 PR タイトルに直結するため、スコープを正確に反映した表現にする**（takt-issue のスコープ外判定基準が「PR タイトルが変わるか」であるため）
 
-6. **takt 適用判断**: カテゴリ判定（Step 3）と `## 影響ファイル`（Step 4）を入力に、インタビュー（Step 2）で合意した方針を踏まえて以下の 3 値から 1 つを判定する。結果は Step 7 のラベルと Step 4 本文末尾の `## 実装方針（takt）` の両方に記録する。判定基準は `takt-issue` skill の workflow 判断表と整合させる（issue 側で前倒しした判断を takt-issue 側が踏襲する）
+6. **takt 適用判断**: カテゴリ判定（Step 3）と `## 影響ファイル`（Step 4）を入力に、インタビュー（Step 2）で合意した方針を踏まえて以下から 1 つを判定する。結果は Step 7 のラベル（`takt:<workflow>`。リポジトリに無ければ作成する）と Step 4 本文末尾の `## 実装方針（takt）` の両方に記録する。判定基準は `takt-issue` skill の workflow 判断表と整合させる（issue 側で前倒しした判断を takt-issue 側が踏襲する）
 
    | 判定 | ラベル | 基準 |
    | --- | --- | --- |
-   | `default` | `takt:default` | feature / enhancement、複数ファイル、テスト先行で進めたい中〜大規模タスク。セキュリティ・認証系やスキル横断の変更もこちら |
-   | `lite` | `takt:lite` | bug / chore / docs / 小規模 refactor、単一〜少数ファイル、既存テストで挙動確認できる軽量タスク。**迷ったらこれ（トークン節約優先）** |
+   | `feature` | `takt:feature` | 新規 feature（既存挙動を触らない）。セキュリティ・認証系、公開インターフェース・スキーマ変更を伴う変更もこちら |
+   | `improve` | `takt:improve` | 既存機能の意図的な挙動変更・拡張（interface 変更なし） |
+   | `diagnose-fix` | `takt:diagnose-fix` | 原因不明のバグ（再現手順・原因が issue に書けない） |
+   | `fix` | `takt:fix` | 原因特定済みの小さなバグ修正・軽微な指摘対応 |
+   | `docs` | `takt:docs` | ドキュメント・skill のみの変更（コード変更なし） |
+   | `lite` | `takt:lite` | refactor / chore、既存テストで挙動確認できる軽量タスク。**迷ったらこれ（トークン節約優先）** |
    | `不要（手動）` | `takt:manual` | 1 行修正・誤字・設定値 1 箇所変更など、workflow を回すまでもない極小タスク。手動実装が妥当 |
 
-   （旧 `takt:default-mini` ラベルは `takt:lite` として扱う。lite はカスタム workflow で builtin `default-mini` の代替）
+   （旧 `takt:default` ラベルは `takt:feature`、旧 `takt:default-mini` ラベルは `takt:lite` として扱う）
 
-   - `## 影響ファイル` が `(plan step で確定する)` で未確定の場合は、カテゴリベースで暫定判定し fail-safe 側（`default`）に寄せる
+   - `## 影響ファイル` が `(plan step で確定する)` で未確定の場合は、カテゴリベースで暫定判定し fail-safe 側（`feature`）に寄せる
    - 本文末尾の `## 実装方針（takt）` には判定した workflow と理由を記録する（`不要（手動）` の場合は workflow 行を「不要（手動実装が妥当）」とし理由を添える）
 
 7. **ラベル選定**: 以下の 3 ステップで候補を絞り込む
@@ -264,16 +268,20 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    - ユーザーが拒否したらラベルなしで作成（fallback）
 
    **Step D: takt 適用ラベル**（Step 6 の判定結果を反映）
-   - Step 6 の判定に対応する takt ラベルを 1 つ必ず候補に含める（`takt:default` / `takt:lite` / `takt:manual`）
+   - Step 6 の判定に対応する takt ラベルを 1 つ必ず候補に含める（`takt:feature` / `takt:improve` / `takt:diagnose-fix` / `takt:fix` / `takt:docs` / `takt:lite` / `takt:manual`）
    - 当該 takt ラベルが既存リポジトリに無い場合は、Step C と同じ新規ラベルフローに従う（プレビューに「新規ラベル候補」として提示 → ユーザー承認後に `gh label create` で作成）。推奨定義:
 
      | name | description | color |
      | --- | --- | --- |
-     | `takt:default` | takt default workflow で実装（テスト先行） | `5319e7` |
+     | `takt:feature` | takt feature workflow で実装（テスト設計レビュー付きテスト先行） | `5319e7` |
+     | `takt:improve` | takt improve workflow で実装（挙動変更影響表による回帰保護付き） | `0e8a16` |
+     | `takt:diagnose-fix` | takt diagnose-fix workflow で実装（診断 → 条件付き自動修正） | `d93f0b` |
+     | `takt:fix` | takt fix workflow で実装（原因特定済みの軽量修正） | `fbca04` |
+     | `takt:docs` | takt docs workflow で実装（ドキュメント・skill 改善） | `0075ca` |
      | `takt:lite` | takt lite workflow で実装（軽量版・自己監査チェックリスト付き） | `1d76db` |
      | `takt:manual` | takt 不要・手動実装が妥当 | `cfd3d7` |
 
-   - リポジトリに旧 `takt:default-mini` ラベルが残っている場合は `takt:lite` と同義として扱う（新規付与は `takt:lite` のみ）
+   - リポジトリに旧ラベルが残っている場合の読み替え: `takt:default` → `takt:feature`、`takt:default-mini` → `takt:lite`（新規付与は新ラベルのみ）
 
    - ユーザーが takt ラベルの作成を拒否した場合は、ラベルは付けず本文末尾の `## 実装方針（takt）` セクションだけ残す（判断自体は本文に残る fallback）
 
@@ -335,7 +343,7 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
 - **`## 要件` は番号付きリストで、各項目を「入力/操作 → 期待される観測結果」の検証可能な受入条件として書く**（完了条件のメイン。実装者が充足表で 1 対 1 照合できる粒度。「〜を改善する」「〜に対応する」のような観測結果のない要件を書かない）。**要件 8 件以上・影響ファイル 10 以上・独立機能領域 2 つ以上混在の場合は sub-issue 分割を提案する**（takt の 1 run で完結するスコープに収める）
 - **`## スコープ外` は省略不可**（takt-issue の別 issue 化判定の境界として機能する）
 - **コード・設定変更では `## 受け入れ基準` を必須とし、リポジトリから特定した lint / test / typecheck のうち該当するコマンドを品質ゲートとして記載する**。起票時には実行せず、実装完了時に成功することを受入条件にする。コマンドが存在しない・特定できない場合は推測せず理由を明記する
-- **takt 適用判断を 3 値（`takt:default` / `takt:lite` / `takt:manual`）で行い、対応ラベルと本文末尾 `## 実装方針（takt）` の両方に記録する**。判定基準は `takt-issue` skill の workflow 判断表と整合させ、迷ったら `lite`（トークン節約優先）。ただし影響範囲が未確定のときは `default` に寄せる（fail-safe）
+- **takt 適用判断（`takt:feature` / `takt:improve` / `takt:diagnose-fix` / `takt:fix` / `takt:docs` / `takt:lite` / `takt:manual`）を行い、対応ラベルと本文末尾 `## 実装方針（takt）` の両方に記録する**。判定基準は `takt-issue` skill の workflow 判断表と整合させ、迷ったら `lite`（トークン節約優先）。ただし影響範囲が未確定のときは `feature` に寄せる（fail-safe）
 - **`## 実装方針（takt）` は本文末尾に固定で置き、既存セクション（参照資料 / 影響ファイル / 要件 / スコープ外）の名前・順序は変えない**（plan.md instruction の抽出に干渉させない）
 - takt ラベルが既存リポジトリに無い場合は新規ラベルフロー（Step C / D）に従いユーザー承認後に作成。拒否時はラベルを付けず `## 実装方針（takt）` セクションのみ残す
 - タイトルは将来 PR タイトルに直結するため、スコープを正確に反映した簡潔な日本語にする（takt-issue のスコープ外判定基準が「PR タイトルが変わるか」のため）

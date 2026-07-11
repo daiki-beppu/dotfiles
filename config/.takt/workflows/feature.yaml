@@ -1,0 +1,295 @@
+# 新規 feature 用の厳格 workflow。builtin default の代替。
+#
+# 設計メモ:
+# - builtin default（plan → write_tests → draft → peer-review、subworkflow 内包、max_steps 30）
+#   との差分:
+#   * peer-review の 7 観点並列 → 統合レビュアー 1 体（review-lite で実証済みの型）。
+#     セキュリティ・認証系タスクもここに振るため、instruction にセキュリティ観点を明示的に含める
+#   * draft subworkflow（実装 ⇄ AI 自己レビュー）→ implement 1 step + 8 項目セルフ監査
+#     （lite で実績のある代替）
+#   * write_tests の前に test_design → test_design_review を追加（テスト設計の独立レビュー。
+#     「実装に都合のいいテストを後付けで書く」逸脱をテスト作成前に止める）
+# - implement ⇄ review の空転は loop_monitor（threshold 3）で検知し、scope_review が
+#   スコープ縮小・vertical slice 分割案をレポート化して ABORT する（COMPLETE にすると
+#   未完成の実装が PR 化されうる）。分割起票は Claude Code 層が to-issues / issue skill で行う
+# - レビュー系分岐は structured_output + `when:` で Phase 3（状態判定）をスキップ。
+#   plan / test_design / write_tests / implement は rules 1 個で Phase 3 の LLM 呼び出しなし
+#   （lite.yaml のトークン設計メモを参照）
+# - plan / test_design の成果物は report ファイル（plan.md / test-design.md）で永続化し、
+#   後続 step が Report Directory 経由で参照する（pass_previous_response は隣接 step しか
+#   繋げないため）
+name: feature
+description: 新規 feature 用の厳格 workflow（計画 → テスト設計 → 設計レビュー → テスト作成（red 実証） → 実装 → 統合レビュー）。空転時はスコープ見直し提案を出して停止
+workflow_config:
+  provider_options:
+    codex:
+      network_access: true
+    opencode:
+      network_access: true
+max_steps: 20
+initial_step: plan
+loop_monitors:
+  - cycle:
+      - implement
+      - review
+    threshold: 3
+    judge:
+      persona: supervisor
+      instruction: |
+        implement と review の往復が続いている。直近の review feedback の推移を確認し、
+        ループが生産的かを判定すること。
+        - 指摘件数が減っている、または毎回異なる新しい指摘が解消されている → 健全（進捗あり）
+        - 同一指摘の繰り返し、修正のたびに別の箇所が壊れる、feedback と実装が噛み合っていない
+          → 非生産的（改善なし）
+      rules:
+        - condition: 健全（進捗あり）
+          next: implement
+        - condition: 非生産的（改善なし）
+          next: scope_review
+steps:
+  - name: plan
+    tags:
+      - plan
+    persona: planner
+    provider: codex
+    edit: false
+    knowledge: architecture
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+          - WebSearch
+          - WebFetch
+    instruction: plan
+    output_contracts:
+      report:
+        - name: plan.md
+          format: plan
+    rules:
+      - condition: "実装計画が確定した"
+        next: test_design
+
+  - name: test_design
+    tags:
+      - plan
+      - test-planning
+    persona: planner
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    instruction: |
+      実装計画（plan.md）と issue の受入条件をもとに、テスト設計書を作成すること。
+      テストコードはまだ書かない。設計書には以下を必ず含める:
+
+      - 受入条件 → テストケース対応表（すべての受入条件に最低 1 ケース。対応しない受入条件を
+        残さない）
+      - 境界値・異常系・エッジケースの列挙（対象外としたものは理由を明記する）
+      - 各ケースのテスト層（unit / integration / e2e）と配置ファイル
+      - 既存テストとの関係（流用できるもの / 挙動変更で更新が必要なもの）
+    output_contracts:
+      report:
+        - name: test-design.md
+          format: test-design
+    rules:
+      - condition: "テスト設計書が完成した"
+        next: test_design_review
+
+  - name: test_design_review
+    tags:
+      - review
+    persona: coding-reviewer
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    instruction: |
+      テスト設計書（test-design.md）を issue の要件・実装計画（plan.md）と独立に照合すること:
+
+      - すべての受入条件がテストケースで捕捉されているか（対応表の抜け・形骸化したケースの検出）
+      - 境界値・異常系の「対象外」判断は妥当か（理由なき対象外は needs_fix）
+      - テスト層の選択は適切か（実連携で確認すべきものをモックで済ませていないか）
+      - ケースの期待結果は具体的で検証可能か（「正しく動く」のような曖昧な期待は needs_fix）
+
+      1 件でも問題があれば verdict を needs_fix とし、feedback に「該当ケース / 問題 / 必要な
+      修正」を列挙する。
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.test_design_review.verdict == "approved"
+        next: write_tests
+      - when: structured.test_design_review.verdict == "needs_fix"
+        next: test_design
+      - when: "true"
+        next: ABORT
+
+  - name: write_tests
+    tags:
+      - coding
+      - test-planning
+    persona: coder
+    provider: codex
+    edit: true
+    required_permission_mode: edit
+    policy:
+      - coding
+      - testing
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+          - WebSearch
+          - WebFetch
+    instruction: |
+      承認済みのテスト設計書（test-design.md）に従ってテストコードを作成すること。
+      プロダクションコードはまだ書かない。
+
+      - 設計書のすべてのケースを、設計書で指定された層・配置ファイルに実装する
+      - 作成したテストを実行し、**すべて期待通り red（対象機能が未実装のため失敗）である**
+        ことを確認する。実行コマンドと出力をそのまま応答に貼る
+      - 設計書にないテストを追加しない。設計書のケースを勝手に省略しない（実装不能な場合は
+        理由を明記して報告する）
+    rules:
+      - condition: "テスト作成が完了し、全ケースが期待通り red であることを実行出力で確認した"
+        next: implement
+
+  - name: implement
+    tags:
+      - coding
+    persona: coder
+    provider: codex
+    edit: true
+    required_permission_mode: edit
+    # レビュー差し戻しで再実行するたびに、coder の推論性能を段階的に上げる。
+    promotion:
+      - at: 2
+        model: gpt-5.6-terra
+      - at: 3
+        model: gpt-5.6-sol
+    pass_previous_response: true
+    policy: pre-review-checklist
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Edit
+          - Write
+          - Bash
+          - WebSearch
+          - WebFetch
+    instruction: |
+      実装計画（plan.md）に従って実装し、write_tests で作成された全テストを green にすること。
+      テストを実装に合わせて書き換えない（テストの誤りを発見した場合は理由を明記して報告し、
+      最小限の修正に留める）。
+
+      完了後、ポリシー「提出前セルフ監査チェックリスト」の 8 項目を根拠（ファイル:行）付きで
+      自己監査すること。
+
+      - 項目 1 の受入条件充足表（要件の引用 / 対応する実装行 / 対応するテスト）を応答の末尾に
+        必ず含める
+      - テストの実行コマンドと green の出力を応答に貼る
+      - 未充足・未照合の項目が残る場合は完了を宣言せず、解消してから完了すること
+    rules:
+      - condition: "実装・全テスト green・セルフ監査 8 項目の照合がすべて完了した"
+        next: review
+
+  - name: review
+    tags:
+      - review
+    persona: coding-reviewer
+    provider: codex
+    edit: false
+    pass_previous_response: true
+    policy:
+      - review
+      - qa
+      - coding
+      - ai-antipattern
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+          - WebSearch
+          - WebFetch
+    instruction: |
+      実装者の自己監査を鵜呑みにせず、以下の観点を 1 回のレビューで統合的に確認すること
+      （builtin default の peer-review 7 観点を 1 ステップに統合した版）。
+
+      **アタッチされた policy（review / qa / coding / ai-antipattern）がカバーする観点:**
+      - マージ可能性（要求充足、既存動作の破壊、要求外変更、テスト不足）
+      - コーディング品質（バグ、リグレッション、契約整合、DRY 違反、フォールバック濫用）
+      - QA・保守性（テスト戦略、カバレッジ、エラーハンドリング、技術的負債）
+      - AI アンチパターン（仮定の未検証、幻覚 API、配線忘れ、スコープクリープ、デッドコード）
+
+      **追加で確認する観点（要点のみ。専用 knowledge は attach していない）:**
+      - アーキテクチャ・設計: ファイル構成・モジュール分割の妥当性、レイヤー設計・依存方向、
+        既存パターンとの一貫性、呼び出しチェーン・配線漏れ
+      - **セキュリティ（この workflow はセキュリティ・認証系タスクの受け皿。必ず確認する）**:
+        攻撃者が制御できる入力とその到達範囲、信頼境界の破壊、認証・認可チェックの欠落・迂回、
+        秘密情報の露出（ログ・エラーメッセージ・コミット内容）
+      - テスト品質: test-design.md のケースが形骸化していないか、正常系だけでなく失敗経路の
+        検証があるか、モックのみで実連携確認としていないか
+
+      手順:
+      1. アタッチされた Policy の Source Path を Read ツールで開き、全文を取得する
+      2. issue の要件・plan.md・test-design.md・変更差分・テスト実行証跡を確認する
+      3. 実装者のセルフ監査 8 項目を diff と実コードに対して独立に照合する
+      4. テストを自分で実行し、green を確認する（実装者の貼った出力を信用しない）
+      5. 1 件でもブロッキング問題があれば verdict を needs_fix とし、feedback に
+         「該当箇所 / 問題 / 必要な修正」を列挙する
+      6. スコープ外の発見は followups に記録し、verdict の判定材料にしない
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.review.verdict == "approved"
+        next: COMPLETE
+      - when: structured.review.verdict == "needs_fix"
+        next: implement
+      - when: "true"
+        next: ABORT
+
+  - name: scope_review
+    tags:
+      - plan
+    persona: planner
+    provider: codex
+    edit: false
+    provider_options:
+      claude:
+        allowed_tools:
+          - Read
+          - Glob
+          - Grep
+          - Bash
+    instruction: |
+      implement ⇄ review のループが非生産的と判定された。実装を続行せず、スコープを見直すこと:
+
+      1. review feedback の履歴から空転の根本原因を分析する（スコープ過大 / 要件曖昧 /
+         設計判断の不在 など）
+      2. worktree に残っている資産（実装・テスト・設計書）と未達の受入条件を棚卸しする
+      3. この issue を takt workflow で AFK 実装可能な vertical slice に分割する案を作成する。
+         各 slice には参照資料 / 影響ファイル / 要件 / スコープ外 / 推奨 workflow を付ける
+      4. 結果をレポート（scope-review.md）にまとめる
+
+      新しい実装・修正は行わない。分割起票は Claude Code 層が行う。
+    output_contracts:
+      report:
+        - name: scope-review.md
+          format: scope-review
+    rules:
+      - condition: "スコープ見直し提案の作成が完了した"
+        next: ABORT
+        appendix: |
+          implement ⇄ review が空転したため実装を中断。
+          分割提案は reports/scope-review.md を参照。分割起票は Claude Code 層で行うこと。
