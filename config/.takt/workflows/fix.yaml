@@ -51,7 +51,7 @@ steps:
     edit: false
     persona: supervisor
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-terra
     policy: review
     provider_options:
       claude:

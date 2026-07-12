@@ -83,9 +83,8 @@ steps:
       - coding
     persona: coder
     provider: codex
-    # lite の失敗を経た task なので、最初から最高段の推論性能で実装する
-    # （lite は promotion で 3 巡目にようやく sol。ここでは昇格を待たない）。
-    model: gpt-5.6-sol
+    # 長時間の実装セッションで tool error 後に応答を返さないことがあるため、
+    # 既定の Codex モデルで実行する。検証・レビュー工程は workflow 側で維持する。
     edit: true
     required_permission_mode: edit
     pass_previous_response: true
@@ -100,6 +99,8 @@ steps:
       - 項目 1 の受入条件充足表（要件の引用 / 対応する実装行 / 対応するテスト）を応答の末尾に必ず含める
       - テストの実行コマンドと green の出力を応答に貼る
       - 未充足・未照合の項目が残る場合は完了を宣言せず、解消してから完了すること
+      - 依存不足・権限・ネットワーク等で検証できない場合、`rm -rf`、symlink 作成、
+        `pnpm add` 等で環境を自己修復しない。原因と未実行の検証を報告して終了すること
     rules:
       - condition: "実装・テスト・セルフ監査 8 項目の照合がすべて完了した"
         next: review
