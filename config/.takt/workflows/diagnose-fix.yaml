@@ -126,7 +126,7 @@ steps:
     edit: false
     persona: supervisor
     provider: codex
-    model: gpt-5
+    model: gpt-5.6-terra
     provider_options:
       claude:
         allowed_tools:
