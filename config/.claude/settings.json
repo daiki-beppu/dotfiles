@@ -128,7 +128,6 @@
     "cloudflare-email-service": "off",
     "diagnose": "off",
     "durable-objects": "off",
-    "evidence-record": "off",
     "handoff": "off",
     "prototype": "off",
     "release-tweet": "off",
