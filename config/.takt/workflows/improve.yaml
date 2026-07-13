@@ -16,7 +16,7 @@
 #   structured_output + `when:` で Phase 3 を完全にスキップ、全 step provider: codex を明示）
 name: improve
 description: 機能改善（既存機能の挙動変更・拡張）用 workflow。挙動変更影響表で意図した変更と回帰を区別する。interface 変更を伴う場合は feature を使う
-max_steps: 8
+max_steps: 12
 steps:
   - name: plan
     persona: planner
