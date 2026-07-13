@@ -24,6 +24,7 @@ in
     gh
     google-cloud-sdk
     gzip
+    herdr
     ripgrep
     terraform
     tmux
