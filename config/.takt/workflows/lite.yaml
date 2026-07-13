@@ -12,7 +12,7 @@
 # - 全 step provider: codex を明示（02-yt と挙動・トークン特性を揃える意図的な選択。
 #   グローバル config のハイブリッド方針（レビュー系 = Claude）はこの workflow には適用しない）
 name: lite
-max_steps: 8
+max_steps: 12
 steps:
   - name: plan
     persona: planner

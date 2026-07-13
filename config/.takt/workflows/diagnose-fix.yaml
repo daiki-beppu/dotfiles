@@ -24,7 +24,7 @@ workflow_config:
       network_access: true
     opencode:
       network_access: true
-max_steps: 10
+max_steps: 15
 initial_step: diagnose
 steps:
   - name: diagnose

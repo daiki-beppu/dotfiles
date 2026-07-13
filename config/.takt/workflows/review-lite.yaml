@@ -43,7 +43,7 @@
 #   方針（レビュー系 = Claude）はこの workflow には適用しない）
 # - 全 step edit: false（read-only レビュー。コード修正は takt-review skill 側が担当）
 name: review-lite
-max_steps: 4
+max_steps: 6
 steps:
   - name: review
     persona: coding-reviewer

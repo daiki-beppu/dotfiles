@@ -19,7 +19,7 @@
 # - 全 step provider: codex を明示（lite と挙動・トークン特性を揃える）
 name: solid
 description: lite の一段上の堅牢版。lite で完了できなかった task の再走が主用途（失敗原因分析 → 再計画 → ゼロから再実装 → レビュー）。スコープ過大なら分割提案を出して停止
-max_steps: 12
+max_steps: 18
 initial_step: plan
 loop_monitors:
   - cycle:
