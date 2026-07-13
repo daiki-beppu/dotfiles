@@ -18,7 +18,9 @@ in
     cocoapods
     codex
     direnv
-    ffmpeg-full
+    # nixpkgs 716c7a2 で依存の whisper-cpp が darwin でビルド不能（CoreML リンク時に
+    # ld がクラッシュ）なため、whisper フィルタを無効化（上流修正後に外す）
+    (ffmpeg-full.override { withWhisper = false; })
     gh
     google-cloud-sdk
     gzip
@@ -40,7 +42,11 @@ in
         google-auth-httplib2
         pandas
         matplotlib
-        seaborn
+        # nixpkgs 716c7a2 で test_ticklabels_overlap が darwin で失敗するため
+        # テストをスキップ（上流修正後に外す）
+        (seaborn.overridePythonAttrs (old: {
+          doCheck = false;
+        }))
         schedule
         python-dotenv
         pillow
