@@ -3,11 +3,11 @@
   "properties": {
     "verdict": {
       "type": "string",
-      "enum": ["approved", "needs_fix"]
+      "enum": ["approved", "needs_fix", "blocked"]
     },
     "feedback": {
       "type": "string",
-      "description": "needs_fix の場合の修正指示（具体的なファイル・箇所・理由）。approved なら空文字"
+      "description": "needs_fix の場合の修正指示（具体的なファイル・箇所・理由）、blocked の場合の検証不能となった環境障害の内容。approved なら空文字"
     },
     "followups": {
       "type": "array",
@@ -25,5 +25,16 @@
     }
   },
   "required": ["verdict", "feedback"],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "verdict": { "const": "blocked" } },
+        "required": ["verdict"]
+      },
+      "then": {
+        "properties": { "feedback": { "minLength": 1 } }
+      }
+    }
+  ],
   "additionalProperties": false
 }

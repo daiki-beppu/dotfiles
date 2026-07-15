@@ -10,9 +10,30 @@
 # - トークン設計は lite.yaml と同一（implement は rules 1 個で Phase 3 なし、review は
 #   structured_output + `when:` で Phase 3 を完全にスキップ、全 step provider: codex を明示）
 name: docs
-description: ドキュメント・skill 改善用の最軽量 workflow（実装 → 整合実証レビューの 2 step）。コード変更を伴うタスクは lite / improve を使う
+description: ドキュメント・skill 改善用の最軽量 workflow（preflight → 実装 → 整合実証レビューの 3 step）。コード変更を伴うタスクは lite / improve を使う
 max_steps: 9
+initial_step: preflight
 steps:
+  - name: preflight
+    persona: coder
+    provider: codex
+    edit: false
+    instruction: |
+      実装開始前の環境ゲートを実行すること。
+      `.takt/quality-gates/preflight.sh` が通常ファイルとして存在する場合だけ
+      `bash .takt/quality-gates/preflight.sh` を実行する。存在しない場合は approved、
+      feedback は空文字とする。実行時は終了ステータス 0 を approved、0 以外を blocked とし、
+      blocked の feedback にコマンド、終了ステータス、障害出力を記録する。
+      判定結果を review-verdict の structured output として返すこと。
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.preflight.verdict == "approved"
+        next: implement
+      - when: structured.preflight.verdict == "blocked"
+        next: ABORT
+      - when: "true"
+        next: ABORT
   - name: implement
     persona: coder
     provider: codex
@@ -51,6 +72,7 @@ steps:
 
       - 実在しないパス・実行できないコマンド・実挙動と異なる記述が 1 件でもあれば verdict を
         needs_fix とし、feedback に「該当箇所 / 実際の挙動（実行出力）/ 必要な修正」を列挙する
+      - daemon 不達・ネットワーク・権限など、コード変更では解消できない環境障害により検証できない場合は、needs_fix ではなく blocked とし、feedback に障害内容を記録する。通常の記述修正で解消可能な検証失敗は needs_fix とする
       - スコープ外の発見（隣接ドキュメントの既存の誤りなど）は followups に記録し、
         verdict の判定材料にしない
     structured_output:
@@ -60,5 +82,7 @@ steps:
         next: COMPLETE
       - when: structured.review.verdict == "needs_fix"
         next: implement
+      - when: structured.review.verdict == "blocked"
+        next: ABORT
       - when: "true"
         next: ABORT

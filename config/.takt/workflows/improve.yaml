@@ -17,7 +17,28 @@
 name: improve
 description: 機能改善（既存機能の挙動変更・拡張）用 workflow。挙動変更影響表で意図した変更と回帰を区別する。interface 変更を伴う場合は feature を使う
 max_steps: 12
+initial_step: preflight
 steps:
+  - name: preflight
+    persona: coder
+    provider: codex
+    edit: false
+    instruction: |
+      実装開始前の環境ゲートを実行すること。
+      `.takt/quality-gates/preflight.sh` が通常ファイルとして存在する場合だけ
+      `bash .takt/quality-gates/preflight.sh` を実行する。存在しない場合は approved、
+      feedback は空文字とする。実行時は終了ステータス 0 を approved、0 以外を blocked とし、
+      blocked の feedback にコマンド、終了ステータス、障害出力を記録する。
+      判定結果を review-verdict の structured output として返すこと。
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.preflight.verdict == "approved"
+        next: plan
+      - when: structured.preflight.verdict == "blocked"
+        next: ABORT
+      - when: "true"
+        next: ABORT
   - name: plan
     persona: planner
     provider: codex
@@ -82,6 +103,7 @@ steps:
         テストのない隣接挙動に現状固定テストが追加されているか確認する
 
       - 各項目の判定に根拠（ファイル:行）を付ける
+      - daemon 不達・ネットワーク・権限など、コード変更では解消できない環境障害により受け入れ基準を検証できない場合は、needs_fix ではなく blocked とし、feedback に障害内容を記録する。通常の実装不備やコード変更で解消可能な検証失敗は needs_fix とする
       - 8 項目 + 上記 2 点すべて pass の場合のみ verdict を approved にする
       - 1 項目でも fail があれば needs_fix とし、feedback に「違反項目番号 / 該当箇所 /
         必要な修正」を列挙する
@@ -94,5 +116,7 @@ steps:
         next: COMPLETE
       - when: structured.review.verdict == "needs_fix"
         next: implement
+      - when: structured.review.verdict == "blocked"
+        next: ABORT
       - when: "true"
         next: ABORT
