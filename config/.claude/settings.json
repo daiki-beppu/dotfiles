@@ -114,7 +114,6 @@
     "mode": "hold"
   },
   "autoMemoryEnabled": false,
-  "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
