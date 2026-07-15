@@ -1,11 +1,10 @@
 ---
 name: takt-review
 description: >-
-  takt の review-lite（統合レビュアー1体 + supervisor、structured_output判定）で PR を自動レビューし、
-  REJECT なら worktree で fix → 再レビューを 1 回だけ行う。
+  takt の builtin workflow `review-takt-default`（7観点個別レビュー + supervisor、report ファイル出力）で
+  PR を自動レビューし、REJECT なら worktree で fix → 再レビューを 1 回だけ行う。
   CI 監視 → レビュー → 判定 → fix（1 回）を一気通貫で実行する。
   「takt レビュー」「PR レビューして」「レビュー回して」など、takt 経由の PR レビュー意図で発動。
-  「7観点で」「フルレビュー」等の明示依頼時のみ builtin review-takt-default（7観点個別レビュー）に切り替える。
   単体起動専用（takt-issue からの自動呼び出しは廃止。takt-issue は CI green で完了する）。
 ---
 
@@ -13,16 +12,10 @@ description: >-
 
 ## Overview
 
-takt の `review-lite`（カスタム workflow。統合レビュアー1体 + supervisor 1体、structured_output による
-決定論的判定）で PR を自動レビューし、指摘があれば worktree 内で修正 → 再レビューを 1 回だけ行うスキル。
+takt の builtin workflow `review-takt-default`（gather → 7 観点 parallel review → supervise、
+`review-summary.md` 等の report ファイル出力あり）で PR を自動レビューし、指摘があれば
+worktree 内で修正 → 再レビューを 1 回だけ行うスキル。
 CI pass 確認からレビュー完了（APPROVE）または人手エスカレーション（再レビューでも REJECT）までを担当する。
-
-デフォルトは `review-lite`（builtin `review-takt-default` の 7 観点を 1 レビュアーに統合した軽量版。
-report ファイルを出力せず structured_output で判定するため、レビュー系 step のトークン消費を大きく削減する
-狙い。詳細は `config/.takt/workflows/review-lite.yaml` の冒頭コメントと `docs/takt-usage-baseline.md` の
-施策 1 を参照）。ユーザーが「7観点で」「フルレビュー」等と明示依頼した場合のみ、builtin
-`review-takt-default`（7 観点個別レビュー + report ファイル出力）に切り替える。切り替え手順は
-[フル版（7観点個別レビュー、明示依頼時）](#フル版7観点個別レビュー明示依頼時) を参照。
 
 もともと takt-issue の完了後処理から切り出されたスキルだが、現在 takt-issue からの自動呼び出しは行われない（takt-issue は CI green + クリーンアップで完了する）。ユーザーが明示的にレビューを依頼したときに単体で起動する。
 
@@ -30,19 +23,17 @@ report ファイルを出力せず structured_output で判定するため、レ
 
 ## When to Use
 
-- ユーザーが「takt でレビューして」「PR #N をレビュー」「レビュー回して」と依頼したとき（`review-lite` を使う）
+- ユーザーが「takt でレビューして」「PR #N をレビュー」「レビュー回して」と依頼したとき
 - CI pass 済みの PR に対して takt の自動レビューを手動で回したいとき
-- ユーザーが「7観点で」「フルレビュー」「review-takt-default で」と明示依頼したとき（[フル版](#フル版7観点個別レビュー明示依頼時) を使う）
 
 ## 前提知識（必読）
 
 | 項目 | 仕様 | 対処 |
 |------|------|------|
-| review workflow（デフォルト） | `review-lite` は read-only。統合レビュアー1体（pure/coding/qa/ai-antipattern統合 + architecture/security/testing要点吸収）+ supervisor 1体。report ファイルは出力せず structured_output（verdict/feedback）で判定する | REJECT 時の fix はスキル側がサブエージェント or 直接実行 |
-| review workflow（フル版） | `review-takt-default` は read-only 7 観点個別レビュー + `review-summary.md` 等の report ファイル出力。明示依頼時のみ使う | 同上 |
+| review workflow | `review-takt-default` は read-only。7 観点個別レビュー + supervisor で、`review-summary.md` 等の report ファイルを出力する | REJECT 時の fix はスキル側がサブエージェント or 直接実行 |
 | fix に takt は不要 | `review-fix-takt-default` は使わない（takt 起動オーバーヘッドと Codex トークン消費の回避） | worktree 内で直接コード修正 → commit → push |
 | fix は 1 回のみ | REJECT でも fix → 再レビューは 1 周だけ。再レビューでも REJECT なら人手判断を仰ぐ | ループさせず、2 回目の REJECT は報告して終わる |
-| token budget guard | takt の長い標準出力が token 消費の主因 | review ログは `tail -80` で末尾のみ。フル版利用時のみ `review-summary.md` を全文読む |
+| token budget guard | takt の長い標準出力が token 消費の主因 | review ログは `tail -80` で末尾のみ。`review-summary.md` と個別レポートは全文読んでよい |
 | takt -q の位置 | `-q` はトップレベル option | `takt -q -t ...` の順 |
 
 ## Context を収集
@@ -97,173 +88,9 @@ gh pr view ${PR_NUMBER} --json mergeable,mergeStateStatus -q '"mergeable=\(.merg
 
 CI fail が対象 PR のスコープ外（flaky test など）と判断した場合は、ユーザーに報告して判断を仰ぐ。
 
-### 2. 自動レビュー（デフォルト: review-lite）
+### 2. 自動レビュー（review-takt-default）
 
-CI pass 後、`review-lite` で統合レビュー（read-only）を起動する。**ユーザーが「7観点で」「フルレビュー」等を明示依頼した場合はこの Step をスキップし、[フル版](#フル版7観点個別レビュー明示依頼時) の手順を使う。**
-
-```bash
-PR_NUM=<PR#>
-REVIEW_LOG="/tmp/takt_review_${PR_NUM}.log"
-```
-
-`review-lite` も完了までブロックして exit する。stdout はログに逃がし、background に投げる（timeout `3600000ms` = 60 分）:
-
-- **Claude Code**: `Bash` の `run_in_background: true` で下記コマンドを投げる。exit 時に自動再呼び出しされるので poll しない。
-
-```bash
-cd <repo_root>
-takt -q -t "#${PR_NUM}" -w review-lite > "$REVIEW_LOG" 2>&1
-```
-
-- **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を 1 コマンドにまとめて実行する。起動だけして待たずに次へ進むと結果がまだ出ておらず後続が失敗する:
-
-```bash
-cd <repo_root>
-nohup takt -q -t "#${PR_NUM}" -w review-lite > "$REVIEW_LOG" 2>&1 &
-echo $! > /tmp/takt_review_${PR_NUM}.pid
-while kill -0 "$(cat /tmp/takt_review_${PR_NUM}.pid)" 2>/dev/null; do sleep 30; done
-```
-
-コマンドの実行環境に timeout があり `while` が途中で打ち切られた場合は、同じ `while kill -0 ...` の行だけ再実行すればよい（べき等）。
-
-完了したら（Claude Code は再呼び出し / Codex は上記コマンドの return）レビュー結果を読む。**`review-lite` は report ファイルを出力しない**（`review-summary.md` は存在しない）。review / supervise 両 step の structured_output（verdict / feedback）は run ログに記録される:
-
-```bash
-# ログ末尾から verdict / feedback と takt 自体のエラー有無を確認する
-tail -80 "$REVIEW_LOG"
-
-# ログ末尾に verdict が見当たらない場合は run ディレクトリ全体から探す
-RUN_SLUG=$(ls -t .takt/runs/ | head -1)
-rg -n 'verdict' ".takt/runs/${RUN_SLUG}/" 2>/dev/null
-```
-
-レビュー結果を PR コメントに投稿（`tail -80` で取得した verdict / feedback を貼る。全文ログは貼らない）:
-
-```bash
-gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
-## 🔍 takt review (review-lite)
-
-$(tail -80 "$REVIEW_LOG")
-COMMENT
-)"
-```
-
-### 3. 判定 → fix（1 回のみ）
-
-supervise step の structured_output（verdict）を確認する。`verdict: approved` は APPROVE 相当、`verdict: needs_fix` は REJECT 相当として扱う。
-
-```
-判定を読む
-├─ approved → ユーザーに報告（完了）
-└─ needs_fix
-     → Step 4（fix）を 1 回だけ実行
-     → Step 2（再レビュー）を 1 回だけ実行
-     → 再判定を読む
-        ├─ approved → ユーザーに報告（完了）
-        └─ needs_fix → それ以上 fix せず、レビュー結果と実施した fix を
-                       ユーザーに報告し、人手判断を仰ぐ（完了）
-```
-
-**fix は 1 回のみ**。再レビュー後は判定にかかわらずループしない。
-
-### 4. fix（needs_fix 時）
-
-`tail -80 "$REVIEW_LOG"`（または run ディレクトリから抽出した feedback）の指摘事項に基づき、**worktree 内で直接コードを修正** する。
-
-1. review / supervise 両 step の feedback を読む（`review-lite` は個別レポートを出力しないため、`$REVIEW_LOG` の verdict/feedback がそのまま一次情報になる）:
-
-```bash
-tail -80 "$REVIEW_LOG"
-```
-
-feedback 末尾の follow-up 候補（スコープ外の改善提案）は fix 対象に含めない。PR コメントで「対応しない理由」を明記する。
-
-2. worktree 内でコードを修正（**必ず worktree で実行**。repo root で修正すると main を汚染する）:
-
-```bash
-cd <worktree_path>
-```
-
-指摘の重要度順に該当ファイルを確認する。ただし、**レビュー文面をなぞった表面的な修正で終わらせない**。編集前に各指摘を次の形に分解する:
-
-- レビューが観測した症状
-- その症状を生んだ根本原因（壊れている不変条件、契約、責務分界、データフロー、テスト前提）
-- 同じ原因で壊れうる同型箇所（`rg`、callsite 追跡、周辺テスト確認で探す）
-- 根本原因を取り除く修正方針
-- 回帰を防ぐ検証（既存テスト追加・更新、focused test、手動検証のいずれか）
-
-修正時の判断基準:
-
-- 指摘された行だけを変えるのではなく、同じ設計ミス・仮定漏れ・境界条件漏れが他にもないか探し、PR スコープ内なら一緒に直す
-- hard-code、条件分岐の継ぎ足し、エラー握りつぶしなどでレビュー文面だけを満たす修正は避ける
-- レビューが具体例を 1 件だけ挙げている場合でも、その具体例を bug class の代表として扱い、入力経路・状態遷移・公開 API・テスト期待値まで辿る
-- 既存の設計や helper に沿った修正を優先し、新しい抽象化は重複や責務混在を実際に減らす場合だけ入れる
-- 根本原因が特定できない場合は推測で patch せず、追加調査する。1 回の fix で解けない不確実性は PR コメントで明示して人手判断に回す
-
-コミット前に `git diff` を読み、各指摘について「原因 → 修正 → 検証」が説明できる状態にする。
-
-3. **自己監査（再レビュー前ゲート）**: レビュアーは「マージベースからの累積差分全体 +
-   関係箇所」を毎回再走査する。fix した行だけでなく、自分の fix を含めた累積差分全体を
-   レビュアーと同じ視点で監査してから再レビューに出す:
-
-   ```bash
-   # レビュアーが見るのと同じ差分を取る
-   git diff $(git merge-base origin/main HEAD)..HEAD
-   ```
-
-   - リポジトリに `.takt/facets/policies/pre-review-checklist.md` が存在する場合は、
-     その監査 8 項目（挙動⇔テスト 1:1、兄弟入口の貫通、ドキュメント突き合わせ等）を
-     累積差分全体に対して照合する。存在しないリポジトリでは次の最低限 4 点を照合する:
-     1. 変更した観測可能な挙動それぞれに対応するテストがあるか
-     2. 変更した契約（データ形式・config キー・API）が同責務の全入口に貫通しているか
-     3. 変更内容と矛盾するドキュメント・コメント・CHANGELOG の旧記述が残っていないか
-     4. fix で追加した catch / fallback が失敗を握りつぶしていないか
-   - fix によって未使用になったコード（import・引数・変数）が残っていないか累積差分を確認する
-   - リポジトリのテスト・lint を全実行して green を確認する（コマンドはリポジトリの
-     CLAUDE.md / package.json / pyproject.toml から特定する）
-   - 自己監査で見つけた問題は、この時点で fix に含める（再レビュー後に直す機会はない）
-
-4. 修正をコミットして push:
-
-```bash
-git add -A
-git commit -m "fix: address review findings"
-git push
-```
-
-5. 修正内容を PR コメントに投稿:
-
-```bash
-gh pr comment "${PR_NUM}" --body "$(cat <<COMMENT
-## 🔧 fix
-
-### 指摘ごとの解消根拠
-| 指摘（feedback 抜粋） | 原因 | 修正（ファイル:行 / commit） | 検証 |
-|---|---|---|---|
-| (feedback の該当箇所を要約) | (根本原因 1 文) | \`path/to/file.ts:42\` | (追加・更新したテスト名 or 実行した確認) |
-
-### follow-up 候補への対応
-- 対応しない: (feedback 末尾の follow-up 候補のうちスコープ外としたもの — 理由を 1 行ずつ)
-
-### 自己監査
-- 累積差分（merge-base 起点）に対するチェックリスト照合: (結果)
-- test / lint: (実行コマンドと結果)
-
-再レビューを 1 回だけ実行します。
-COMMENT
-)"
-```
-
-修正後、**Step 2 に戻って再レビューを 1 回だけ**実行する。再レビューでも needs_fix なら、それ以上 fix せず人手判断を仰ぐ。
-
-## フル版（7観点個別レビュー、明示依頼時）
-
-ユーザーが「7観点で」「フルレビュー」「review-takt-default で」と明示依頼した場合のみ、builtin
-`review-takt-default`（gather → 7 観点 parallel review → supervise、report ファイル出力あり）を使う。
-Step 2〜4 を以下に置き換える。CI 監視（Step 1）と全体の判定フロー（Step 3 の approve/reject 分岐、
-fix 1 回ルール）は共通。
-
-### フル版 Step 2: 自動レビュー
+CI pass 後、builtin `review-takt-default` で 7 観点レビュー（read-only）を起動する。
 
 ```bash
 PR_NUM=<PR#>
@@ -311,7 +138,7 @@ COMMENT
 )"
 ```
 
-### フル版 Step 3: 判定 → fix（1 回のみ）
+### 3. 判定 → fix（1 回のみ）
 
 `review-summary.md` の `## 総合判定:` を確認する。
 
@@ -319,8 +146,8 @@ COMMENT
 判定を読む
 ├─ APPROVE → ユーザーに報告（完了）
 └─ REJECT
-     → フル版 Step 4（fix）を 1 回だけ実行
-     → フル版 Step 2（再レビュー）を 1 回だけ実行
+     → Step 4（fix）を 1 回だけ実行
+     → Step 2（再レビュー）を 1 回だけ実行
      → 再判定を読む
         ├─ APPROVE → ユーザーに報告（完了）
         └─ REJECT  → それ以上 fix せず、レビュー結果と実施した fix を
@@ -329,7 +156,7 @@ COMMENT
 
 **fix は 1 回のみ**。再レビュー後は判定にかかわらずループしない。
 
-### フル版 Step 4: fix（REJECT 時）
+### 4. fix（REJECT 時）
 
 `review-summary.md` の指摘事項に基づき、**worktree 内で直接コードを修正** する。
 
@@ -428,19 +255,17 @@ COMMENT
 
 表の finding_id は `review-summary.md` の表記をそのまま使うこと（`SUM-NEW-*` / `ARCH-*` / `PURE-*` などレビューごとに形式が異なるが、変換しない）。
 
-修正後、**フル版 Step 2 に戻って再レビューを 1 回だけ**実行する。再レビューでも REJECT なら、それ以上 fix せず人手判断を仰ぐ。
+修正後、**Step 2 に戻って再レビューを 1 回だけ**実行する。再レビューでも REJECT なら、それ以上 fix せず人手判断を仰ぐ。
 
 ## Gotchas
 
-- **デフォルトは review-lite**: 明示依頼（「7観点で」「フルレビュー」等）がない限り `review-lite` を使う。フル版への切り替えはユーザー判断を待つ
-- **review-lite は report ファイルを出力しない**: `review-summary.md` は存在しない。verdict / feedback は `$REVIEW_LOG`（run ログ）から読む
-- **fix は 1 回のみ**: needs_fix/REJECT → fix → 再レビューは 1 周だけ。再レビューでも needs_fix/REJECT ならループさせず、結果を報告して人手判断に回す
+- **fix は 1 回のみ**: REJECT → fix → 再レビューは 1 周だけ。再レビューでも REJECT ならループさせず、結果を報告して人手判断に回す
 - **`review-fix-takt-default` は使わない**: takt 起動オーバーヘッドと Codex トークン消費の回避のため、fix は worktree 内で直接実行する
-- **review ログ（jsonl / trace.md）は全文読まない**: `tail -80` で末尾のみ。フル版の `reports/` 配下の Markdown（summary + 7 個別レポート）は各数 KB なので全文読んでよい
+- **review ログ（jsonl / trace.md）は全文読まない**: `tail -80` で末尾のみ。`reports/` 配下の Markdown（summary + 7 個別レポート）は各数 KB なので全文読んでよい
 - **worktree で修正**: repo root で修正すると main を汚染する。必ず worktree 内で `cd` してから編集
 - **takt -q の位置**: `-q` はトップレベル option。`takt -q -t ...` の順で指定
 - **レビューの takt ログ**: `.takt/runs/**/logs/*.jsonl` と `trace.md` は全文表示しない。`wc` / `du` / `tail -80` で絞る
-- **approved/APPROVE なら fix 不要**: Step 2 で approved/APPROVE なら Step 4 は実行しない。即完了
+- **APPROVE なら fix 不要**: Step 2 で APPROVE なら Step 4 は実行しない。即完了
 - **表面的な修正は禁止**: 指摘行だけを直して終わらせず、根本原因・同型箇所・回帰検証まで確認する
 - **CI fail がスコープ外の場合**: flaky test 等は修正せず、ユーザーに報告して判断を仰ぐ
 - **クリーンアップは呼び出し元の責務**: このスキルは `takt list --action delete` を実行しない。worktree（fix 用に再作成したものを含む）の削除はユーザーが別途行う（再作成した worktree は `git worktree remove` で片付ける）
@@ -450,12 +275,12 @@ COMMENT
 
 - CI pass を確認してからレビューを開始する。CI をスキップしない
 - CI 監視は checks の合否だけで判断しない。待機の前後で `gh pr view --json mergeable,mergeStateStatus` を確認し、`CONFLICTING`/`DIRTY` なら checks の結果に関わらずコンフリクト解消を優先する（base とコンフリクトしていると checks がいつまでも揃わず待機が伸び続けることがあるため）
-- デフォルトは `review-lite`。ユーザーが「7観点で」「フルレビュー」等を明示依頼した場合のみ `review-takt-default`（フル版）に切り替える
-- `review-lite`/`review-takt-default` で approved/APPROVE ならそのまま完了。fix は実行しない
-- needs_fix/REJECT 時は worktree 内で直接コード修正する。`review-fix-takt-default` は使わない
-- needs_fix/REJECT 時は各指摘を「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
+- レビューは builtin `review-takt-default` で実行する
+- `review-takt-default` で APPROVE ならそのまま完了。fix は実行しない
+- REJECT 時は worktree 内で直接コード修正する。`review-fix-takt-default` は使わない
+- REJECT 時は各指摘を「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
 - 指摘文面だけを満たす hard-code や局所 patch を避け、同じ bug class が再レビューで別指摘にならないよう横展開確認する
-- fix は 1 回のみ。fix → 再レビューを 1 周だけ回し、再レビューでも needs_fix/REJECT なら人手判断を仰ぐ
+- fix は 1 回のみ。fix → 再レビューを 1 周だけ回し、再レビューでも REJECT なら人手判断を仰ぐ
 - review ログは `tail -80` で必要時のみ読む。全文表示禁止
 - `.takt/runs/**/logs/*.jsonl` と `trace.md` は全文表示しない
 - 修正は worktree 内で行う。repo root で修正しない
