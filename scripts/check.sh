@@ -400,13 +400,14 @@ async function expectInvalid(payload, detail) {
 function runPreflightFixture(root) {
   const script = join(root, '.takt', 'quality-gates', 'preflight.sh');
   const probe = spawnSync('test', ['-f', script], { cwd: root });
-  if (probe.status !== 0) return { verdict: 'approved', feedback: '' };
+  if (probe.status !== 0) return { verdict: 'approved', feedback: '', followups: [] };
   const result = spawnSync('bash', ['.takt/quality-gates/preflight.sh'], { cwd: root, encoding: 'utf8' });
-  if (result.status === 0) return { verdict: 'approved', feedback: '' };
+  if (result.status === 0) return { verdict: 'approved', feedback: '', followups: [] };
   const output = `${result.stdout}${result.stderr}`.trim();
   return {
     verdict: 'blocked',
     feedback: `bash .takt/quality-gates/preflight.sh exited ${result.status}: ${output}`,
+    followups: [],
   };
 }
 
@@ -439,17 +440,18 @@ if (!failed.feedback.includes('exited 23') || !failed.feedback.includes('daemon-
 if (await runEngineScenario('preflight', failed, failureDir) !== 'ABORT') {
   throw new Error(`${workflowName}: failed preflight does not route to ABORT`);
 }
-await expectInvalid({ verdict: 'blocked', feedback: '' }, 'blocked with empty feedback');
-await expectInvalid({ verdict: 'unknown', feedback: 'detail' }, 'unknown verdict');
+await expectInvalid({ verdict: 'blocked', feedback: '', followups: [] }, 'blocked with empty feedback');
+await expectInvalid({ verdict: 'unknown', feedback: 'detail', followups: [] }, 'unknown verdict');
+await expectInvalid({ verdict: 'approved', feedback: '' }, 'missing followups key');
 
-if (await runEngineScenario(review.name, { verdict: 'approved', feedback: '' }) !== 'COMPLETE') {
+if (await runEngineScenario(review.name, { verdict: 'approved', feedback: '', followups: [] }) !== 'COMPLETE') {
   throw new Error(`${workflowName}: approved ${review.name} does not route to COMPLETE`);
 }
 const needsFixTarget = workflowName === 'diagnose-fix' ? 'fix' : 'implement';
-if (await runEngineScenario(review.name, { verdict: 'needs_fix', feedback: 'code defect' }) !== needsFixTarget) {
+if (await runEngineScenario(review.name, { verdict: 'needs_fix', feedback: 'code defect', followups: [] }) !== needsFixTarget) {
   throw new Error(`${workflowName}: needs_fix ${review.name} does not route to ${needsFixTarget}`);
 }
-if (await runEngineScenario(review.name, { verdict: 'blocked', feedback: 'daemon unavailable' }) !== 'ABORT') {
+if (await runEngineScenario(review.name, { verdict: 'blocked', feedback: 'daemon unavailable', followups: [] }) !== 'ABORT') {
   throw new Error(`${workflowName}: blocked ${review.name} does not route to ABORT`);
 }
 rmSync(fixtureRoot, { recursive: true, force: true });

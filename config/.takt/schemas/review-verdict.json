@@ -3,7 +3,11 @@
   "properties": {
     "verdict": {
       "type": "string",
-      "enum": ["approved", "needs_fix", "blocked"]
+      "enum": [
+        "approved",
+        "needs_fix",
+        "blocked"
+      ]
     },
     "feedback": {
       "type": "string",
@@ -11,28 +15,53 @@
     },
     "followups": {
       "type": "array",
-      "description": "レビュー中に見つけたスコープ外の問題（verdict の判定材料にしない）。起票判断は Claude Code 層が行う。省略可・なければ空配列",
+      "description": "レビュー中に見つけたスコープ外の問題（verdict の判定材料にしない）。起票判断は Claude Code 層が行う。なければ空配列（strict structured output のため必須キー）",
       "items": {
         "type": "object",
         "properties": {
-          "title": { "type": "string" },
-          "description": { "type": "string" },
-          "evidence": { "type": "string", "description": "根拠（ファイル:行、観測した挙動）" }
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "根拠（ファイル:行、観測した挙動）"
+          }
         },
-        "required": ["title", "description", "evidence"],
+        "required": [
+          "title",
+          "description",
+          "evidence"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["verdict", "feedback"],
+  "required": [
+    "verdict",
+    "feedback",
+    "followups"
+  ],
   "allOf": [
     {
       "if": {
-        "properties": { "verdict": { "const": "blocked" } },
-        "required": ["verdict"]
+        "properties": {
+          "verdict": {
+            "const": "blocked"
+          }
+        },
+        "required": [
+          "verdict"
+        ]
       },
       "then": {
-        "properties": { "feedback": { "minLength": 1 } }
+        "properties": {
+          "feedback": {
+            "minLength": 1
+          }
+        }
       }
     }
   ],
