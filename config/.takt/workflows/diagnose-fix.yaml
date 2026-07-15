@@ -17,7 +17,7 @@
 # - review 系分岐は structured_output + `when:` で Phase 3（状態判定）をスキップ
 #   （lite.yaml のトークン設計メモを参照）
 name: diagnose-fix
-description: 原因不明バグの診断（実コマンド再現 → 原因特定）→ 条件を満たす場合のみ自動 fix。条件未達は診断レポートを残して停止
+description: preflight 後に原因不明バグを診断（実コマンド再現 → 原因特定）し、条件を満たす場合のみ自動 fix。条件未達は診断レポートを残して停止
 workflow_config:
   provider_options:
     codex:
@@ -25,8 +25,28 @@ workflow_config:
     opencode:
       network_access: true
 max_steps: 15
-initial_step: diagnose
+initial_step: preflight
 steps:
+  - name: preflight
+    persona: coder
+    provider: codex
+    edit: false
+    instruction: |
+      実装開始前の環境ゲートを実行すること。
+      `.takt/quality-gates/preflight.sh` が通常ファイルとして存在する場合だけ
+      `bash .takt/quality-gates/preflight.sh` を実行する。存在しない場合は approved、
+      feedback は空文字とする。実行時は終了ステータス 0 を approved、0 以外を blocked とし、
+      blocked の feedback にコマンド、終了ステータス、障害出力を記録する。
+      判定結果を review-verdict の structured output として返すこと。
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.preflight.verdict == "approved"
+        next: diagnose
+      - when: structured.preflight.verdict == "blocked"
+        next: ABORT
+      - when: "true"
+        next: ABORT
   - name: diagnose
     tags:
       - plan
@@ -148,7 +168,10 @@ steps:
       4. 隣接テストの実行結果を確認する（未実行なら自分で実行する）
 
       1 件でも問題があれば verdict を needs_fix とし、feedback に「該当箇所 / 問題 / 必要な修正」
-      を列挙する。スコープ外の発見は followups に記録し、verdict の判定材料にしない。
+      を列挙する。daemon 不達・ネットワーク・権限など、コード変更では解消できない環境障害により
+      検証できない場合は、needs_fix ではなく blocked とし、feedback に障害内容を記録する。
+      通常の修正で解消可能な検証失敗は needs_fix とする。スコープ外の発見は followups に記録し、
+      verdict の判定材料にしない。
     structured_output:
       schema_ref: review-verdict
     rules:
@@ -156,5 +179,7 @@ steps:
         next: COMPLETE
       - when: structured.supervise.verdict == "needs_fix"
         next: fix
+      - when: structured.supervise.verdict == "blocked"
+        next: ABORT
       - when: "true"
         next: ABORT

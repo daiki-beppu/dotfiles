@@ -19,7 +19,7 @@
 #   後続 step が Report Directory 経由で参照する（pass_previous_response は隣接 step しか
 #   繋げないため）
 name: feature
-description: 新規 feature 用の厳格 workflow（計画 → テスト設計 → 設計レビュー → テスト作成（red 実証） → 実装 → 統合レビュー）。空転時はスコープ見直し提案を出して停止
+description: 新規 feature 用の厳格 workflow（preflight → 計画 → テスト設計 → 設計レビュー → テスト作成（red 実証） → 実装 → 統合レビュー）。空転時はスコープ見直し提案を出して停止
 workflow_config:
   provider_options:
     codex:
@@ -27,7 +27,7 @@ workflow_config:
     opencode:
       network_access: true
 max_steps: 30
-initial_step: plan
+initial_step: preflight
 loop_monitors:
   - cycle:
       - implement
@@ -47,6 +47,26 @@ loop_monitors:
         - condition: 非生産的（改善なし）
           next: scope_review
 steps:
+  - name: preflight
+    persona: coder
+    provider: codex
+    edit: false
+    instruction: |
+      実装開始前の環境ゲートを実行すること。
+      `.takt/quality-gates/preflight.sh` が通常ファイルとして存在する場合だけ
+      `bash .takt/quality-gates/preflight.sh` を実行する。存在しない場合は approved、
+      feedback は空文字とする。実行時は終了ステータス 0 を approved、0 以外を blocked とし、
+      blocked の feedback にコマンド、終了ステータス、障害出力を記録する。
+      判定結果を review-verdict の structured output として返すこと。
+    structured_output:
+      schema_ref: review-verdict
+    rules:
+      - when: structured.preflight.verdict == "approved"
+        next: plan
+      - when: structured.preflight.verdict == "blocked"
+        next: ABORT
+      - when: "true"
+        next: ABORT
   - name: plan
     tags:
       - plan
@@ -249,6 +269,7 @@ steps:
       5. 1 件でもブロッキング問題があれば verdict を needs_fix とし、feedback に
          「該当箇所 / 問題 / 必要な修正」を列挙する
       6. スコープ外の発見は followups に記録し、verdict の判定材料にしない
+      daemon 不達・ネットワーク・権限など、コード変更では解消できない環境障害により受け入れ基準を検証できない場合は、needs_fix ではなく blocked とし、feedback に障害内容を記録する。通常の実装不備やコード変更で解消可能な検証失敗は needs_fix とする
     structured_output:
       schema_ref: review-verdict
     rules:
@@ -256,6 +277,8 @@ steps:
         next: COMPLETE
       - when: structured.review.verdict == "needs_fix"
         next: implement
+      - when: structured.review.verdict == "blocked"
+        next: ABORT
       - when: "true"
         next: ABORT
 

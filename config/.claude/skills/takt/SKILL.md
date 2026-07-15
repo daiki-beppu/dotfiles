@@ -390,15 +390,15 @@ output_contract が出力される。
 
 | workflow | step 数（親） | max_steps | 用途 |
 |----------|--------------|-----------|------|
-| `feature` | 6 + loop_monitor | 20 | 新規開発（builtin `default` の代替）。plan → test_design → test_design_review → write_tests（red 実証） → implement → 統合レビュー。空転時は scope_review が分割案を出して停止 |
-| `improve` | 3 | 8 | 機能改善（既存機能の挙動変更・拡張）。lite の骨格 + 挙動変更影響表による回帰保護 |
-| `diagnose-fix` | 3 | 10 | 原因不明バグ。diagnose（実コマンドの red/green がゲート）→ 原因確定 + 修正小規模のみ自動 fix → supervise。条件未達は診断レポートを残して停止 |
-| `docs` | 2 | 6 | ドキュメント・skill 改善。implement → review（読み取り系コマンド実行による整合実証が必須） |
-| `lite` | 3 | 8 | 軽量版。plan → implement → review。refactor / chore / 迷ったらこれ。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減 |
-| `solid` | 4 + loop_monitor | 12 | lite の一段上の堅牢版。plan（失敗原因分析 + スコープゲート）→ implement（最初から gpt-5.6-sol）→ review。lite で完了できなかった task の再走用（まっさらな worktree でゼロから再実装）。スコープ過大・空転時は scope_review が分割案を出して停止 |
+| `feature` | 7 + loop_monitor | 30 | 新規開発（builtin `default` の代替）。preflight → plan → test_design → test_design_review → write_tests（red 実証） → implement → 統合レビュー。空転時は scope_review が分割案を出して停止 |
+| `improve` | 4 | 12 | 機能改善。preflight → plan → implement → review。lite の骨格 + 挙動変更影響表による回帰保護 |
+| `diagnose-fix` | 4 | 15 | 原因不明バグ。preflight → diagnose（実コマンドの red/green がゲート）→ 原因確定 + 修正小規模のみ自動 fix → supervise。条件未達は診断レポートを残して停止 |
+| `docs` | 3 | 9 | ドキュメント・skill 改善。preflight → implement → review（読み取り系コマンド実行による整合実証が必須） |
+| `lite` | 4 | 12 | 軽量版。preflight → plan → implement → review。refactor / chore / 迷ったらこれ。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減 |
+| `solid` | 5 + loop_monitor | 18 | lite の一段上の堅牢版。preflight → plan（失敗原因分析 + スコープゲート）→ implement（最初から gpt-5.6-sol）→ review。lite で完了できなかった task の再走用。スコープ過大・空転時は scope_review が分割案を出して停止 |
 | `fix` | 3（最大） | 15 | 軽量修正フロー。fix → supervise → （必要なら）fix_supervisor → supervise。原因特定済みの小さな修正向け。plan・テスト先行なし |
 
-全カスタム workflow が全 step `provider: codex` を明示する。コード系（feature / improve / lite / solid）は implement / review に自己監査 8 項目の policy `pre-review-checklist` を注入し、レビューは structured_output（schema `review-verdict`）+ `when:` 式で決定論的に分岐する。スコープ外発見は review / supervise / diagnose の structured_output `followups` に記録される（**スコープ外の自動 issue 起票は持たない**。起票は Claude Code 層が `issue` skill で行う）。builtin の `default` は feature 採用、`default-mini` は lite 採用に伴い運用から外した（takt 本体には残っているので指名すれば使える）。
+6 workflow（feature / improve / diagnose-fix / docs / lite / solid）は先頭の `preflight` で、対象リポジトリの通常ファイル `.takt/quality-gates/preflight.sh` がある場合だけ実行する。終了 0 またはファイル不在は次 step へ進み、終了非 0 は `blocked` で **ABORT** する。review / supervise も、コード変更で解消できない環境障害で検証不能なら `blocked` を返して **ABORT** する。全カスタム workflow が全 step `provider: codex` を明示する。コード系（feature / improve / lite / solid）は implement / review に自己監査 8 項目の policy `pre-review-checklist` を注入し、レビューは structured_output（schema `review-verdict`）+ `when:` 式で決定論的に分岐する。スコープ外発見は review / supervise / diagnose の structured_output `followups` に記録される（**スコープ外の自動 issue 起票は持たない**。起票は Claude Code 層が `issue` skill で行う）。builtin の `default` は feature 採用、`default-mini` は lite 採用に伴い運用から外した（takt 本体には残っているので指名すれば使える）。
 
 カスタム workflow を作るときは `takt workflow init` で雛形を起こすか、builtin を
 `takt eject <name>` でコピーして手を入れる。検証は `takt workflow doctor`。
