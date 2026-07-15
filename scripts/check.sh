@@ -262,6 +262,12 @@ check_contracts() {
   else
     local takt_root
     takt_root="$(dirname "$(dirname "$(realpath "$takt_bin")")")"
+    # doctor resolves facets/schemas from ~/.takt; point a hermetic HOME at
+    # this checkout's config/.takt so validation never depends on (or gets
+    # masked by) the developer's real home or CI's lack of one.
+    local hermetic_home
+    hermetic_home="$(mktemp -d)"
+    ln -s "$REPO_ROOT/config/.takt" "$hermetic_home/.takt"
     local workflow expected_next
     for workflow in feature improve diagnose-fix docs lite solid; do
       case "$workflow" in
@@ -272,13 +278,14 @@ check_contracts() {
 
       # Run takt's public workflow loader/validator against this checkout,
       # rather than resolving a same-named workflow from the user's home.
-      if ! "$takt_bin" workflow doctor "$workflows_dir/$workflow.yaml" >/dev/null; then
+      if ! HOME="$hermetic_home" "$takt_bin" workflow doctor "$workflows_dir/$workflow.yaml" >/dev/null; then
         echo "INVALID: takt cannot load workflow '$workflow'" >&2
         status=1
         continue
       fi
 
-      if ! WORKFLOW_FILE="$workflows_dir/$workflow.yaml" \
+      if ! HOME="$hermetic_home" \
+        WORKFLOW_FILE="$workflows_dir/$workflow.yaml" \
         REVIEW_SCHEMA="$schemas_dir/review-verdict.json" \
         TAKT_ROOT="$takt_root" WORKFLOW_NAME="$workflow" \
         EXPECTED_NEXT="$expected_next" \
