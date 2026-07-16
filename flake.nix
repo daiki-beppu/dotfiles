@@ -13,6 +13,12 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # hunk: レビュー特化のターミナル diff ビューアー（https://www.hunk.dev/）
+    # nixpkgs 未収録のため upstream flake から直接取得。
+    # nixpkgs.follows は付けない: こちらの nixpkgs-unstable (x86_64-darwin 廃止済み)
+    # を強制すると hunk の flake-parts が x86_64-darwin の評価で落ちるため
+    hunk.url = "github:modem-dev/hunk";
   };
 
   outputs =
@@ -20,6 +26,7 @@
       nixpkgs,
       nix-darwin,
       home-manager,
+      hunk,
       ...
     }:
     let
@@ -199,7 +206,10 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "backup";
-              home-manager.extraSpecialArgs = { inherit hostConfig; };
+              home-manager.extraSpecialArgs = {
+                inherit hostConfig;
+                hunkPkg = hunk.packages.${system}.default;
+              };
               home-manager.users.${username} = import ./nix/packages.nix;
             }
           ] ++ (hostAttrs.extraModules or [ ]);
