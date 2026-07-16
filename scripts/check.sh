@@ -281,6 +281,38 @@ check_contracts() {
     local hermetic_home
     hermetic_home="$(mktemp -d)"
     ln -s "$REPO_ROOT/config/.takt" "$hermetic_home/.takt"
+
+    echo "-- checking codex network access reaches every workflow step --"
+    local network_workflow
+    for network_workflow in lite feature improve solid docs diagnose-fix fix; do
+      if ! HOME="$hermetic_home" \
+        WORKFLOW_FILE="$workflows_dir/$network_workflow.yaml" \
+        TAKT_ROOT="$takt_root" WORKFLOW_NAME="$network_workflow" \
+        node --input-type=module <<'NODE'
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const importTakt = async (relativePath) => import(pathToFileURL(join(process.env.TAKT_ROOT, relativePath)).href);
+const { loadWorkflowFromFile } = await importTakt('dist/infra/config/loaders/workflowFileLoader.js');
+const workflow = loadWorkflowFromFile(process.env.WORKFLOW_FILE, process.cwd());
+const workflowName = process.env.WORKFLOW_NAME;
+
+if (workflow.providerOptions?.codex?.networkAccess !== true) {
+  throw new Error(`${workflowName}: workflow codex.networkAccess is not true after loading`);
+}
+for (const step of workflow.steps.filter(({ provider }) => provider === 'codex')) {
+  if (step.workflowProviderOptions?.codex?.networkAccess !== true
+      || step.providerOptions?.codex?.networkAccess !== true) {
+    throw new Error(`${workflowName}/${step.name}: codex.networkAccess does not reach the execution options`);
+  }
+}
+NODE
+      then
+        echo "INVALID: $network_workflow does not load codex network_access into its steps" >&2
+        status=1
+      fi
+    done
+
     local workflow expected_next
     for workflow in feature improve diagnose-fix docs lite solid; do
       case "$workflow" in

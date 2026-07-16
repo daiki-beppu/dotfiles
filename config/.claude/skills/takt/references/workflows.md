@@ -25,6 +25,17 @@ feature / improve / diagnose-fix / docs / lite / solid は、先頭の `prefligh
 
 同じ 6 workflow の review（diagnose-fix は supervise）は、daemon 不達・ネットワーク・権限などコード変更では解消できない環境障害で受け入れ基準を検証できない場合、`needs_fix` ではなく `blocked` を返して **ABORT** する。通常の実装不備・記述不備などコード変更で解消可能な失敗は `needs_fix` の既存帰路を使う。
 
+## implement で nix 系ゲートを実行するための Codex sandbox 設定
+
+カスタム workflow の codex provider には `network_access: true` を設定している。これは nix daemon を含む Unix socket 接続とネットワークを許可するが、nix の fetcher cache を書き込む権限は別途必要になる。implement の workspace-write sandbox で `nix-eval` などの nix 依存ゲートを実行するマシンでは、`~/.codex/config.toml` に次を設定する。
+
+```toml
+[sandbox_workspace_write]
+writable_roots = ["/Users/mba/.cache/nix"]
+```
+
+`writable_roots` は workspace-write sandbox 専用で、review など read-only の step には適用されない。未設定のマシンでは nix 系ゲートが fail するため、CI 委譲の表記に従って検証する。
+
 ## 目次
 
 - [feature（新規開発・custom）](#feature-新規開発custom)
