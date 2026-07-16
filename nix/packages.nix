@@ -57,6 +57,17 @@ in
     ))
   ] ++ (hostConfig.extraPackages pkgs);
 
+  # ── nh: Nix ヘルパー CLI（GC root まで掃除できる clean コマンド持ち） ──
+  # 手動実行用: `nh clean all --dry` で削除対象を確認できる。
+  # NH_FLAKE を設定するので `nh darwin switch` だけで rebuild できる。
+  # 週次の自動クリーンは flake.nix 側の launchd daemon（root）で行う。
+  # useUserPackages = true のため世代は root 所有のシステムプロファイルに
+  # 積まれ、ユーザー権限の `nh clean user` では削除できないため。
+  programs.nh = {
+    enable = true;
+    flake = "${config.home.homeDirectory}/01-dev/dotfiles";
+  };
+
   # ── git 設定 ──
   programs.git = {
     enable = true;

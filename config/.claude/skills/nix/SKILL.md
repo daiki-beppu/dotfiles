@@ -112,6 +112,31 @@ Nix > Homebrew > システム の順で PATH が構成されている。
 
 `which <command>` でどちらが使われているか確認できる。
 
+## ストア掃除（nh）
+
+Determinate Nix（`nix.enable = false`）のため nix-darwin の `nix.gc` /
+`nix.optimise` は使えない。代わりに [nh](https://github.com/nix-community/nh) を使う。
+
+- **自動**: root の launchd daemon `org.nixos.nh-clean` が毎週月曜 12:00 に
+  `nh clean all --keep 1 --keep-since 30d --optimise` を実行する
+  （`flake.nix` で定義。ログ: `/var/log/nh-clean.log`）
+- **手動で即掃除したい場合**:
+
+```bash
+# 削除対象の確認（dry-run）
+nh clean all --dry --keep 1 --keep-since 30d
+
+# 実行（システムプロファイルの世代削除には root が必要）
+sudo nh clean all --keep 1 --keep-since 30d --optimise
+```
+
+保持ポリシー: 直近 30 日の世代はすべて保持 + それ以前は最低 1 世代。
+`--keep-one` は「世代を 1 つ残す」ではなく「direnv プロジェクトごとに
+gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--keep <N>`）。
+
+`programs.nh.flake` で `NH_FLAKE` が設定済みのため、`nh darwin switch` だけで
+`sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` 相当の rebuild ができる。
+
 ## よくある操作の早見表
 
 | やりたいこと | 操作 |
@@ -123,3 +148,5 @@ Nix > Homebrew > システム の順で PATH が構成されている。
 | 全依存を最新化 | `nix flake update` → `darwin-rebuild switch` |
 | 現在のパッケージ一覧 | `nix/packages.nix` を読む |
 | ロールバック | `sudo darwin-rebuild switch --rollback` |
+| ストア掃除（dry-run） | `nh clean all --dry --keep 1 --keep-since 30d` |
+| ストア掃除（実行） | `sudo nh clean all --keep 1 --keep-since 30d --optimise` |
