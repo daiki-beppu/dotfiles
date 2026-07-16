@@ -52,7 +52,7 @@
 
           modules = [
             (
-              { lib, ... }:
+              { pkgs, lib, ... }:
               {
                 # Determinate Nix を使うため nix-daemon の管理を無効化
                 nix.enable = false;
@@ -117,6 +117,28 @@
                     "com.apple.finder" = {
                       ShowRecentTags = false;
                     };
+                  };
+                };
+
+                # ── Nix ストアの週次自動クリーン（nh） ──
+                # Determinate Nix（nix.enable = false）のため nix.gc / nix.optimise が
+                # 使えない。代わりに nh clean all を root の launchd daemon で週次実行し、
+                # 古い世代・orphan gcroot の削除とストアの重複排除を行う。
+                # 保持ポリシー: 直近 30 日の世代はすべて保持 + それ以前は最低 1 世代。
+                launchd.daemons.nh-clean = {
+                  command = "${pkgs.nh}/bin/nh clean all --keep 1 --keep-since 30d --optimise";
+                  serviceConfig = {
+                    # 月曜 12:00（スリープ中に時刻を跨ぐと launchd はその回を
+                    # スキップするため、稼働している可能性が高い日中に設定）
+                    StartCalendarInterval = [
+                      {
+                        Weekday = 1;
+                        Hour = 12;
+                        Minute = 0;
+                      }
+                    ];
+                    StandardOutPath = "/var/log/nh-clean.log";
+                    StandardErrorPath = "/var/log/nh-clean.err.log";
                   };
                 };
 
