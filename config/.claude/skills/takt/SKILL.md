@@ -394,7 +394,7 @@ output_contract が出力される。
 | `improve` | 4 | 12 | 機能改善。preflight → plan → implement → review。lite の骨格 + 挙動変更影響表による回帰保護 |
 | `diagnose-fix` | 4 | 15 | 原因不明バグ。preflight → diagnose（実コマンドの red/green がゲート）→ 原因確定 + 修正小規模のみ自動 fix → supervise。条件未達は診断レポートを残して停止 |
 | `docs` | 3 | 9 | ドキュメント・skill 改善。preflight → implement → review（読み取り系コマンド実行による整合実証が必須） |
-| `lite` | 4 | 12 | 軽量版。preflight → plan → implement → review。refactor / chore / 迷ったらこれ。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減 |
+| `lite` | 4 + loop_monitor | 12 | 軽量版。preflight → plan → implement → review。refactor / chore / 迷ったらこれ。structured_output + `when:` 式で状態判定の LLM 呼び出しを削減。implement ⇄ review が 3 周すると judge が介入し、非生産的なら ABORT |
 | `solid` | 5 + loop_monitor | 18 | lite の一段上の堅牢版。preflight → plan（失敗原因分析 + スコープゲート）→ implement（最初から gpt-5.6-sol）→ review。lite で完了できなかった task の再走用。スコープ過大・空転時は scope_review が分割案を出して停止 |
 | `fix` | 3（最大） | 15 | 軽量修正フロー。fix → supervise → （必要なら）fix_supervisor → supervise。原因特定済みの小さな修正向け。plan・テスト先行なし |
 
