@@ -11,6 +11,10 @@
 #   structured_output + `when:` で Phase 3 を完全にスキップ、全 step provider: codex を明示）
 name: docs
 description: ドキュメント・skill 改善用の最軽量 workflow（preflight → 実装 → 整合実証レビューの 3 step）。コード変更を伴うタスクは lite / improve を使う
+workflow_config:
+  provider_options:
+    codex:
+      network_access: true
 max_steps: 9
 initial_step: preflight
 steps:
