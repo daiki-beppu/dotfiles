@@ -3,6 +3,7 @@
   lib,
   config,
   hostConfig,
+  hunkPkg,
   ...
 }:
 
@@ -55,7 +56,12 @@ in
         pyyaml
       ]
     ))
-  ] ++ (hostConfig.extraPackages pkgs);
+  ]
+  ++ [
+    # flake input 由来（nixpkgs 未収録）
+    hunkPkg # レビュー特化のターミナル diff ビューアー
+  ]
+  ++ (hostConfig.extraPackages pkgs);
 
   # ── nh: Nix ヘルパー CLI（GC root まで掃除できる clean コマンド持ち） ──
   # 手動実行用: `nh clean all --dry` で削除対象を確認できる。
