@@ -9,11 +9,31 @@
 # - 分岐を増やすときは自然言語 condition ではなく `when:` 式（structured.* 参照）を使うこと
 # - implement / review の policy: pre-review-checklist（約 5KB）は、レビュー指摘の
 #   頻出パターン監査で post-hoc レビューの REJECT 再走を減らすための意図的なコスト
+# - loop_monitor の judge は threshold 到達時のみ LLM を呼び出すため、通常経路の
+#   トークン特性は不変
 # - 全 step provider: codex を明示（02-yt と挙動・トークン特性を揃える意図的な選択。
 #   グローバル config のハイブリッド方針（レビュー系 = Claude）はこの workflow には適用しない）
 name: lite
 max_steps: 12
 initial_step: preflight
+loop_monitors:
+  - cycle:
+      - implement
+      - review
+    threshold: 3
+    judge:
+      persona: supervisor
+      instruction: |
+        implement と review の往復が続いている。直近の review feedback の推移を確認し、
+        ループが生産的かを判定すること。
+        - 指摘件数が減っている、または毎回異なる新しい指摘が解消されている → 健全（進捗あり）
+        - 同一指摘の繰り返し、修正のたびに別の箇所が壊れる、feedback と実装が噛み合っていない
+          → 非生産的（改善なし）
+      rules:
+        - condition: 健全（進捗あり）
+          next: implement
+        - condition: 非生産的（改善なし）
+          next: ABORT
 steps:
   - name: preflight
     persona: coder
