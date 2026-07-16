@@ -51,6 +51,8 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    - monorepo では issue の影響範囲に対応する workspace / package のコマンドを優先する
    - 起票時にはコマンドを実行しない。未実装の変更は検証できないため、実装完了時に実行する品質ゲートとして issue 本文へ記録する
    - lint が設定されていない、または対象が docs のみで該当しない場合は、その理由をプレビューの品質ゲート欄に明記する
+   - 品質ゲートは、実際に選択される実行経路に基づき、ファイル操作だけで完結し、必要なローカルツールチェーンが利用できる場合に agent が検証できる「sandbox 完結型」と、daemon・socket・グローバル状態に依存し sandbox 内では検証できない「特権型」に分類する。たとえば `links` は sandbox 完結型、`nix-eval` / `docker` は特権型である。`contracts` は `takt` と `node` の両方が PATH にある場合に限り sandbox 完結型とし、未導入でローカル実行経路を確保できない場合は CI 委譲として扱う。`shellcheck` もローカルの `shellcheck` バイナリが PATH にある場合に限り sandbox 完結型で、未導入時に `nix run nixpkgs#shellcheck --` へフォールバックする実装なら特権型（CI 委譲）として扱う
+   - 特権型の品質ゲートは、受け入れ基準に「CI で exit 0 になる」形式で記載し、agent のローカル検証対象にしない
 
 2. **インタビュー（grilling スタイル）**: 本文生成に入る前に、**必ず**ユーザーへのインタビューで issue の内容を合意する。会話コンテキストと Step 1 の調査結果から各決定事項の仮説を組み立て、決定の依存関係の順に 1 つずつ確認しながら設計ツリーを降りていく
 
@@ -138,10 +140,11 @@ gh issue list --limit 30 --state all --json number,title,labels  # 過去 issue 
    - ◯◯の改修は本 issue では扱わない（→ 別 issue で対応）
 
    ## 受け入れ基準
-   （コード・設定変更では必須。リポジトリから特定した品質ゲートを正確なコマンドで記載する。該当するコマンドが無い場合は理由を明記する。docs のみの変更では任意）
+   （コード・設定変更では必須。リポジトリから特定した品質ゲートを正確なコマンドで記載する。特権型またはローカルの必要ツールチェーンを確保できないゲートは「CI で exit 0 になる」形式で記載し、agent のローカル検証対象にしない。該当するコマンドが無い場合は理由を明記する。docs のみの変更では任意）
    - [ ] `<lint command>` が exit 0 になる
    - [ ] `<test command>` が成功する
    - [ ] `<typecheck command>` が exit 0 になる
+   - [ ] CI の nix-eval job が pass する
 
    ## 実装方針（takt）
    （Step 6 の takt 適用判断を記録する。本文末尾に固定で置き、上記の既存セクション名・順序は変えない＝plan.md instruction の抽出に干渉させない。issue 起票時の暫定判断であり、実行時に takt-issue 側で最終確認する）
