@@ -254,6 +254,19 @@ check_contracts() {
     done < <(sed -nE 's/^[[:space:]]*schema_ref:[[:space:]]*([a-z0-9-]+)[[:space:]]*$/\1/p' "$f")
   done
 
+  echo "-- checking schemas avoid OpenAI-strict-incompatible keywords --"
+  # codex provider は response_format に schema をそのまま渡す。strict mode は
+  # 条件付き検証（allOf/if/then 等）を許可せず 400 になるため、静的に弾く。
+  local sf bad
+  for sf in "$schemas_dir"/*.json; do
+    [ -f "$sf" ] || continue
+    if bad="$(grep -nE '"(allOf|anyOf|oneOf|if|then|else|not|\$ref)"[[:space:]]*:' "$sf")"; then
+      echo "INVALID: $sf uses strict-mode-incompatible keyword(s):" >&2
+      echo "$bad" >&2
+      status=1
+    fi
+  done
+
   echo "-- checking review-verdict workflow preflight and blocked routes --"
   local takt_bin
   if ! takt_bin="$(command -v takt)"; then
@@ -440,7 +453,8 @@ if (!failed.feedback.includes('exited 23') || !failed.feedback.includes('daemon-
 if (await runEngineScenario('preflight', failed, failureDir) !== 'ABORT') {
   throw new Error(`${workflowName}: failed preflight does not route to ABORT`);
 }
-await expectInvalid({ verdict: 'blocked', feedback: '', followups: [] }, 'blocked with empty feedback');
+// blocked の非空 feedback は schema では強制しない（OpenAI strict モードが
+// allOf/if/then を許可しないため）。review instruction 側の規律に委ねる。
 await expectInvalid({ verdict: 'unknown', feedback: 'detail', followups: [] }, 'unknown verdict');
 await expectInvalid({ verdict: 'approved', feedback: '' }, 'missing followups key');
 
