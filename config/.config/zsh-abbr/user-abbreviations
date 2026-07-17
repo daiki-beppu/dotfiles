@@ -1,6 +1,6 @@
 abbr "cl"="claude"
 abbr "cla"="claude --permission-mode auto"
-abbr "ccusage"="bunx ccusage@20"
+abbr "ccusage"="bunx ccusage@latest"
 abbr "diff"="bunx difit ."
 abbr "sv"="bunx specv@latest"
 abbr "caffe"="caffeinate -id"
