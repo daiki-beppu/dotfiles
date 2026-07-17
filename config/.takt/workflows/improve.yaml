@@ -47,6 +47,7 @@ steps:
     persona: planner
     provider: codex
     edit: false
+    output_contract: improve-plan
     instruction: |
       実装計画を立てること。機能改善タスクなので、計画には**挙動変更影響表**を必ず含める:
 
