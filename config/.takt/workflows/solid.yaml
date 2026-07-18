@@ -10,7 +10,7 @@
 #   * plan が失敗原因分析とスコープ判定を行い、「そもそも 1 task で通る規模か」をゲートする。
 #     過大なら scope_review が vertical slice 分割案を出して ABORT（分割起票は Claude Code 層）
 #   * implement は最初から model: gpt-5.6-sol（lite は 3 巡目でようやく sol に昇格）
-#   * implement ⇄ review の空転を loop_monitor（threshold 3）で検知し scope_review に逃がす
+#   * implement ⇄ review の空転を loop_monitor（threshold 5）で検知し scope_review に逃がす
 #
 # トークン設計メモ:
 # - plan は分岐が 2 つあり自然言語 condition のため Phase 3（状態判定）の LLM 呼び出しが
@@ -23,13 +23,13 @@ workflow_config:
   provider_options:
     codex:
       network_access: true
-max_steps: 18
+max_steps: 26
 initial_step: preflight
 loop_monitors:
   - cycle:
       - implement
       - review
-    threshold: 3
+    threshold: 5
     judge:
       persona: supervisor
       instruction: |

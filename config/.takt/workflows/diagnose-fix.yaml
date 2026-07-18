@@ -24,7 +24,7 @@ workflow_config:
       network_access: true
     opencode:
       network_access: true
-max_steps: 15
+max_steps: 20
 initial_step: preflight
 steps:
   - name: preflight

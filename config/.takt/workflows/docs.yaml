@@ -15,7 +15,7 @@ workflow_config:
   provider_options:
     codex:
       network_access: true
-max_steps: 9
+max_steps: 12
 initial_step: preflight
 steps:
   - name: preflight
