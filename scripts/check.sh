@@ -125,37 +125,24 @@ check_links() {
 
 # ---------------------------------------------------------------------------
 # Check: contracts
-# Cross-checks the takt-family skill docs (takt-issue / takt-review / takt)
-# against the local `.takt/` workflow YAMLs, so a skill referencing a
-# workflow name that doesn't exist gets caught at PR time instead of at
-# `takt run` startup.
+# Validates the dormant local `.takt/` workflow assets kept for recovery.
 #
-# 1. Every workflow name referenced from a structured location in the skill
-#    docs (judgment tables, `-w <name>` flags) must resolve to either a
-#    local `config/.takt/workflows/*.yaml` `name:` or an entry in
-#    scripts/takt-builtin-workflows.txt (hard failure).
-# 2. Every local workflow's `schema_ref:` must resolve to
+# 1. Every local workflow's `schema_ref:` must resolve to
 #    config/.takt/schemas/<name>.json (hard failure). `policy:` references
 #    (single-line or list form) that don't resolve to
 #    config/.takt/facets/policies/<name>.md are assumed to be builtin
 #    facets and only produce a warning (no exit-code impact -- CI has no
 #    takt install to verify builtin facets against).
-# 3. Every local workflow YAML's `name:` field must match its filename.
-# 4. (Local-only, skipped when the installed-takt builtins dir is absent,
+# 2. Every local workflow YAML's `name:` field must match its filename.
+# 3. (Local-only, skipped when the installed-takt builtins dir is absent,
 #    which is always true in CI) warn if
 #    scripts/takt-builtin-workflows.txt has drifted from the installed
 #    takt's builtins/ja/workflows/ listing.
-# 5. The six workflows that use review-verdict start at preflight. The takt
+# 4. The six workflows that use review-verdict start at preflight. The takt
 #    loader resolves their real schema, then takt's WorkflowEngine exercises
 #    structured-output validation, state persistence, and `when` transitions
 #    with preflight fixtures and final-review verdicts. This protects the
 #    fail-fast/ABORT contract rather than merely checking YAML strings.
-#
-# Extraction is deliberately narrow (see plan 017): only structured spans
-# (markdown table rows inside known sections, `-w <name>` flags) are
-# scanned. Free-form prose is not parsed for workflow names -- that was
-# tried and produced too many false positives (e.g. the `issue` skill name
-# in backticks).
 # ---------------------------------------------------------------------------
 check_contracts() {
   echo "== contracts =="
@@ -200,46 +187,6 @@ check_contracts() {
     echo "MISSING: $allowlist not found" >&2
     status=1
   fi
-
-  echo "-- extracting workflow names referenced from skill docs --"
-  local -A referenced=()
-  local n
-
-  # 1. takt-issue judgment table (table rows only, scoped to the
-  #    "workflow 判断基準" section by markdown heading nesting).
-  while IFS= read -r n; do
-    [ -n "$n" ] && referenced["$n"]=1
-  done < <(awk '
-      /^#### workflow 判断基準/ { flag=1; next }
-      flag && /^#{1,4} / { flag=0 }
-      flag && /^\|/
-    ' config/.claude/skills/takt-issue/SKILL.md | grep -oE '`[a-z0-9-]+`' | tr -d '`')
-
-  # 2. takt/SKILL.md "## Workflow" table (table rows only).
-  while IFS= read -r n; do
-    [ -n "$n" ] && referenced["$n"]=1
-  done < <(awk '
-      /^## Workflow$/ { flag=1; next }
-      flag && /^#{1,2} / { flag=0 }
-      flag && /^\|/
-    ' config/.claude/skills/takt/SKILL.md | grep -oE '`[a-z0-9-]+`' | tr -d '`')
-
-  # 3. `-w <name>` flags across all takt-family skill docs.
-  while IFS= read -r n; do
-    [ -n "$n" ] && referenced["$n"]=1
-  done < <(grep -ohE -e '-w [a-z0-9-]+' \
-      config/.claude/skills/takt-issue/SKILL.md \
-      config/.claude/skills/takt-review/SKILL.md \
-      config/.claude/skills/takt/SKILL.md \
-      config/.claude/skills/takt/references/*.md 2>/dev/null | sed 's/^-w //' || true)
-
-  echo "-- checking referenced workflow names resolve --"
-  for n in "${!referenced[@]}"; do
-    if [ -z "${local_workflow_names[$n]:-}" ] && [ -z "${allowlist_names[$n]:-}" ]; then
-      echo "MISSING: skill docs reference workflow '$n' but it is neither a local workflow ($workflows_dir/*.yaml) nor listed in $allowlist" >&2
-      status=1
-    fi
-  done
 
   echo "-- checking schema_ref resolves under $schemas_dir --"
   local sref

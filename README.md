@@ -35,7 +35,7 @@ sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 | **Nix (nixpkgs)** | CLI ツール (git, gh, ffmpeg, uv 等) |
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
-| **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .wezterm.lua, .local/bin/*, .config/zsh-abbr/*, .claude/*, .takt/*) |
+| **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .wezterm.lua, .local/bin/*, .config/zsh-abbr/*, .claude/*) |
 | **Homebrew (brews)** | nixpkgs にないツール (ni, turso) |
 | **Homebrew (casks)** | GUI アプリ (Arc, Claude, Cursor, Figma 等) |
 
@@ -57,7 +57,7 @@ dotfiles/
 │   ├── .local/bin/        # open-browser, takt-usage-report
 │   ├── .config/
 │   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
-│   ├── .takt/             # takt 設定
+│   ├── .takt/             # 退避用 takt 設定（現在は配備しない）
 │   │   ├── config.yaml
 │   │   ├── workflows/
 │   │   ├── facets/

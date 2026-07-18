@@ -75,7 +75,7 @@ claude は `cache_read/cache_creation_input_tokens` が input 外数のため in
    Plan 015（2026-07-09）で gather → 統合レビュアー 1〜2 体 → supervise のカスタム workflow
    `config/.takt/workflows/review-lite.yaml` を作成し `takt-review` skill のデフォルトを
    切替したが、その後 builtin `review-takt-default`（7 観点個別レビュー）に戻して
-   review-lite.yaml は削除した。`takt-review` skill は現在 `review-takt-default` のみを使う。
+   review-lite.yaml は削除した。AI 用の takt 関連 skill も削除し、現在はユーザーが takt CLI を直接操作する。
 2. **レビュー頻度の運用ルール化** — 265 run 中どれだけが必要だったか。対象 PR を
    絞るだけで比例削減(現状レビューが全体の 83%)。
 3. **default-mini の draft 内 1st レビュー除去** — `ai-antipattern-review-1st` + `ai-antipattern-fix`

@@ -177,10 +177,6 @@ in
 
     # takt
     mkdir -p "$HOME/.takt"
-    link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
-    link_force "${dotfilesDir}/.takt/workflows" "$HOME/.takt/workflows"
-    link_force "${dotfilesDir}/.takt/facets" "$HOME/.takt/facets"
-    link_force "${dotfilesDir}/.takt/schemas" "$HOME/.takt/schemas"
 
     if [ -n "$MISSING_SOURCES" ]; then
       echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2
