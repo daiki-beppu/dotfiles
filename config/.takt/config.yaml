@@ -8,51 +8,54 @@
 
 provider: claude
 
-persona_providers:
-  coder:
-    provider: codex
-    model: gpt-5.6-luna
-  planner:
-    provider: codex
-    model: gpt-5.6-sol
-  # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
-  # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
-  diagnoser:
-    provider: codex
-    model: gpt-5.6-sol
-  ai-antipattern-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  architecture-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  coding-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  cqrs-es-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  frontend-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  implementation-semantics-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  merge-readiness-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  qa-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  security-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  terraform-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
-  testing-reviewer:
-    provider: codex
-    model: gpt-5.6-terra
+# v0.52 で persona_providers は deprecated。raw persona キーで解決される
+# provider_routing.personas へ移行（優先順位も persona_providers より上）
+provider_routing:
+  personas:
+    coder:
+      provider: codex
+      model: gpt-5.6-luna
+    planner:
+      provider: codex
+      model: gpt-5.6-sol
+    # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
+    # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
+    diagnoser:
+      provider: codex
+      model: gpt-5.6-sol
+    ai-antipattern-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    architecture-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    coding-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    cqrs-es-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    frontend-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    implementation-semantics-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    merge-readiness-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    qa-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    security-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    terraform-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
+    testing-reviewer:
+      provider: codex
+      model: gpt-5.6-terra
 language: ja
 
 # ── 実行制御（並列駆動）──
@@ -60,6 +63,11 @@ language: ja
 # 空いたワーカーが次のタスクを取得。Ctrl+C は実行中タスクの完了を待つ（graceful shutdown）。
 concurrency: 1               # 逐次実行（1-10）
 task_poll_interval_ms: 500   # 新規タスク検出のポーリング間隔（100-5000ms）
+
+# v0.52 新機能: takt run 中に失敗したタスクを自動で再キューする。
+# 2 = 一時的な失敗（レート制限・プロバイダ側エラー等）は救済しつつ、
+# 恒常的な失敗で無限に回り続けない上限。0 で無効
+auto_requeue_max_attempts: 2
 
 # ── Observability（OTLP エクスポート / フェーズ単位 usage 計測）──
 # OTEL_EXPORTER_OTLP_ENDPOINT 環境変数を設定すると spans/metrics が送信される。

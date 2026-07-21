@@ -1,8 +1,3 @@
-# takt 0.49.0 の builtins/ja/workflows/ と照合（2026-07-09 生成）。
-# 再生成コマンド:
-#   ls ~/.bun/install/global/node_modules/takt/builtins/ja/workflows/ | sed 's/\.yaml$//' | sort
-# takt をバージョンアップしたら再生成すること（scripts/check.sh の contracts 検査 Step 4 が
-# ローカル実行時に鮮度を warning で検知する）。
 audit-architecture
 audit-architecture-backend
 audit-architecture-dual
@@ -13,9 +8,12 @@ audit-unit
 auto-improvement-loop
 backend
 backend-cqrs
+backend-cqrs-for-local-llm
 backend-cqrs-mini
+backend-for-local-llm
 backend-maintenance
 backend-mini
+cli
 compound-eye
 deep-research
 default
@@ -27,13 +25,17 @@ draft
 dual
 dual-cqrs
 dual-cqrs-mini
+dual-for-local-llm
 dual-mini
 frontend
+frontend-for-local-llm
 frontend-maintenance
 frontend-mini
 magi
+merge-readiness-dual-final-gate
+merge-readiness-final-gate
 peer-review
-peer-review-with-fc
+peer-review-for-local-llm
 research
 review-backend
 review-backend-cqrs
@@ -50,7 +52,7 @@ review-fix-takt-default
 review-frontend
 review-takt-default
 takt-default
+takt-default-for-local-llm
 takt-default-refresh-all
 takt-default-refresh-fast
-takt-default-with-fc
 terraform

@@ -176,7 +176,13 @@ in
     link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
 
     # takt
+    # ~/.takt 自体は takt が実行時状態を書く通常ディレクトリ。
+    # git 管理する設定エントリのみ個別に symlink する（~/.claude と同方針）
     mkdir -p "$HOME/.takt"
+    link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
+    link_force "${dotfilesDir}/.takt/workflows" "$HOME/.takt/workflows"
+    link_force "${dotfilesDir}/.takt/facets" "$HOME/.takt/facets"
+    link_force "${dotfilesDir}/.takt/schemas" "$HOME/.takt/schemas"
 
     if [ -n "$MISSING_SOURCES" ]; then
       echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2
