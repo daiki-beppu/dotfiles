@@ -57,11 +57,8 @@ dotfiles/
 │   ├── .local/bin/        # open-browser, takt-usage-report
 │   ├── .config/
 │   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
-│   ├── .takt/             # 退避用 takt 設定（現在は配備しない）
-│   │   ├── config.yaml
-│   │   ├── workflows/
-│   │   ├── facets/
-│   │   └── schemas/
+│   ├── .takt/             # takt グローバル設定（~/.takt/config.yaml に symlink）
+│   │   └── config.yaml    # カスタム workflow は各プロジェクトの .takt/ で管理
 │   └── .claude/           # Claude Code 設定
 │       ├── CLAUDE.md
 │       ├── settings.json

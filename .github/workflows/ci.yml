@@ -22,7 +22,5 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Install takt contract-test dependency
-        run: npm install --global takt@0.51.0
-      - name: Run shellcheck, link-manifest drift, and skill/workflow contract checks
-        run: bash scripts/check.sh shellcheck links contracts
+      - name: Run shellcheck and link-manifest drift checks
+        run: bash scripts/check.sh shellcheck links

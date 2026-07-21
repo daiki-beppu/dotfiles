@@ -177,12 +177,10 @@ in
 
     # takt
     # ~/.takt 自体は takt が実行時状態を書く通常ディレクトリ。
-    # git 管理する設定エントリのみ個別に symlink する（~/.claude と同方針）
+    # グローバルで git 管理するのは config.yaml のみ。
+    # カスタム workflow / facets / schemas は各プロジェクトの .takt/ で管理する方針
     mkdir -p "$HOME/.takt"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
-    link_force "${dotfilesDir}/.takt/workflows" "$HOME/.takt/workflows"
-    link_force "${dotfilesDir}/.takt/facets" "$HOME/.takt/facets"
-    link_force "${dotfilesDir}/.takt/schemas" "$HOME/.takt/schemas"
 
     if [ -n "$MISSING_SOURCES" ]; then
       echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2
