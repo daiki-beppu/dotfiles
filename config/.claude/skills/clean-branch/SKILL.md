@@ -64,6 +64,21 @@ git worktree prune -v             # 実体ディレクトリが消えた登録�
 - **worktree に checkout 中のブランチは `git branch -d` できない**。先に `git worktree remove <path>` する
 - 未コミット変更がある worktree を消すときは中身を確認してから `git worktree remove --force`
 
+**`.claude/worktrees/` 配下は特に溜まる。** `--worktree` / EnterWorktree で作った worktree は `cleanupPeriodDays` の自動スイープ対象外（スイープされるのは subagent / background セッション由来のみ）。セッション終了時に「保持」を選ぶと、削除するまで永久に残る。
+
+各 worktree が安全に消せるかは 3 点で判定する。すべて空なら失われる作業は無い:
+
+```bash
+git worktree list --porcelain | rg '^worktree ' | sed 's/^worktree //' | rg '\.claude/worktrees/' \
+| while read -r w; do
+    echo "===== $w"
+    git -C "$w" status --porcelain --untracked-files=all   # 未コミット変更・未追跡ファイル
+    git -C "$w" log --oneline main..HEAD                    # main に無いコミット
+  done
+```
+
+> zsh では `for w in $(cmd)` が単語分割されないため、上記のように `while read -r` で受ける。
+
 ### 4. 検出結果をユーザーに表示し確認を取る
 
 分類（MERGED / CLOSED / NO_PR）ごとに件数と一覧を提示し、**スコープを確認**してから削除する。リスクの低い MERGED と、復元しにくい NO_PR は分けて確認するとよい。

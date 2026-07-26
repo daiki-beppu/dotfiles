@@ -25,9 +25,9 @@ GitHub issue を実装し PR 化するスキル。分割検討・worktree 作成
 | Blocked by | 着手前に GraphQL `blockedBy` で照会する(本文の記述は見ない)。`OPEN` の blocker があれば実装せずユーザーに確認する。複数の子から選ぶ場合は **frontier**(blocker がすべて `CLOSED`)から選ぶ |
 | TDD | テストで固定できる挙動は `tdd` スキルを駆動して赤→緑で進める。seam は着手前に決める。固定対象が無い変更(設定・ドキュメント等)のみ省略可 |
 | 検証リズム | typecheck と該当範囲の単体テストはこまめに、フルテストスイートは最後に1回、lint は commit 前 |
-| worktree 置き場 | `$REPO_ROOT/.worktrees/<slug>/`(dotfiles CLAUDE.md 規約)。`.gitignore` に `.worktrees/` が無ければ追加 |
+| worktree 置き場 | `$REPO_ROOT/.claude/worktrees/<slug>/`(CLAUDE.md 規約)。`.gitignore` に `.claude/worktrees/` が無ければ追加 |
 | worktree の重複作成 | 作成前に `git worktree list` で確認。Codex / Claude Desktop 等が対象 issue 用に既に作成済みならそれを再利用し新規作成をスキップ |
-| main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` で `git pull --ff-only` |
+| main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` で `git pull --ff-only` と `git status -sb`(ahead があれば push。未 push コミットは `baseRef: fresh` の worktree に入らない) |
 | CI 監視 | 前景で `--watch` を直接叩かない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げ。完了は Claude Code=自動再呼び出し / Codex=`while kill -0 ...; do sleep 30; done` の1コマンドブロッキング待機(単発チェックでは不可)。checks の合否だけでなく待機前後で mergeable も確認する(コンフリクト中は checks が揃わず待機が伸び続けることがある) |
 | fix ループ | 最大 3 周。超えたら人手判断を仰ぐ |
 | スコープ | PR 作成 → CI green まで。レビュー・マージ・worktree 削除はスコープ外 |
@@ -91,15 +91,27 @@ git worktree list
 ```bash
 cd <repo_root>
 git checkout main && git pull --ff-only
+git status -sb                      # "ahead" が出たら push してから進む(下記の理由)
 SLUG="issue-<N>-<short-slug>"
-git worktree add ".worktrees/${SLUG}" -b "${SLUG}"
+git worktree add ".claude/worktrees/${SLUG}" -b "${SLUG}"
+
+# .worktreeinclude は Claude が作る worktree にしか効かないため、手動 add では自分でコピーする
+if [ -f .worktreeinclude ]; then
+  rg -v '^\s*(#|$)' .worktreeinclude | while read -r p; do
+    [ -e "$p" ] || continue
+    mkdir -p ".claude/worktrees/${SLUG}/$(dirname "$p")"
+    cp -R "$p" ".claude/worktrees/${SLUG}/$p"
+  done
+fi
 ```
 
-`.gitignore` に `.worktrees/` が無ければ main 側で追加してコミットする。
+`.gitignore` に `.claude/worktrees/` が無ければ main 側で追加してコミットする。
+
+**ahead を確認する理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "fresh"`(= `origin/HEAD`)から分岐するため、ローカル main の未 push コミットが worktree に入らない。`git worktree add` はローカル main から分岐するので直接の影響は受けないが、同じ issue に対して他クライアントが `--worktree` で作った worktree を再利用する場合にベースがずれる。ずれていたら worktree 側で `git reset --hard main` して揃える。
 
 ### 3. 実装
 
-worktree(`.worktrees/${SLUG}`)内で issue の要件を実装する。
+worktree(`.claude/worktrees/${SLUG}`)内で issue の要件を実装する。
 
 **テストで固定できる挙動は `tdd` スキルを駆動して赤→緑で1枚ずつ進める。** どこを TDD の対象にするか(seam)は実装開始前に決めてから着手する。設定変更やドキュメント更新のようにテストで固定する対象が無い場合のみ、TDD を省いてよい。
 
@@ -113,7 +125,7 @@ worktree(`.worktrees/${SLUG}`)内で issue の要件を実装する。
 ### 4. commit → push → PR 作成
 
 ```bash
-cd ".worktrees/${SLUG}"
+cd ".claude/worktrees/${SLUG}"
 git add -A && git commit -m "<message>"
 git push -u origin "${SLUG}"
 gh pr create --draft --title "<title>" --body "$(cat <<'EOF'
@@ -141,7 +153,7 @@ PR_NUM=<PR#>
 gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeable) mergeStateStatus=\(.mergeStateStatus)"'
 ```
 
-`mergeable=CONFLICTING`(または `mergeStateStatus=DIRTY`)なら、worktree(`.worktrees/${SLUG}`)内で base を merge/rebase してコンフリクトを解消してから CI 監視に進む。解消後は mergeable を再確認して `MERGEABLE` になってから次に進む。
+`mergeable=CONFLICTING`(または `mergeStateStatus=DIRTY`)なら、worktree(`.claude/worktrees/${SLUG}`)内で base を merge/rebase してコンフリクトを解消してから CI 監視に進む。解消後は mergeable を再確認して `MERGEABLE` になってから次に進む。
 
 - **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green)。wrapper を作らないので `chmod` も不要。待っている間は他作業に context を使ってよい(前景で sleep 待ちしない)。
 - **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を1コマンドにまとめて実行する。`kill -0` を1回だけ確認して次に進むと CI 完了前に後続を実行してしまう:
@@ -191,8 +203,8 @@ CI green を確認したら `gh pr ready <PR#>` で ready for review 化し、PR
 - テストで固定できる挙動は `tdd` スキルを駆動する。TDD の seam は実装開始前に決める。テストで固定する対象が無い変更のみ省略してよい
 - typecheck と該当範囲の単体テストはこまめに実行する。フルテストスイートは最後に1回、lint は commit 前に実行する
 - worktree 作成前に `git worktree list` で対象 issue に対応する worktree が既に存在しないか確認する。Codex / Claude Desktop 等が作成済みならそれを再利用し、新規作成しない
-- 新規に worktree を作る場合のみ、作成前に必ず main を `git pull --ff-only` で最新化する
-- worktree は `$REPO_ROOT/.worktrees/<slug>/` に作成し、`.gitignore` に `.worktrees/` が無ければ追加する
+- 新規に worktree を作る場合のみ、作成前に必ず main を `git pull --ff-only` で最新化し、`git status -sb` で ahead が無いことを確認する
+- worktree は `$REPO_ROOT/.claude/worktrees/<slug>/` に作成し、`.gitignore` に `.claude/worktrees/` が無ければ追加する
 - PR は常に `--draft` で作成し、本文に `Closes #<N>` を含める
 - CI green を確認したら `gh pr ready <PR#>` で自動的に ready for review 化する(ユーザー確認は不要)
 - CI 監視は前景で `--watch` しない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げし、Claude Code は exit の自動再呼び出しで完了を受ける(poll しない)。Codex は `while kill -0 "$(cat pidfile)" 2>/dev/null; do sleep 30; done` を1コマンドとして実行しプロセス終了までブロックする(`kill -0` の単発チェックで次に進んではならない)
