@@ -15,6 +15,12 @@ description: Use when マージ済みの不要ブランチを一括削除した�
 - `git branch` の一覧を整理したいとき
 - worktree の残骸を片付けたいとき
 
+## 実行スタイル
+
+- **調査は自分で行う**: ブランチと PR の突き合わせを subagent に委任しない。`git` / `gh` 数回で終わる範囲であり、削除承認を取る主体を分けない
+- **実況しない**: 分類が終わるまで進捗を書かず、Step 4 の分類別一覧を最初のまとまった出力にする
+- **スコープを広げない**: ブランチと worktree の削除だけを行う。tag / stash / reflog の整理や、残ったブランチの rebase には踏み込まない
+
 ## Instructions
 
 ### 1. 全ブランチと全 PR を取得して突き合わせる
@@ -110,7 +116,6 @@ git push origin --delete <branch1> <branch2> <branch3> ...
 
 ## Gotchas
 
-- **`git branch --merged` の罠**: squash / rebase マージ済みブランチは「未マージ」と表示される。マージ済みか否かは必ず `gh pr` の state で確認する
 - **`git branch -d` が拒否する**: squash マージ済みブランチは未マージ扱いなので `-d` が失敗する。PR state で MERGED 確認済みなら `-D` で削除してよい
 - **zsh の落とし穴**: `mapfile` は使えない（bash 専用）。配列は `arr=("${(@f)$(cmd)}")` で行分割、要素は `"${arr[@]}"` で展開。`for x in $var` は zsh では単語分割されない（`"${(@f)var}"` か配列を使う）
 - **リモートブランチ一括削除**: `git push origin --delete b1 b2 b3` と複数 ref をまとめて渡せる（push 回数を減らせる）

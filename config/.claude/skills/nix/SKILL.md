@@ -137,6 +137,14 @@ gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--
 `programs.nh.flake` で `NH_FLAKE` が設定済みのため、`nh darwin switch` だけで
 `sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` 相当の rebuild ができる。
 
+## Rules
+
+- 依頼された 1 件の追加・削除だけを行う。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
+- `darwin-rebuild switch` / `sudo nh clean` / `nix flake update` は実行前にユーザーの承認を得る。いずれも `sudo` でシステム状態を変えるか、全依存のバージョンを動かす
+- パッケージ名を推測で書かない。`nix search nixpkgs <名前>` か search.nixos.org で実在を確認してから追加する
+- `flake.lock` は手動編集しない(`nix flake update` の生成物)
+- rebuild / clean の出力は全文貼らない。成否と、変わった世代・パッケージだけを報告する
+
 ## よくある操作の早見表
 
 | やりたいこと | 操作 |

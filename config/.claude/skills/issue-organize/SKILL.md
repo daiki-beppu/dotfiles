@@ -10,6 +10,12 @@ description: |
 
 open な GitHub issue を sub-issue 階層 + カテゴリプレフィックスで整理する。
 
+## 実行スタイル
+
+- **バッチは自分で回す**: 分類・接続・プレフィックス付与を subagent に分散しない。`gh` 呼び出しの列挙であり、委任するとユーザー承認の所在が分裂する
+- **実況しない**: 進捗は段階ごとに1つの表で示す。issue 1件ごとの成否を逐一書かない
+- **スコープを広げない**: 依頼されたカテゴリの整理だけ行う。ついでのラベル整理・本文書き換え・open issue の内容修正はしない
+
 ## Process
 
 ### 1. Survey — 全 open issue を収集
@@ -43,7 +49,7 @@ AskUserQuestion で選択肢を提示し、曖昧な分類は確認してから�
 
 ### 3. Create parents — 親 issue を作成
 
-リポジトリの既存 epic フォーマットに合わせる。フォーマットが不明な場合は既存 epic の body を 1 件読んで踏襲する。
+リポジトリの既存 epic フォーマットに合わせる。フォーマットが不明な場合は既存 epic の body を 1 件読んで踏襲する。body は完了条件と sub-issue への参照だけを置き、子 issue の内容を要約し直さない(子側と二重管理になる)。
 
 デフォルトテンプレート:
 
@@ -116,7 +122,9 @@ gh issue edit $NUMBER --title "[category] existing title"
 gh issue close $NUMBER --comment "Duplicate of #$ORIGINAL" --reason "not planned"
 ```
 
-### 7. Verify — 接続結果を確認
+### 7. 結果を報告
+
+接続の成否は Step 4 の `add_sub_issue()` が返す OK / SKIP が正なので、再照会で検算し直さない。ユーザーに見せるサマリ表を組むためだけに親ごとの件数を取る:
 
 ```bash
 for n in $PARENT_NUMBERS; do
