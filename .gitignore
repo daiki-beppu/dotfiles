@@ -23,5 +23,9 @@ config/.claude/skills/*-workspace/
 __pycache__/
 *.pyc
 
-# Claude Code の手動 worktree 置き場（parallel スキル等が利用）
+# Claude Code の worktree 置き場（--worktree / EnterWorktree が自動管理）
+# ルート限定にする: 先頭 / が無いと追跡対象の config/.claude/worktrees/ にもマッチしてしまう
+/.claude/worktrees/
+
+# 旧・手動 worktree 置き場（.claude/worktrees/ へ統一済み。残骸対策で ignore を維持）
 .worktrees/
