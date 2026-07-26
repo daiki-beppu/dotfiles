@@ -115,6 +115,8 @@ gh search issues --repo <owner/repo> "<起票内容のキーワード>" --limit 
 - [ ] `<test command>` が成功する
 ```
 
+依存関係(`Blocked by`)は本文に書かない。GitHub ネイティブの blocking 関係として登録する(後述)。
+
 カテゴリ固有セクションは次を使う。
 
 - `bug`: `再現手順`、`期待される動作`、`実際の動作`、`影響範囲`
@@ -133,6 +135,62 @@ gh search issues --repo <owner/repo> "<起票内容のキーワード>" --limit 
 - 実装が複数 PR に分かれそう、または段階的リリースが自然
 
 判断に迷う場合も分割案を提示する側に倒す。分割で合意した場合は親 issue を本スキルで作成し、子 issue の作成と GraphQL `addSubIssue` での親子接続は issue-organize スキルの手順に従う。
+
+### 分割後の1件が満たすべき形
+
+上の基準は「大きすぎないか」を測る量的な物差しにすぎない。分割して得た各 issue は、加えて次を満たすこと。
+
+- **全レイヤを貫く**: schema / API / UI / テストを縦に貫通する狭い完全な経路にする。1レイヤだけを横に切った issue にしない
+- **単体で検証可能**: その issue だけを完了させた時点で、動作を実演または検証できる
+- **1 context に収まる**: 新規セッション1本で実装しきれる分量に収める
+- **prefactor を先に置く**: 実装を楽にする下準備が必要なら、それを先行 issue として独立させる
+
+### Blocked by（依存関係）を付ける
+
+各 issue に、**着手前に完了している必要がある issue** を依存関係として登録する。sub-issue の親子は階層であって依存関係ではないため、両方を持たせる。
+
+**GitHub ネイティブの blocking 関係(`addBlockedBy`)を必ず使う。** 本文には書かない — 2箇所に持つと必ず食い違うため、ネイティブ側を唯一の正とする。`gh issue` に依存関係のサブコマンドは無いので GraphQL を使う。
+
+作成順は**依存順(blocker が先)**にする。`addBlockedBy` は issue の node ID を要求するため、blocker が既に存在していないと接続できない。
+
+```bash
+# 1. 双方の node ID を取得(gh issue view の id がそのまま GraphQL node ID)
+BLOCKED_ID=$(gh issue view <塞がれる側の番号> --json id --jq .id)
+BLOCKER_ID=$(gh issue view <塞ぐ側の番号> --json id --jq .id)
+
+# 2. 依存を登録
+gh api graphql -f query='
+mutation($issueId:ID!,$blockingIssueId:ID!){
+  addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){
+    issue{ number issueDependenciesSummary{ totalBlockedBy } }
+  }
+}' -F issueId="$BLOCKED_ID" -F blockingIssueId="$BLOCKER_ID"
+```
+
+全 issue を作り終えたら、依存が意図どおりに張れているか確認する。
+
+```bash
+gh api graphql -f query='
+query($owner:String!,$repo:String!,$num:Int!){
+  repository(owner:$owner,name:$repo){
+    issue(number:$num){ blockedBy(first:50){ nodes{ number title state } } }
+  }
+}' -F owner=<owner> -F repo=<repo> -F num=<番号>
+```
+
+着手は **frontier** — `blockedBy` が空、または全 blocker が `CLOSED` の issue — から選ぶ。直列に繋がっている場合は上から順になる。
+
+誤って張った依存は `removeBlockedBy` を同じ引数で呼べば外せる。
+
+### 例外: wide refactor は expand–contract で並べる
+
+リネームや共有シンボルの再定義のように、**1つの機械的変更が全コードベースに波及する**もの(wide refactor)は、縦に切ろうとすると単体で green にできない。vertical slice に押し込まず、次の順に並べる。
+
+1. **expand**: 新しい形を旧い形の**隣に**追加する。この時点では何も壊れない
+2. **migrate**: 呼び出し側を波及範囲ごと(パッケージ単位・ディレクトリ単位)のバッチで移す。各バッチを1 issue とし、expand を `Blocked by` に置く。旧い形が残っているのでバッチごとに CI は green を保てる
+3. **contract**: 呼び出し側が無くなってから旧い形を削除する。全 migrate バッチを `Blocked by` に置く
+
+バッチ単体でも green を保てない場合は、この順序のまま共通の統合ブランチを使い、最後の「統合して検証する」issue に全バッチを `Blocked by` として集約する。green を約束するのはその1件だけとする。
 
 ## 5. タイトルとラベルを決める
 
@@ -160,6 +218,11 @@ gh issue create --title "タイトル" --body "本文" --label "label1,label2"
 - APIキー、トークン、パスワード、接続文字列、個人情報を `***REDACTED***` に置換する
 - `参照資料` と `影響ファイル` は可能な限り実在する相対パスで書く
 - `要件` と `スコープ外` は空のまま作成しない
+- 依存関係は GitHub ネイティブの `addBlockedBy` で必ず登録する。本文に `Blocked by` を書いて代用しない(正が2箇所に分かれるため)
+- 分割した issue は依存順(blocker が先)に作成する。`addBlockedBy` は blocker の node ID を要求するため、逆順で作ると接続できない
+- 依存を張り終えたら `blockedBy` を照会し、意図どおりか確認してから完了報告する
+- 分割した各 issue は全レイヤを貫く縦の経路にする。1レイヤだけを横に切った issue を作らない
+- wide refactor(1つの機械的変更が全コードベースに波及するもの)は vertical slice に押し込まず、expand → migrate → contract の順に並べる
 - 品質ゲートを特定できない場合はコマンドを捏造せず、その旨を記載する
 - 本文は日本語で書き、コード・識別子・技術用語は原表記を保つ
 - 新規issue作成以外のGitHub操作へ範囲を広げない

@@ -22,6 +22,9 @@ GitHub issue を実装し PR 化するスキル。分割検討・worktree 作成
 |---|---|
 | 分割基準 | issue スキルと同一(要件3件以上 / 影響ファイル4件以上 / 独立した関心事2つ以上 / 複数 PR 見込み)。迷う場合も分割提示側に倒す |
 | 分割時の実装対象 | 分割合意後は**最初の子 issue のみ**を本スキルで実装する。子 issue 作成と親子接続は issue-organize スキルの手順に従う |
+| Blocked by | 着手前に GraphQL `blockedBy` で照会する(本文の記述は見ない)。`OPEN` の blocker があれば実装せずユーザーに確認する。複数の子から選ぶ場合は **frontier**(blocker がすべて `CLOSED`)から選ぶ |
+| TDD | テストで固定できる挙動は `tdd` スキルを駆動して赤→緑で進める。seam は着手前に決める。固定対象が無い変更(設定・ドキュメント等)のみ省略可 |
+| 検証リズム | typecheck と該当範囲の単体テストはこまめに、フルテストスイートは最後に1回、lint は commit 前 |
 | worktree 置き場 | `$REPO_ROOT/.worktrees/<slug>/`(dotfiles CLAUDE.md 規約)。`.gitignore` に `.worktrees/` が無ければ追加 |
 | worktree の重複作成 | 作成前に `git worktree list` で確認。Codex / Claude Desktop 等が対象 issue 用に既に作成済みならそれを再利用し新規作成をスキップ |
 | main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` で `git pull --ff-only` |
@@ -37,6 +40,24 @@ GitHub issue を実装し PR 化するスキル。分割検討・worktree 作成
 gh issue view <N> --json title,body,labels,state,url
 gh repo view --json nameWithOwner
 ```
+
+**`Blocked by` を確認する。** GitHub ネイティブの blocking 関係を照会する(本文の記述は見ない。正はネイティブ側)。
+
+```bash
+gh api graphql -f query='
+query($owner:String!,$repo:String!,$num:Int!){
+  repository(owner:$owner,name:$repo){
+    issue(number:$num){ blockedBy(first:50){ nodes{ number title state url } } }
+  }
+}' -F owner=<owner> -F repo=<repo> -F num=<N>
+```
+
+`state` が `OPEN` の blocker が1件でも残っていれば未完了とみなす。
+
+- **未完了の blocker がある** → 実装に着手しない。blocker の一覧を提示し、「先に blocker を実装するか / この issue を強行するか」をユーザーに確認する
+- **blocker がすべて close 済み、または依存なし** → そのまま Step 1 へ進む
+
+親 issue に複数の子がぶら下がっていて対象が指定されていない場合は、**frontier**(blocker がすべて完了した子 issue)から選ぶ。複数該当するときは一覧を提示してユーザーに選ばせる。
 
 ### 1. 分割検討
 
@@ -78,7 +99,16 @@ git worktree add ".worktrees/${SLUG}" -b "${SLUG}"
 
 ### 3. 実装
 
-worktree(`.worktrees/${SLUG}`)内で issue の要件を実装する。リポジトリ既存の lint / test / typecheck を実行してから commit する。テスト先行が有効な新規 feature なら `tdd` スキルの活用を検討してよいが必須ではない。
+worktree(`.worktrees/${SLUG}`)内で issue の要件を実装する。
+
+**テストで固定できる挙動は `tdd` スキルを駆動して赤→緑で1枚ずつ進める。** どこを TDD の対象にするか(seam)は実装開始前に決めてから着手する。設定変更やドキュメント更新のようにテストで固定する対象が無い場合のみ、TDD を省いてよい。
+
+検証は次のリズムで回す。まとめて最後に1回ではなく、壊れた位置が特定できる粒度で挟む。
+
+- **typecheck**: こまめに実行する
+- **単体テストファイル**: 触っている範囲のものをこまめに実行する
+- **フルテストスイート**: 最後に1回実行する
+- **lint**: commit 前に実行する
 
 ### 4. commit → push → PR 作成
 
@@ -155,6 +185,11 @@ CI green を確認したら `gh pr ready <PR#>` で ready for review 化し、PR
 
 - 実装着手前に必ず分割検討を行う。基準は issue スキルと同一(要件3件以上 / 影響ファイル4件以上 / 独立した関心事2つ以上 / 複数 PR 見込み)、迷う場合も分割提示側に倒す。基準に該当しなければユーザーに確認せず先へ進む
 - 分割で合意した場合、子 issue の作成と親子接続は issue-organize スキルの手順に従い、**最初の子 issue のみ**を対象として以降のステップを実行する。残りの子 issue には着手しない
+- 着手前に GraphQL `blockedBy` で対象 issue の依存を照会する。本文の `Blocked by` 記述は正ではないので参照しない
+- `OPEN` の blocker が残っている場合は実装に入らず、blocker を先に実装するかをユーザーに確認する
+- 対象が指定されず複数の子 issue がある場合は frontier(blocker がすべて `CLOSED`)から選ぶ。該当が複数あれば一覧を提示してユーザーに選ばせる
+- テストで固定できる挙動は `tdd` スキルを駆動する。TDD の seam は実装開始前に決める。テストで固定する対象が無い変更のみ省略してよい
+- typecheck と該当範囲の単体テストはこまめに実行する。フルテストスイートは最後に1回、lint は commit 前に実行する
 - worktree 作成前に `git worktree list` で対象 issue に対応する worktree が既に存在しないか確認する。Codex / Claude Desktop 等が作成済みならそれを再利用し、新規作成しない
 - 新規に worktree を作る場合のみ、作成前に必ず main を `git pull --ff-only` で最新化する
 - worktree は `$REPO_ROOT/.worktrees/<slug>/` に作成し、`.gitignore` に `.worktrees/` が無ければ追加する
