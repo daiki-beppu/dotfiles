@@ -1,13 +1,5 @@
 # Claude Code 設定
 
-## ツール制約
-
-### ripgrep（必須）
-検索には `grep` ではなく必ず `rg` を使うこと。`grep -r` / `grep -rn` 等は禁止
-
-### gh
-GitHub CLI。PR・Issue 操作に使用
-
 ## 開発ワークフロー
 
 ### main を最新化してから作業開始
@@ -20,14 +12,8 @@ GitHub CLI。PR・Issue 操作に使用
 
 worktree の置き場は以下に統一する:
 
+- **Claude Code 標準**: `$REPO_ROOT/.claude/worktrees/<自動生成名>/`（`--worktree` / EnterWorktree が自動管理）
 - **takt 自動生成**: `<repo-parent>/takt-worktrees/<timestamp>-<N>-<slug>/`（takt CLI が自動管理）
 - **手動 `git worktree add`**: `$REPO_ROOT/.worktrees/<slug>/`（リポジトリ内・gitignore 必須）
 
 新しいリポジトリで手動 worktree を初めて使う際は、`.gitignore` に `.worktrees/` を追加すること。
-
-## コンテキスト運用（トークン節約）
-
-- タスクの区切りごとに `/clear`（文脈を引き継ぎたい場合のみ `/compact`）。前タスクの文脈を残したまま新タスクを始めない
-- 広域のコード探索・調査は Explore subagent に委譲し、メイン会話に生のファイルダンプを持ち込まない
-- 巨大ファイルは全文 Read せず、offset/limit で必要範囲のみ読む
-- 長大な出力が予想されるコマンドはファイルへ redirect し、必要部分だけ読む
