@@ -16,21 +16,23 @@ GitHub issue を実装し PR 化するスキル。分割検討・worktree 作成
 
 - 「issue #N を対応して」「issue #N を PR 作成と CI green まで」といった依頼
 
-## 前提知識
+## 実行スタイル
 
-| 項目 | 対処 |
+- **自分で実装する**: 実装・修正・CI 対応を subagent に委任しない。委任してよいのは、対象 issue が独立した複数ファイル群にまたがり並行調査が明確に速い場合だけで、そのときも1体に留める。自分が書いたコードを点検させるために subagent を立てない
+- **実況しない**: 着手時に1文で方針を述べる。以降は方針が変わったとき(分割提示・blocker 検出・コンフリクト解消・fix ラウンド突入)だけ短く報告し、コマンド1つずつの進捗は書かない
+- **完了報告は結論から**: PR URL → CI 結果 → fix ラウンド数の順に述べる。変更内容の詳細は PR 本文に持たせ、会話には1〜3行の要約だけ置く
+- **スコープを広げない**: issue の要件だけを実装する。作業中に気づいた別の改善は実装せず、完了報告に1行添えるに留める
+
+## パラメータ
+
+| 項目 | 値 |
 |---|---|
-| 分割基準 | issue スキルと同一(要件3件以上 / 影響ファイル4件以上 / 独立した関心事2つ以上 / 複数 PR 見込み)。迷う場合も分割提示側に倒す |
-| 分割時の実装対象 | 分割合意後は**最初の子 issue のみ**を本スキルで実装する。子 issue 作成と親子接続は issue-organize スキルの手順に従う |
-| Blocked by | 着手前に GraphQL `blockedBy` で照会する(本文の記述は見ない)。`OPEN` の blocker があれば実装せずユーザーに確認する。複数の子から選ぶ場合は **frontier**(blocker がすべて `CLOSED`)から選ぶ |
-| TDD | テストで固定できる挙動は `tdd` スキルを駆動して赤→緑で進める。seam は着手前に決める。固定対象が無い変更(設定・ドキュメント等)のみ省略可 |
-| 検証リズム | typecheck と該当範囲の単体テストはこまめに、フルテストスイートは最後に1回、lint は commit 前 |
-| worktree 置き場 | `$REPO_ROOT/.claude/worktrees/<slug>/`(CLAUDE.md 規約)。`.gitignore` に `.claude/worktrees/` が無ければ追加 |
-| worktree の重複作成 | 作成前に `git worktree list` で確認。Codex / Claude Desktop 等が対象 issue 用に既に作成済みならそれを再利用し新規作成をスキップ |
-| main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` を checkout して `git pull --ff-only`(`baseRef: "head"` は cwd の HEAD から分岐するため、どのブランチにいるかがベースを決める) |
-| CI 監視 | 前景で `--watch` を直接叩かない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げ。完了は Claude Code=自動再呼び出し / Codex=`while kill -0 ...; do sleep 30; done` の1コマンドブロッキング待機(単発チェックでは不可)。checks の合否だけでなく待機前後で mergeable も確認する(コンフリクト中は checks が揃わず待機が伸び続けることがある) |
-| fix ループ | 最大 3 周。超えたら人手判断を仰ぐ |
-| スコープ | PR 作成 → CI green まで。レビュー・マージ・worktree 削除はスコープ外 |
+| 分割基準 | 要件3件以上 / 影響ファイル4件以上 / 独立した関心事2つ以上 / 複数 PR 見込み(issue スキルと同一、迷う場合は分割提示側に倒す) |
+| 分割時の実装対象 | 最初の子 issue のみ(残りには着手しない) |
+| worktree 置き場 | `$REPO_ROOT/.claude/worktrees/<slug>/`(CLAUDE.md 規約) |
+| fix ループ上限 | 3 周 |
+| 完了条件 | CI green + `gh pr ready` |
+| スコープ外 | レビュー・マージ・worktree 削除 |
 
 ## Task
 
@@ -61,12 +63,7 @@ query($owner:String!,$repo:String!,$num:Int!){
 
 ### 1. 分割検討
 
-Step 0 で取得した issue の内容から、**1 issue = 1 要件 + α(その要件に密接に付随する小要件のみ)の粒度に収まっているか**を実装に着手する前に判定する。基準は issue スキルと同一:
-
-- 要件が3件以上
-- 影響ファイルが4件以上
-- 独立した機能領域・関心事が2つ以上混在する
-- 実装が複数 PR に分かれそう、または段階的リリースが自然
+Step 0 で取得した issue の内容から、**1 issue = 1 要件 + α(その要件に密接に付随する小要件のみ)の粒度に収まっているか**を実装に着手する前に判定する。基準はパラメータ表のとおり。
 
 いずれにも該当しなければ、ユーザーに確認せずそのまま Step 2 に進む。
 
@@ -139,6 +136,8 @@ EOF
 
 PR は常に **draft** で作成する(CI 通過前にレビュアーへ通知を飛ばさないため)。CI green を確認した後、Step 7 で自動的に ready for review 化する。
 
+PR 本文は変更の実質だけを書く。テンプレートの空セクション、変更点の再掲、定型の締め文で膨らませない。
+
 ### 5. CI 監視(background、poll しない)
 
 `gh pr checks <PR#> --watch` は CI 完了までブロックして exit する。**wrapper スクリプトで包まず** redirect 付きで直接 background に投げる(前景で `--watch` しない。stdout はログに逃がす)。
@@ -153,7 +152,7 @@ PR_NUM=<PR#>
 gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeable) mergeStateStatus=\(.mergeStateStatus)"'
 ```
 
-`mergeable=CONFLICTING`(または `mergeStateStatus=DIRTY`)なら、worktree(`.claude/worktrees/${SLUG}`)内で base を merge/rebase してコンフリクトを解消してから CI 監視に進む。解消後は mergeable を再確認して `MERGEABLE` になってから次に進む。
+`mergeable=CONFLICTING`(または `mergeStateStatus=DIRTY`)なら、worktree(`.claude/worktrees/${SLUG}`)内で base を merge/rebase してコンフリクトを解消し、`MERGEABLE` になってから CI 監視に進む。
 
 - **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green)。wrapper を作らないので `chmod` も不要。待っている間は他作業に context を使ってよい(前景で sleep 待ちしない)。
 - **Codex / その他 CLI**: 自動再呼び出しが無いため、起動とブロッキング待機を1コマンドにまとめて実行する。`kill -0` を1回だけ確認して次に進むと CI 完了前に後続を実行してしまう:
@@ -168,13 +167,13 @@ gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeab
 
 ### 6. 判定 → fix ループ(最大 3 周)
 
-完了したら、**まず mergeable を再確認してから** `gh pr checks <PR#>` で結果を確認する(待機中に base が進んでコンフリクトが発生していることがあるため、checks の合否だけで判断しない):
+完了したら、**まず mergeable を確認してから** `gh pr checks <PR#>` で結果を確認する(待機中に base が進んでコンフリクトが発生していることがあるため、checks の合否だけで判断しない):
 
 ```bash
 gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeable) mergeStateStatus=\(.mergeStateStatus)"'
 ```
 
-- **mergeable=CONFLICTING** → 上記の解消手順を行い、push 後に Step 5 を再実行する(checks の結果に関わらず優先して解消する)
+- **mergeable=CONFLICTING** → Step 5 の解消手順を行い、push 後に Step 5 を再実行する(checks の結果に関わらず優先して解消する)
 - **mergeable=MERGEABLE** かつ **exit 0**(全 green) → Step 7 へ
 - **mergeable=MERGEABLE** かつ **exit ≠ 0** → `gh pr checks <PR#>` で失敗 check を特定し、`gh run view <run-id> --log-failed` で失敗ログを取得
   - worktree 内で修正する。指摘行だけを直さず「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
@@ -186,29 +185,12 @@ gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeab
 
 CI green を確認したら `gh pr ready <PR#>` で ready for review 化し、PR URL・変更概要・fix ラウンド数を報告して終了する。worktree は残す(PR がまだ merge されていないため)。ローカルブランチ・worktree の削除は PR merge 後に `clean-branch` スキルへ委譲する。追加のコードレビューが必要なら `/code-review` を別途依頼する。
 
-## Gotchas
-
-- CI 監視ログは全文表示しない。`gh pr checks` の要約と失敗時の `--log-failed` の該当部分のみ読む
-- fix ループ中も表面的な patch で指摘を揉み消さない。根本原因と同型箇所を確認してから直す
-- 実装・修正は必ず worktree 内で行う。repo root で直接編集しない
-- レビュー・マージ・worktree 削除はこのスキルの範囲外
-
 ## Rules
 
-- 実装着手前に必ず分割検討を行う。基準は issue スキルと同一(要件3件以上 / 影響ファイル4件以上 / 独立した関心事2つ以上 / 複数 PR 見込み)、迷う場合も分割提示側に倒す。基準に該当しなければユーザーに確認せず先へ進む
-- 分割で合意した場合、子 issue の作成と親子接続は issue-organize スキルの手順に従い、**最初の子 issue のみ**を対象として以降のステップを実行する。残りの子 issue には着手しない
-- 着手前に GraphQL `blockedBy` で対象 issue の依存を照会する。本文の `Blocked by` 記述は正ではないので参照しない
-- `OPEN` の blocker が残っている場合は実装に入らず、blocker を先に実装するかをユーザーに確認する
-- 対象が指定されず複数の子 issue がある場合は frontier(blocker がすべて `CLOSED`)から選ぶ。該当が複数あれば一覧を提示してユーザーに選ばせる
-- テストで固定できる挙動は `tdd` スキルを駆動する。TDD の seam は実装開始前に決める。テストで固定する対象が無い変更のみ省略してよい
-- typecheck と該当範囲の単体テストはこまめに実行する。フルテストスイートは最後に1回、lint は commit 前に実行する
-- worktree 作成前に `git worktree list` で対象 issue に対応する worktree が既に存在しないか確認する。Codex / Claude Desktop 等が作成済みならそれを再利用し、新規作成しない
-- 新規に worktree を作る場合のみ、作成前に必ず main を checkout したうえで `git pull --ff-only` で最新化する(`baseRef: "head"` はいま居るブランチの HEAD から分岐するため)
-- worktree は `$REPO_ROOT/.claude/worktrees/<slug>/` に作成し、`.gitignore` に `.claude/worktrees/` が無ければ追加する
-- PR は常に `--draft` で作成し、本文に `Closes #<N>` を含める
-- CI green を確認したら `gh pr ready <PR#>` で自動的に ready for review 化する(ユーザー確認は不要)
-- CI 監視は前景で `--watch` しない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げし、Claude Code は exit の自動再呼び出しで完了を受ける(poll しない)。Codex は `while kill -0 "$(cat pidfile)" 2>/dev/null; do sleep 30; done` を1コマンドとして実行しプロセス終了までブロックする(`kill -0` の単発チェックで次に進んではならない)
-- CI 監視は checks の合否だけで判断しない。待機の前後で `gh pr view --json mergeable,mergeStateStatus` を確認し、`CONFLICTING`/`DIRTY` なら checks の結果に関わらずコンフリクト解消を優先する(base とコンフリクトしていると checks がいつまでも揃わず待機が伸び続けることがあるため)
-- CI red 時は worktree 内で直接修正し、根本原因ベースで直す。fix ループは最大 3 周、超過したら人手判断を仰ぐ
-- CI fail がスコープ外(flaky 等)と判断した場合はユーザーに報告し判断を仰ぐ
+- 実装・修正は必ず worktree 内で行う。repo root で直接編集しない
+- 着手前の分割検討と `blockedBy` 照会を飛ばさない。`OPEN` の blocker が残っていれば実装に入らずユーザーに確認する
+- テストで固定できる挙動は `tdd` スキルを駆動する。seam は実装開始前に決める
+- PR は常に `--draft` で作成し、本文に `Closes #<N>` を含める。CI green を確認したら確認を取らずに `gh pr ready` する
+- CI 監視は前景で `--watch` せず、poll もしない。ログは全文表示せず、要約と `--log-failed` の該当部分だけ読む
+- CI red は表面的な patch で揉み消さず根本原因から直す。fix ループは最大 3 周、超過したら人手判断を仰ぐ
 - CI green の確認と ready for review 化で完了とする。レビュー・マージ・worktree 削除は行わない
