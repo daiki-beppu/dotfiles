@@ -31,7 +31,7 @@
   },
   "model": "opus[1m]",
   "worktree": {
-    "baseRef": "fresh"
+    "baseRef": "head"
   },
   "skillOverrides": {
     "agents-sdk": "off",
@@ -60,6 +60,18 @@
     "zoom-out": "off"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/refresh-main.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
