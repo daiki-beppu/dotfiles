@@ -27,7 +27,7 @@ GitHub issue を実装し PR 化するスキル。分割検討・worktree 作成
 | 検証リズム | typecheck と該当範囲の単体テストはこまめに、フルテストスイートは最後に1回、lint は commit 前 |
 | worktree 置き場 | `$REPO_ROOT/.claude/worktrees/<slug>/`(CLAUDE.md 規約)。`.gitignore` に `.claude/worktrees/` が無ければ追加 |
 | worktree の重複作成 | 作成前に `git worktree list` で確認。Codex / Claude Desktop 等が対象 issue 用に既に作成済みならそれを再利用し新規作成をスキップ |
-| main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` で `git pull --ff-only` と `git status -sb`(ahead があれば push。未 push コミットは `baseRef: fresh` の worktree に入らない) |
+| main 最新化 | 新規に worktree を作る場合のみ、作成前に必ず `main` を checkout して `git pull --ff-only`(`baseRef: "head"` は cwd の HEAD から分岐するため、どのブランチにいるかがベースを決める) |
 | CI 監視 | 前景で `--watch` を直接叩かない。`gh pr checks --watch` を wrapper なしで redirect 付き background 投げ。完了は Claude Code=自動再呼び出し / Codex=`while kill -0 ...; do sleep 30; done` の1コマンドブロッキング待機(単発チェックでは不可)。checks の合否だけでなく待機前後で mergeable も確認する(コンフリクト中は checks が揃わず待機が伸び続けることがある) |
 | fix ループ | 最大 3 周。超えたら人手判断を仰ぐ |
 | スコープ | PR 作成 → CI green まで。レビュー・マージ・worktree 削除はスコープ外 |
@@ -91,7 +91,7 @@ git worktree list
 ```bash
 cd <repo_root>
 git checkout main && git pull --ff-only
-git status -sb                      # "ahead" が出たら push してから進む(下記の理由)
+git status -sb                      # diverged していないこと(ff できたこと)を確認
 SLUG="issue-<N>-<short-slug>"
 git worktree add ".claude/worktrees/${SLUG}" -b "${SLUG}"
 
@@ -107,7 +107,7 @@ fi
 
 `.gitignore` に `.claude/worktrees/` が無ければ main 側で追加してコミットする。
 
-**ahead を確認する理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "fresh"`(= `origin/HEAD`)から分岐するため、ローカル main の未 push コミットが worktree に入らない。`git worktree add` はローカル main から分岐するので直接の影響は受けないが、同じ issue に対して他クライアントが `--worktree` で作った worktree を再利用する場合にベースがずれる。ずれていたら worktree 側で `git reset --hard main` して揃える。
+**main を checkout してから作る理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "head"`(= セッションの cwd の HEAD)から分岐する。feature ブランチにいればそこから分岐してしまうため、どのブランチにいるかがそのままベースになる。`git worktree add` も同様にローカル HEAD 基準。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
 
 ### 3. 実装
 
@@ -203,7 +203,7 @@ CI green を確認したら `gh pr ready <PR#>` で ready for review 化し、PR
 - テストで固定できる挙動は `tdd` スキルを駆動する。TDD の seam は実装開始前に決める。テストで固定する対象が無い変更のみ省略してよい
 - typecheck と該当範囲の単体テストはこまめに実行する。フルテストスイートは最後に1回、lint は commit 前に実行する
 - worktree 作成前に `git worktree list` で対象 issue に対応する worktree が既に存在しないか確認する。Codex / Claude Desktop 等が作成済みならそれを再利用し、新規作成しない
-- 新規に worktree を作る場合のみ、作成前に必ず main を `git pull --ff-only` で最新化し、`git status -sb` で ahead が無いことを確認する
+- 新規に worktree を作る場合のみ、作成前に必ず main を checkout したうえで `git pull --ff-only` で最新化する(`baseRef: "head"` はいま居るブランチの HEAD から分岐するため)
 - worktree は `$REPO_ROOT/.claude/worktrees/<slug>/` に作成し、`.gitignore` に `.claude/worktrees/` が無ければ追加する
 - PR は常に `--draft` で作成し、本文に `Closes #<N>` を含める
 - CI green を確認したら `gh pr ready <PR#>` で自動的に ready for review 化する(ユーザー確認は不要)

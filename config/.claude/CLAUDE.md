@@ -4,9 +4,11 @@
 
 ### main を最新化してから作業開始
 
-新しいタスクに着手する前、または worktree を切る前に、必ず main の作業ツリーで `git pull --ff-only` と `git status -sb` を実行する。古い main から派生した worktree は無用な merge conflict と「すでに main に入っている変更の再実装」を引き起こす。
+古い main から派生した worktree は、無用な merge conflict と「すでに main に入っている変更の再実装」を引き起こす。前者は事後の `git merge main` で払えるが、**後者は書いてしまった時点で回復できない**（マージ時に「同じことを別の書き方でやっている」コンフリクトとして初めて発覚する）。
 
-**落とし穴**: worktree の分岐元は `origin/HEAD` であってローカル main ではない（`worktree.baseRef: "fresh"`）。ローカルに未 push コミットがあるとその変更は worktree に入らないが、`git pull --ff-only` は「リモートに新着なし」を Already up to date と答えるだけでこれを教えない。`git status -sb` の `ahead` を確認し、push するか worktree 側で `git reset --hard main` して揃える。
+セッション起動時（`startup` / `clear`）に `hooks/refresh-main.sh` が `git pull --ff-only` を自動実行する。副作用を出さないよう、**メインチェックアウトのデフォルトブランチにいて作業ツリーがクリーンなときだけ**動き、worktree 内・feature ブランチ・未コミット変更ありでは何もしない。diverged で ff できないときは警告のみ出す。
+
+**落とし穴**: worktree の分岐元は `worktree.baseRef: "head"` = **セッションの cwd の HEAD**。メインチェックアウトの main ではない。feature ブランチにいれば feature から、worktree 内なら**その worktree の HEAD** から分岐する。意図しないベースを避けるため、worktree は main をチェックアウトした状態から切る（`head` なのでローカル main の未 push コミットも worktree に入る）。
 
 ### worktree 必須
 
