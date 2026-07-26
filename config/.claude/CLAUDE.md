@@ -25,14 +25,6 @@ worktree の置き場は以下に統一する:
 
 新しいリポジトリで手動 worktree を初めて使う際は、`.gitignore` に `.worktrees/` を追加すること。
 
-## dotfiles 管理
-
-- 実体: `~/01-dev/dotfiles/config/.claude/`（git 管理）
-- `~/.claude/` 自体は通常ディレクトリ。配下の以下の個別エントリのみ dotfiles 内の対応ファイルへの symlink:
-  - `CLAUDE.md`, `settings.json`, `hooks/`, `skills/`, `statusline-command.sh`
-- 他のエントリ（`sessions/`, `projects/`, `plugins/`, `cache/` など）は Claude Code 自身が管理する実体
-- スキルや設定の編集は dotfiles リポジトリ側で行うこと（symlink 経由で反映される）
-
 ## コンテキスト運用（トークン節約）
 
 - タスクの区切りごとに `/clear`（文脈を引き継ぎたい場合のみ `/compact`）。前タスクの文脈を残したまま新タスクを始めない
