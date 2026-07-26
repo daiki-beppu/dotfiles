@@ -2,14 +2,6 @@
 
 ## ツール制約
 
-### ni（必須）
-npm, yarn, pnpm コマンドを直接実行してはならない。必ず ni 経由で実行すること
-- `npm install` → `ni`
-- `npm run <script>` → `nr <script>`
-- `npm install <pkg>` → `ni <pkg>`
-- `npm install -D <pkg>` → `ni -D <pkg>`
-- `npx <cmd>` → `nlx <cmd>`
-
 ### ripgrep（必須）
 検索には `grep` ではなく必ず `rg` を使うこと。`grep -r` / `grep -rn` 等は禁止
 

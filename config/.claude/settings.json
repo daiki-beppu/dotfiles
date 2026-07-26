@@ -29,6 +29,7 @@
       "~/01-dev/dotfiles"
     ]
   },
+  "model": "opus[1m]",
   "skillOverrides": {
     "agents-sdk": "off",
     "aqua-improve": "off",
@@ -56,23 +57,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/copy-env.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/reject-grep.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/reject-raw-pm.sh",
             "timeout": 5
           }
         ]
