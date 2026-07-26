@@ -6,7 +6,7 @@
 #   scripts/check.sh nix-eval     # run only the nix-eval check
 #   scripts/check.sh shellcheck links   # run only the named checks
 #
-# Available checks: nix-eval, shellcheck, links
+# Available checks: nix-eval, shellcheck, links, hooks
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -124,12 +124,50 @@ check_links() {
 }
 
 # ---------------------------------------------------------------------------
+# Check: hooks
+# Verifies every hook command referenced by config/.claude/settings.json exists
+# and carries the executable bit. shellcheck only inspects shebangs, so a hook
+# committed as mode 100644 passes CI and then fails silently at runtime with
+# "permission denied" -- the failure mode this check exists to catch.
+# ---------------------------------------------------------------------------
+check_hooks() {
+  echo "== hooks =="
+  local settings="config/.claude/settings.json"
+  local status=0
+
+  if [ ! -f "$settings" ]; then
+    echo "SKIP: $settings not found"
+    return 0
+  fi
+
+  echo "-- checking hook commands referenced by $settings are executable --"
+  local cmd path mode
+  while IFS= read -r cmd; do
+    case "$cmd" in
+      */.claude/hooks/*) ;;
+      *) continue ;;
+    esac
+    path="config/.claude/hooks/${cmd##*/}"
+    if [ ! -f "$path" ]; then
+      echo "MISSING: $settings references $cmd but $path does not exist" >&2
+      status=1
+    elif [ ! -x "$path" ]; then
+      mode="$(stat -f '%Lp' "$path" 2>/dev/null || stat -c '%a' "$path" 2>/dev/null || echo '?')"
+      echo "NOT EXECUTABLE: $path has mode $mode -- hooks need the executable bit or they die with 'permission denied'" >&2
+      status=1
+    fi
+  done < <(jq -r '.hooks // {} | to_entries[] | .value[]? | .hooks[]? | .command // empty' "$settings")
+
+  return "$status"
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 main() {
   local -a checks=("$@")
   if [ "${#checks[@]}" -eq 0 ]; then
-    checks=(nix-eval shellcheck links)
+    checks=(nix-eval shellcheck links hooks)
   fi
 
   local -a ran=()
@@ -141,8 +179,9 @@ main() {
       nix-eval) ran+=("$c"); check_nix_eval || failed+=("$c") ;;
       shellcheck) ran+=("$c"); check_shellcheck || failed+=("$c") ;;
       links) ran+=("$c"); check_links || failed+=("$c") ;;
+      hooks) ran+=("$c"); check_hooks || failed+=("$c") ;;
       *)
-        echo "unknown check: $c (available: nix-eval, shellcheck, links)" >&2
+        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks)" >&2
         exit 2
         ;;
     esac
