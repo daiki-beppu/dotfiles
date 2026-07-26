@@ -33,6 +33,7 @@ sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 | 管理方式 | 対象 |
 |---------|------|
 | **Nix (nixpkgs)** | CLI ツール (git, gh, ffmpeg, uv 等) |
+| **Nix (flake input)** | nixpkgs 未収録で upstream が flake を提供するツール (hunk, takt) |
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .wezterm.lua, .local/bin/*, .config/zsh-abbr/*, .claude/*) |
@@ -78,7 +79,8 @@ dotfiles/
 |-------------|------|
 | CLI ツール追加 | `nix/packages.nix` の `home.packages` に追加 |
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
-| nixpkgs にないツール追加 | `flake.nix` の `brews` に追加 |
+| nixpkgs にないツール追加 | upstream が flake を提供するなら `flake.nix` の `inputs` に、なければ `brews` に追加 |
+| takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch |
 | 変更を適用 | `sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
 | 全依存を最新化 | `nix flake update --flake ~/01-dev/dotfiles` |

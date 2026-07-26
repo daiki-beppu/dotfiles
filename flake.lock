@@ -164,12 +164,29 @@
         "type": "github"
       }
     },
+    "nixpkgs_3": {
+      "locked": {
+        "lastModified": 1781454065,
+        "narHash": "sha256-d2xfDjnfRuf/xYGdu9VVRHiav/2w5hDL/5cw2TuVAXw=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "9eac87a12312b8f60dd52e1c6e1a265f6fc7f5fc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixpkgs-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
         "hunk": "hunk",
         "nix-darwin": "nix-darwin",
-        "nixpkgs": "nixpkgs_2"
+        "nixpkgs": "nixpkgs_2",
+        "takt": "takt"
       }
     },
     "systems": {
@@ -184,6 +201,25 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "takt": {
+      "inputs": {
+        "nixpkgs": "nixpkgs_3"
+      },
+      "locked": {
+        "lastModified": 1784463602,
+        "narHash": "sha256-40en+4GiLazJQw4BDhIpEK+h9OhiTRn9bSV63K5uYgg=",
+        "owner": "nrslib",
+        "repo": "takt",
+        "rev": "6f0e0eecda8822dc072f7e6c929d6d0b2c264d9b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nrslib",
+        "ref": "v0.52.0",
+        "repo": "takt",
         "type": "github"
       }
     },

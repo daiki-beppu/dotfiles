@@ -4,6 +4,7 @@
   config,
   hostConfig,
   hunkPkg,
+  taktPkg,
   ...
 }:
 
@@ -60,6 +61,7 @@ in
   ++ [
     # flake input 由来（nixpkgs 未収録）
     hunkPkg # レビュー特化のターミナル diff ビューアー
+    taktPkg # AI コーディングエージェント向けの workflow 制御 CLI
   ]
   ++ (hostConfig.extraPackages pkgs);
 
@@ -186,13 +188,5 @@ in
       echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2
       exit 1
     fi
-  '';
-
-  # ── takt CLI ──
-  # nixpkgs に takt パッケージは存在しないため、Nix 管理下の bun で
-  # グローバルインストールし、darwin-rebuild switch のたびに最新化する
-  home.activation.installTakt = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    export PATH="${pkgs.bun}/bin:$PATH"
-    "${pkgs.bun}/bin/bun" install -g takt@latest
   '';
 }

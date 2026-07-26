@@ -19,6 +19,15 @@
     # nixpkgs.follows は付けない: こちらの nixpkgs-unstable (x86_64-darwin 廃止済み)
     # を強制すると hunk の flake-parts が x86_64-darwin の評価で落ちるため
     hunk.url = "github:modem-dev/hunk";
+
+    # takt: AI コーディングエージェント向けの workflow 制御 CLI
+    # nixpkgs 未収録のため upstream flake から直接取得。
+    # リリースタグに固定する: main は未リリースコミットが積まれており、
+    # npm の takt@latest（従来の入手経路）とバージョンが一致しないため。
+    # 更新手順は README「よくある操作」を参照。
+    # nixpkgs.follows は付けない: upstream が flake.lock で検証済みの
+    # nixpkgs / nodejs の組み合わせをそのまま使う
+    takt.url = "github:nrslib/takt/v0.52.0";
   };
 
   outputs =
@@ -27,6 +36,7 @@
       nix-darwin,
       home-manager,
       hunk,
+      takt,
       ...
     }:
     let
@@ -209,6 +219,7 @@
               home-manager.extraSpecialArgs = {
                 inherit hostConfig;
                 hunkPkg = hunk.packages.${system}.default;
+                taktPkg = takt.packages.${system}.default;
               };
               home-manager.users.${username} = import ./nix/packages.nix;
             }
