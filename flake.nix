@@ -187,6 +187,7 @@
                     "cleanmymac"
                     "manaflow-ai/cmux/cmux"
                     "codex-app"
+                    "codexbar"
                     "cursor"
                     "discord"
                     "docker-desktop"
