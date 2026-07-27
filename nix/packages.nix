@@ -17,7 +17,6 @@ in
   home.packages = with pkgs; [
     bun
     xz
-    cocoapods
     codex
     direnv
     # nixpkgs 716c7a2 で依存の whisper-cpp が darwin でビルド不能（CoreML リンク時に
