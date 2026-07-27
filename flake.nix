@@ -184,7 +184,6 @@
                     "azookey"
                     "chatgpt"
                     "claude"
-                    "cleanmymac"
                     "manaflow-ai/cmux/cmux"
                     "codex-app"
                     "codexbar"
