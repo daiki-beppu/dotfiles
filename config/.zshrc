@@ -35,7 +35,7 @@ ABBR_REGULAR_ABBREVIATION_GLOB_PREFIXES+=(
   '*; '
 )
 
-# WezTerm タブタイトルの自動設定
+# ターミナルのタブタイトル自動設定（OSC 2。xterm 互換端末で共通に効く）
 precmd() {
   # カレントディレクトリを取得（ホームディレクトリは~に短縮）
   local dir="${PWD/#$HOME/~}"

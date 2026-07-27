@@ -89,12 +89,12 @@ check_shellcheck() {
 # source must exist under config/<path> -- catches dangling declarations.
 #
 # Direction 2 (warning only, does not affect exit code): top-level regular
-# files directly under config/ (e.g. .zshenv, .zshrc, .wezterm.lua) that are
+# files directly under config/ (e.g. .zshenv, .zshrc, .zprofile) that are
 # not referenced anywhere in nix/packages.nix. This is deliberately narrow
 # -- directories like .claude/.takt/.config/.local are linked as whole
 # directories or via individual entries, so a naive "everything in config/
 # must appear literally" check would false-positive constantly. We only want
-# to catch the ".wezterm.lua was never wired up" class of bug.
+# to catch the "a new top-level dotfile was never wired up" class of bug.
 # ---------------------------------------------------------------------------
 check_links() {
   echo "== links =="

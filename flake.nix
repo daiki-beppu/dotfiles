@@ -203,7 +203,6 @@
                     "obsidian"
                     "raycast"
                     "visual-studio-code"
-                    "wezterm"
                     "zoom"
                   ];
                 };

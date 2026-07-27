@@ -156,7 +156,6 @@ in
     link_force "${dotfilesDir}/.zshenv" "$HOME/.zshenv"
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
-    link_force "${dotfilesDir}/.wezterm.lua" "$HOME/.wezterm.lua"
 
     # ブラウザ振り分けスクリプト
     mkdir -p "$HOME/.local/bin"
