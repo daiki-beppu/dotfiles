@@ -30,9 +30,6 @@
     ]
   },
   "model": "opus[1m]",
-  "worktree": {
-    "baseRef": "head"
-  },
   "skillOverrides": {
     "agents-sdk": "off",
     "aqua-improve": "off",
@@ -85,6 +82,9 @@
       }
     ]
   },
+  "worktree": {
+    "baseRef": "head"
+  },
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh",
@@ -105,12 +105,6 @@
     "frontend-design@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
-    "openai-codex": {
-      "source": {
-        "source": "github",
-        "repo": "openai/codex-plugin-cc"
-      }
-    },
     "chrome-devtools-plugins": {
       "source": {
         "source": "github",
