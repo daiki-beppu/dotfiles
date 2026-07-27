@@ -209,16 +209,16 @@
         "nixpkgs": "nixpkgs_3"
       },
       "locked": {
-        "lastModified": 1784463602,
-        "narHash": "sha256-40en+4GiLazJQw4BDhIpEK+h9OhiTRn9bSV63K5uYgg=",
+        "lastModified": 1785134915,
+        "narHash": "sha256-oxMJUxOsflSi56KIZ/XLLApedgNl6CKjJEXqX8eAJxY=",
         "owner": "nrslib",
         "repo": "takt",
-        "rev": "6f0e0eecda8822dc072f7e6c929d6d0b2c264d9b",
+        "rev": "5265948e31251f93bd90c4bd5b3c6482a631048a",
         "type": "github"
       },
       "original": {
         "owner": "nrslib",
-        "ref": "v0.52.0",
+        "ref": "v0.53.0",
         "repo": "takt",
         "type": "github"
       }
