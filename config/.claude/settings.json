@@ -29,11 +29,10 @@
       "~/01-dev/dotfiles"
     ]
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5[1m]",
   "skillOverrides": {
     "agents-sdk": "off",
     "aqua-improve": "off",
-    "caveman": "off",
     "cloudflare": "off",
     "cloudflare-email-service": "off",
     "cmux-browser": "off",
@@ -41,20 +40,15 @@
     "cmux-diagnostics": "off",
     "cmux-markdown": "off",
     "cmux-settings": "off",
-    "diagnose": "off",
     "durable-objects": "off",
     "empirical-prompt-tuning": "off",
     "evidence-record": "off",
-    "prototype": "off",
     "release-tweet": "off",
-    "resolving-merge-conflicts": "off",
     "sandbox-sdk": "off",
-    "to-prd": "off",
     "turnstile-spin": "off",
     "web-perf": "off",
     "workers-best-practices": "off",
-    "wrangler": "off",
-    "zoom-out": "off"
+    "wrangler": "off"
   },
   "hooks": {
     "SessionStart": [
@@ -102,7 +96,8 @@
     "claude-code-setup@claude-plugins-official": false,
     "commit-commands@claude-plugins-official": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
-    "frontend-design@claude-plugins-official": false
+    "frontend-design@claude-plugins-official": false,
+    "mattpocock-skills@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {

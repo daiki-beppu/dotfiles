@@ -62,7 +62,6 @@ dotfiles/
 │   └── .claude/           # Claude Code 設定
 │       ├── CLAUDE.md
 │       ├── settings.json
-│       ├── skills-lock.json
 │       ├── statusline-command.sh
 │       ├── hooks/
 │       └── skills/
