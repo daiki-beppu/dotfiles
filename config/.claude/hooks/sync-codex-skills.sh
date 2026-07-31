@@ -25,6 +25,9 @@ CODEX_SKILLS="$HOME/.codex/skills"
 # 追加: dotfiles にあって codex に無いスキルを symlink
 for dir in "$DOTFILES_SKILLS"/*/; do
   [ -d "$dir" ] || continue
+  # symlink エントリは Skills CLI (npx skills add) 管理。実体は ~/.agents/skills に
+  # あり Codex はそこを直接読むので、~/.codex/skills へ二重リンクしない
+  [ -L "${dir%/}" ] && continue
   name=$(basename "$dir")
   target="$CODEX_SKILLS/$name"
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then

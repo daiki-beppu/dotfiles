@@ -29,3 +29,9 @@ __pycache__/
 
 # 旧・手動 worktree 置き場（.claude/worktrees/ へ統一済み。残骸対策で ignore を維持）
 .worktrees/
+
+# Skills CLI (npx skills add) が ~/.claude/skills 経由で置く外部管理スキル
+# (~/.claude/skills は config/.claude/skills への symlink なので、
+#  CLI のインストール実体がリポジトリ内に未追跡エントリとして現れる)
+config/.claude/skills/session-title-refresh
+config/.claude/skills/session-title-refresh-codex
