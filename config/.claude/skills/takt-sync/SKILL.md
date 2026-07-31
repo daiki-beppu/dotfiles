@@ -68,9 +68,17 @@ CHANGELOG の各項目(BREAKING / Deprecated / Changed)× 各資産で該当判�
 | cost_tier → routing_tier 改名 | BREAKING | あり: config.yaml の auto_routing | キー改名 + default_pool 追加 |
 | for-local-llm 削除 | BREAKING | なし(未使用) | — |
 
-Added 項目は**採用候補として列挙するに留め、自動採用しない**。ただし deprecated の
-後継機能(v0.52 の persona_providers → provider_routing のような置き換え)は
-「採用」ではなく「移行」なので必須対応に含める。
+Added 項目は運用利益の明確さで扱いを分ける:
+
+- **運用利益が明確なもの → デフォルト採用**として調査レポートに含める(ユーザーは
+  レポート確認時に外せる)。「明確」の目安: 既知の運用課題(トークン消費・レビュー空転・
+  止まらないループ等)を直接解決する、または既に手動でやっていることの自動化。
+  前例: v0.52 の auto_requeue_max_attempts
+- **利益が好みに依存するもの → 採用候補として列挙**に留める。目安: 既存カスタム資産と
+  役割が被る(例: v0.54 の simple family は lite と競合)、運用スタイルの変更を伴う
+
+deprecated の後継機能(v0.52 の persona_providers → provider_routing のような
+置き換え)は「採用」ではなく「移行」なので必須対応に含める。
 
 ### 4. 検証ベースラインの取得
 
