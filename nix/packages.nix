@@ -123,6 +123,20 @@ in
     ];
   };
 
+  # ~/.gitconfig にも identity のみ複製する（XDG_CONFIG_HOME 乗っ取り防御）。
+  # takt 等のツールが自プロセスの XDG_CONFIG_HOME を隔離ディレクトリへ向けると、
+  # ~/.config/git/config しか持たない XDG 純化構成では git の identity が見えず
+  # commit が "Author identity unknown" で失敗する。git は ~/.gitconfig を
+  # HOME 基準で常に読む（XDG 側の後に読まれスカラー値は勝つ）ため、ここに
+  # identity を置けば XDG がどこへ向いても解決する。
+  # フル設定の symlink にしないのは、両経路が二重に読まれた際の複数値キー
+  # （credential.helper / include.path 等）の二重適用を避けるため。
+  home.file.".gitconfig".text = ''
+    [user]
+      name = ${config.programs.git.settings.user.name}
+      email = ${config.programs.git.settings.user.email}
+  '';
+
   # ── シンボリンク管理 ──
   # ryoppippi 方式: home.file (Nix store 経由) ではなく
   # home.activation で dotfiles リポジトリへ直接リンクする
