@@ -97,6 +97,11 @@ cd <project> && takt workflow doctor    # 引数なしでプロジェクトの�
 
 ## フェーズ 2: 適用
 
+**適用直前に棚卸しを取り直す。** 対象 repo では takt run・並行セッション・Codex が
+`.takt/` を書き換え続けており、調査時の削除・移行セットは適用時点で陳腐化しうる
+(実例: lite workflow の廃止作業中に、repo 側の再構築で既に削除済みだったことが判明)。
+`git pull --ff-only` 後の HEAD で資産一覧と doctor を再確認してから手を動かす。
+
 ### 1. takt 本体の更新(dotfiles)
 
 worktree を切り、README「よくある操作」の手順で更新する:

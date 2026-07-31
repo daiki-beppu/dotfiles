@@ -8,7 +8,7 @@
 | リポジトリ | 資産 | 備考 |
 |-----------|------|------|
 | `~/01-dev/dotfiles` | `config/.takt/config.yaml` のみ | グローバル設定。`~/.takt/config.yaml` に symlink(packages.nix)。provider_routing で全ペルソナを Codex に割当 |
-| `~/01-dev/projects/youtube-automation` | `workflows/lite.yaml`、facets(instructions/policies/output-contracts 各 1)、`schemas/review-verdict.json`、`config.yaml` | 開発用 lite workflow |
+| `~/01-dev/projects/youtube-automation` | `workflows/` 8 本(yt-auto ファミリー + audit-unit-split)、facets 60 個超(instructions/knowledge/output-contracts/personas/policies)、`schemas/yt-auto-audit-supervise.json`、`config.yaml` | issue #2686 で全面再構築(旧 lite workflow は廃止済み)。`takt:*` ラベルは不使用・履歴メタデータ扱い(docs/takt-operations.md)。takt run が資産を書き換え続ける活発な repo なので、調査結果は適用直前に必ず取り直す |
 | `~/01-dev/projects/libecity` | `workflows/article-rewrite.yaml` `workflows/knowhow-article.yaml`、facets 多数(記事執筆・レビュー系)、loop-monitor instructions | 記事執筆 workflow。コーディング系ではないため BREAKING の該当パターンが他と異なることに注意 |
 | `~/01-dev/projects/specv` | `config.yaml` のみ | プロジェクト固有オーバーライド(draft_pr 等)。責任分担は specv の `.claude/CLAUDE.md` の `# takt` セクション参照 |
 | `~/01-dev/takt` | `config.yaml`(workflow_overrides・quality_gates)、`quality-gates/takt-check.sh` | takt 自体の fork(daiki-beppu/takt)。takt 開発用の設定なので upstream の変更に最も敏感 |
@@ -37,6 +37,5 @@ takt 本体のピンは dotfiles の `flake.nix`(`takt.url = "github:nrslib/takt
 
 ## 既知の問題(更新起因と混同しないこと)
 
-- youtube-automation の `lite.yaml` は v0.53.0 時点で既に doctor エラー:
-  `steps.2.rules.0.condition: Invalid input: expected string, received undefined`
-  (2026-07-31 確認)。修正されたらこの記載を消すこと
+- 現在なし(2026-07-31 時点。youtube-automation 全 8 workflow・libecity 全 2 workflow が
+  v0.54.1 の doctor OK)。更新前ベースラインで見つけた既存エラーはここに記録すること
