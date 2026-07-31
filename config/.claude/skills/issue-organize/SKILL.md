@@ -1,14 +1,14 @@
 ---
 name: issue-organize
 description: |
-  open な GitHub issue を sub-issue 階層に整理するスキル。カテゴリ分類 → 親 issue 作成 → GraphQL addSubIssue 接続 → [category] プレフィックス付与 → 重複 close → 検証を一気通貫で実行する。
+  open な GitHub issue を sub-issue 階層 + 依存チェーンに整理するスキル。カテゴリ分類 → 親 issue 作成 → GraphQL addSubIssue 接続 → addBlockedBy で実装順を接続 → [category] プレフィックス付与 → 重複 close → 検証を一気通貫で実行する。
   「issue 整理」「issue を整理して」「sub-issue でまとめて」「sub-issue 化」「issue をカテゴリ分け」「orphan issue を整理」「プレフィックス付けて」で発動。
   既存 issue の閲覧・再構造化専用。新規 issue 作成は /issue、plan 分割は /to-issues を使う。
 ---
 
 # issue-organize
 
-open な GitHub issue を sub-issue 階層 + カテゴリプレフィックスで整理する。
+open な GitHub issue を sub-issue 階層 + 依存チェーン + カテゴリプレフィックスで整理する。依存チェーンは実装時にそのまま gh-stack のスタックの積み順になる。
 
 ## 実行スタイル
 
@@ -44,6 +44,7 @@ gh api graphql -f query='{ repository(owner: "OWNER", name: "REPO") {
 - 各カテゴリに含める **issue の選定基準** (ラベル / issue 番号リスト / 条件)
 - 既存の親 issue を使うか、新規作成するか
 - `defer-until-ts-rewrite` 等の横断ラベルの扱い
+- **子 issue 間の実装順** — 依存があるものは `blockedBy` で直列に繋ぐ。それがそのまま gh-stack の積み順になる
 
 AskUserQuestion で選択肢を提示し、曖昧な分類は確認してから進める。
 
@@ -67,7 +68,11 @@ body:
 (sub-issue のサマリやリンク)
 ```
 
-### 4. Connect — sub-issue を接続
+### 4. Connect — 階層と依存を接続
+
+sub-issue の親子は**階層**であって依存関係ではない。実装順は別に `addBlockedBy` で表し、**両方を持たせる**。
+
+#### 4-a. 階層を接続する — `addSubIssue`
 
 `gh issue edit --add-sub-issue` は未サポート。GraphQL `addSubIssue` mutation を使う。
 
@@ -102,6 +107,36 @@ add_sub_issue() {
 
 **制約**: 1 つの issue に親は 1 つだけ。既に親を持つ issue は SKIP（エラーではない）。
 
+#### 4-b. 依存を接続する — `addBlockedBy`
+
+同じ親の子同士に実装順の依存があるなら `addBlockedBy` を張る。**この依存チェーンがそのまま gh-stack の積み順になる**（1段目 = blocker を持たない子）。
+
+```bash
+add_blocked_by() {
+  local blocked=$1 blocker=$2   # blocked を blocker が塞ぐ(blocker を先に実装する)
+  local blocked_id=$(gh api repos/$OWNER/$REPO/issues/$blocked --jq '.node_id')
+  local blocker_id=$(gh api repos/$OWNER/$REPO/issues/$blocker --jq '.node_id')
+  local result=$(gh api graphql -f query='
+    mutation($issueId:ID!,$blockingIssueId:ID!){
+      addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){
+        issue{ number issueDependenciesSummary{ totalBlockedBy } }
+      }
+    }' -F issueId="$blocked_id" -F blockingIssueId="$blocker_id" 2>&1)
+  if echo "$result" | rg -q 'totalBlockedBy'; then
+    echo "OK: #$blocked blocked by #$blocker"
+  else
+    echo "FAIL: #$blocked ← #$blocker ($result)"
+  fi
+}
+```
+
+ルール:
+
+- **親 issue には `blockedBy` を張らない**。親は器であって PR を持たず、スタックの段にならない
+- **依存が無い子同士は並列**であり、別々のスタックになる。gh-stack のスタックは線形（1つの段が持てる子は1つ）なので、順序の必然性が無いものを直列化しない
+- 依存関係は**本文に `Blocked by` と書かない**。ネイティブ側を唯一の正とする（2箇所に持つと食い違う）
+- 誤って張った依存は `removeBlockedBy` を同じ引数で呼べば外せる
+
 ### 5. Prefix — タイトルにプレフィックスを付与
 
 ```bash
@@ -124,7 +159,7 @@ gh issue close $NUMBER --comment "Duplicate of #$ORIGINAL" --reason "not planned
 
 ### 7. 結果を報告
 
-接続の成否は Step 4 の `add_sub_issue()` が返す OK / SKIP が正なので、再照会で検算し直さない。ユーザーに見せるサマリ表を組むためだけに親ごとの件数を取る:
+接続の成否は Step 4 の `add_sub_issue()` / `add_blocked_by()` が返す OK / SKIP / FAIL が正なので、再照会で検算し直さない。ユーザーに見せるサマリ表を組むためだけに親ごとの件数を取る:
 
 ```bash
 for n in $PARENT_NUMBERS; do
@@ -134,12 +169,22 @@ for n in $PARENT_NUMBERS; do
 done
 ```
 
-結果を表形式でユーザーに表示する。
+結果を表形式でユーザーに表示する。あわせて、張った依存を**積み順**として提示する。実装側はこれをそのまま gh-stack のスタックとして積む。
+
+```
+#12 (blocker なし)         → 1段目
+ └── #13 (blocked by #12)  → 2段目
+      └── #14 (blocked by #13) → 3段目
+```
+
+依存の無い子は別スタックになるため、チェーンごとに分けて示す。
 
 ## Rules
 
 - **破壊的操作（close / title 変更）はバッチ実行前にプレビューを表示し、ユーザー承認を得る**
 - sub-issue 接続の「already has parent」エラーは正常系として SKIP 処理する（既に整理済み）
+- 階層（`addSubIssue`）と依存（`addBlockedBy`）は別物として両方張る。親 issue には依存を張らない（親は段にならない）
+- 依存チェーンは gh-stack の積み順そのものなので、順序の必然性が無い子同士を直列化しない（並列な子は別スタックになる）
 - 200 件超の issue は `--limit` を引き上げるか複数回取得する
 - issue が多い場合はカテゴリごとに段階実行し、各段階で結果を報告する
 - 親 issue のフォーマットは既存 epic に合わせる（リポジトリ慣習を踏襲）
