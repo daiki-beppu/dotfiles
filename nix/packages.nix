@@ -10,6 +10,26 @@
 
 let
   dotfilesDir = "${config.home.homeDirectory}/01-dev/dotfiles/config";
+
+  # gh-stack: GitHub Stacked PRs（public preview）の CLI 拡張。
+  # nixpkgs は 0.0.4（2026-05）で止まっており、preview 公開の目玉である
+  # `gh stack merge`（スタックを一括ランディング）と、rebase/sync が古い trunk の
+  # まま success を返す・amend した親コミットが子ブランチへ再生される、という
+  # 2 つのデータ破壊系バグの修正がいずれも 0.1.0 以降にしかないため上書きする。
+  # v0.1.0 で追加された統合テストが git を exec するので nativeCheckInputs に git を足す
+  # （素通しだとサンドボックスに git が無く checkPhase が落ちる）。
+  # nixpkgs が 0.1.0 以降に追いついたらこの let ごと消して pkgs.gh-stack に戻す。
+  ghStack = pkgs.gh-stack.overrideAttrs (_: prev: {
+    version = "0.1.0";
+    src = pkgs.fetchFromGitHub {
+      owner = "github";
+      repo = "gh-stack";
+      tag = "v0.1.0";
+      hash = "sha256-48JkOeqbvHlCZ2u3LnwJymw55xMQWLTPJLDbV44clGI=";
+    };
+    vendorHash = "sha256-0Xtr/MOpX4u5GnbRdNxKPA0GpSzi8PIbVc9MmP05De4=";
+    nativeCheckInputs = (prev.nativeCheckInputs or [ ]) ++ [ pkgs.git ];
+  });
 in
 {
   home.stateVersion = "24.11";
@@ -64,6 +84,20 @@ in
   ]
   ++ (hostConfig.extraPackages pkgs);
 
+  # ── gh 拡張の登録 ──
+  # gh は PATH ではなくデータディレクトリ配下しか拡張として探さないので、
+  # gh-stack を home.packages に足すだけでは `gh stack` にならない。
+  # ディレクトリ自体を store の bin へ symlink すると gh は「ローカル拡張」と
+  # 見なし、manifest.yml 無しでも解決する（home-manager の programs.gh.extensions が
+  # linkFarm でやっているのと同じ形）。
+  #
+  # programs.gh.enable を使わないのは副作用が二つあるため:
+  #   1. config.yml が store への symlink になり書き込み不可になる。gh-stack の
+  #      `gh stack alias` や `gh config set` が書き込めなくなる
+  #   2. github.com / gist.github.com に credential.helper を自動注入する
+  # 拡張を 1 つ入れたいだけなのでその二つは引き受けない。
+  xdg.dataFile."gh/extensions/gh-stack".source = "${ghStack}/bin";
+
   # ── nh: Nix ヘルパー CLI（GC root まで掃除できる clean コマンド持ち） ──
   # 手動実行用: `nh clean all --dry` で削除対象を確認できる。
   # NH_FLAKE を設定するので `nh darwin switch` だけで rebuild できる。
@@ -83,6 +117,12 @@ in
       user.name = "daiki-beppu";
       user.email = hostConfig.gitEmail;
       init.defaultBranch = "main";
+
+      # gh stack はスタック全体を繰り返し cascade rebase するので、同じ衝突に
+      # 何度も遭遇する。rerere があれば解決内容が再利用される。
+      # gh stack init も未設定だとこれを有効化してよいか確認プロンプトを出すため、
+      # 先に立てておくとエージェントからの非対話実行がそこで止まらない。
+      rerere.enabled = true;
     };
 
     ignores = [
