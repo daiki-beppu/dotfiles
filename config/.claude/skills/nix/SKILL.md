@@ -69,7 +69,16 @@ brews = [
 sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
 ```
 
-**注意:** `sudo` が必要（nix-darwin はシステム設定を変更するため）。
+**注意:** `sudo` が必要（nix-darwin はシステム設定を変更するため）。sudo は
+Touch ID 認証（`sudo_local.touchIdAuth`）なので、Claude が直接実行してよい —
+実行するとユーザーの Mac に指紋プロンプトが出て、そこで承認される。
+
+- `sudo -n true` は「a password is required」で失敗するが、これは `-n` が
+  全プロンプトを禁止するためで正常。Touch ID が使えない証拠ではないので、
+  この事前チェックの失敗を理由に「実行できない」と判断しない
+- 時間のかかるビルドは先に `nix build '<flakeパス>#darwinConfigurations.<host>.system' --no-link`
+  を sudo なしで済ませておくと、switch 本体はアクティベーションだけで一瞬で終わる
+
 `nix` コマンドが `sudo` 環境で見つからない場合はフルパスを使う:
 
 ```bash
@@ -140,7 +149,8 @@ gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--
 ## Rules
 
 - 依頼された 1 件の追加・削除だけを行う。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
-- `darwin-rebuild switch` / `sudo nh clean` / `nix flake update` は実行前にユーザーの承認を得る。いずれも `sudo` でシステム状態を変えるか、全依存のバージョンを動かす
+- `sudo` を伴うコマンド（`darwin-rebuild switch` / `sudo nh clean`）は事前承認なしで直接実行してよい。sudo は Touch ID 認証で、実行時に出る指紋プロンプトへの応答がユーザーの承認そのもの。ユーザーが不在だと認証できないため、実行する旨を一言伝えてから実行する
+- `nix flake update`（引数なし・全依存更新）は実行前にユーザーの承認を得る（全依存のバージョンが動くため）。特定 input だけの `nix flake update <input>` は、その更新自体が依頼内容なら承認不要
 - パッケージ名を推測で書かない。`nix search nixpkgs <名前>` か search.nixos.org で実在を確認してから追加する
 - `flake.lock` は手動編集しない(`nix flake update` の生成物)
 - rebuild / clean の出力は全文貼らない。成否と、変わった世代・パッケージだけを報告する
