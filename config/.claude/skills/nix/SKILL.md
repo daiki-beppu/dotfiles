@@ -2,6 +2,7 @@
 name: nix
 description: >-
   macOS (nix-darwin) dotfiles の Nix 環境管理(CLI ツール・GUI アプリ (cask) の追加削除、パッケージ検索、darwin-rebuild、flake update)。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」の文脈で発動。
+  --search / --add / --remove / --rebuild / --update / --clean / --rollback で操作を明示でき、--dry-run で編集も switch もせず計画だけ出せる。
 ---
 
 # Nix 環境管理
@@ -9,6 +10,17 @@ description: >-
 ## 概要
 
 この dotfiles は Nix (nix-darwin + Home Manager) で CLI ツールを宣言的に管理している。GUI アプリ (cask) は nix-darwin 経由で Homebrew に委譲。
+
+## Invocation variants
+
+- Bare invocation → 依頼内容から操作を判別し、ファイル編集から `darwin-rebuild switch` まで通す。
+- `--search <キーワード>` → 読み取り専用。実在と正式名を確認して報告するだけで、ファイルは編集しない（「パッケージ検索」）。
+- `--add <名前...>` / `--remove <名前...>` → 3 分類で追加先・削除元を判定して編集し、switch まで行う（「パッケージ追加・削除」）。
+- `--rebuild` → 編集はせず switch だけ実行する（「適用コマンド」）。
+- `--update [<input>]` → `nix flake update` してから switch で適用する（「依存の更新」）。
+- `--clean` → `nh` でストアを掃除する。パッケージ構成には触れない（「ストア掃除（nh）」）。
+- `--rollback` → `sudo darwin-rebuild switch --rollback` で直前の世代に戻す。
+- `--dry-run`（任意の変種への修飾子）→ ファイル編集も switch も行わず、変更予定と実行予定コマンドだけ提示して止まる。
 
 ## 構成ファイル
 
@@ -148,7 +160,7 @@ gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--
 
 ## Rules
 
-- 依頼された 1 件の追加・削除だけを行う。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
+- 依頼された追加・削除だけを行う(`--add a b c` のように複数指定されたならその分すべて、それ以上は触らない)。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
 - `sudo` を伴うコマンド（`darwin-rebuild switch` / `sudo nh clean`）は事前承認なしで直接実行してよい。sudo は Touch ID 認証で、実行時に出る指紋プロンプトへの応答がユーザーの承認そのもの。ユーザーが不在だと認証できないため、実行する旨を一言伝えてから実行する
 - `nix flake update`（引数なし・全依存更新）は実行前にユーザーの承認を得る（全依存のバージョンが動くため）。特定 input だけの `nix flake update <input>` は、その更新自体が依頼内容なら承認不要
 - パッケージ名を推測で書かない。`nix search nixpkgs <名前>` か search.nixos.org で実在を確認してから追加する

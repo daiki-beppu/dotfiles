@@ -1,6 +1,8 @@
 ---
 name: clean-branch
-description: Use when マージ済みの不要ブランチを一括削除したいとき。「ブランチ整理」「マージ済み削除」「branch 掃除」「ブランチ一覧きれいにして」など、ブランチの整理に関わる場面で使用すること
+description: >-
+  Use when マージ済みの不要ブランチを一括削除したいとき。「ブランチ整理」「マージ済み削除」「branch 掃除」「ブランチ一覧きれいにして」など、ブランチの整理に関わる場面で使用すること。
+  --dry-run で一覧提示だけ、--local / --remote / --worktrees / --merged-only / --include-no-pr で対象を絞れる。
 ---
 
 ## Overview
@@ -14,6 +16,17 @@ description: Use when マージ済みの不要ブランチを一括削除した�
 - マージ済みブランチが溜まってきたとき
 - `git branch` の一覧を整理したいとき
 - worktree の残骸を片付けたいとき
+
+## Invocation variants
+
+- Bare invocation → Step 1〜6 を通す（突き合わせ → 個別確認 → worktree 処理 → 承認 → 削除 → 報告）。
+- `--dry-run` → Step 4 の分類別一覧までを出して**停止する**。何も削除しない。
+- `--local` / `--remote` → 削除対象をローカルブランチのみ / リモートブランチのみに絞る。
+- `--worktrees` → Step 3 だけを実行し、**ブランチは 1 本も消さない**。
+- `--merged-only` → 削除対象を MERGED 分類だけに限定する。
+- `--include-no-pr` → 既定では個別確認止まりの NO_PR も削除候補に含める。
+
+`--local` / `--remote` / `--merged-only` / `--include-no-pr` は併用できる。`--dry-run` は任意の変種への修飾子として働く。
 
 ## 実行スタイル
 
@@ -89,6 +102,8 @@ git worktree list --porcelain | rg '^worktree ' | sed 's/^worktree //' | rg '\.c
 
 分類（MERGED / CLOSED / NO_PR）ごとに件数と一覧を提示し、**スコープを確認**してから削除する。リスクの低い MERGED と、復元しにくい NO_PR は分けて確認するとよい。
 
+`--local` / `--remote` / `--merged-only` で対象を絞った場合も、分類（Step 1〜2）は全ブランチに対して行い、絞って外れた分は「対象外」として件数だけ一覧に添える。何が残っているかが見えないと、次に何を消すべきか判断できないため。
+
 ### 5. 削除実行
 
 ```bash
@@ -110,8 +125,8 @@ git push origin --delete <branch1> <branch2> <branch3> ...
 - **main ブランチには絶対に触れない**
 - **マージ判定は PR state を真実とする**（`git branch --merged` は squash マージを取りこぼすため補助的にしか使わない）
 - **OPEN PR のブランチは削除しない**
-- NO_PR のローカル専用ブランチはユニークコミットの有無を確認してから削除（復元は reflog のみ）
-- 削除前に必ず分類別の対象一覧をユーザーに提示し、確認を取る
+- NO_PR のローカル専用ブランチはユニークコミットの有無を確認してから削除（復元は reflog のみ）。`--include-no-pr` を付けても Step 2 の確認は省略しない
+- 削除前に必ず分類別の対象一覧をユーザーに提示し、確認を取る。スコープを絞るフラグ（`--local` / `--remote` / `--merged-only` / `--include-no-pr` / `--worktrees`）はこの承認を免除しない
 - worktree に checkout 中のブランチは先に `git worktree remove` してから削除する
 
 ## Gotchas

@@ -1,6 +1,8 @@
 ---
 name: free-disk-space
-description: macOS のディスク空き容量を回収する（ビルド成果物・パッケージマネージャキャッシュの掃除、nh での Nix 世代確認、外部ドライブへのメディア退避）。「ディスクがいっぱい」「容量が足りない」「ストレージを空けたい」「空き容量を増やして」「No space left on device」エラーなど、空き容量への不満や掃除の依頼があれば、具体的なフォルダ名やツール名が挙がっていなくても使用すること
+description: >-
+  macOS のディスク空き容量を回収する（ビルド成果物・パッケージマネージャキャッシュの掃除、nh での Nix 世代確認、外部ドライブへのメディア退避）。「ディスクがいっぱい」「容量が足りない」「ストレージを空けたい」「空き容量を増やして」「No space left on device」エラーなど、空き容量への不満や掃除の依頼があれば、具体的なフォルダ名やツール名が挙がっていなくても使用すること。
+  --dry-run で計測レポートだけ、--builds / --caches / --nix / --archive でスコープを絞れる。
 ---
 
 ## Overview
@@ -18,6 +20,16 @@ description: macOS のディスク空き容量を回収する（ビルド成果�
 - ディスクフル・空き容量への不満があるとき
 - ビルドやアプリが "No space left on device" で失敗したとき
 - 定期的な大掃除をしたいとき
+
+## Invocation variants
+
+- Bare invocation → Step 1〜8 を通す（計測 → 調査 → 承認 → 削除 → Nix 確認 → worktree 委譲 → 退避提案 → 再計測）。
+- `--dry-run` → Step 3 の分類別一覧までを出して**停止する**。何も削除しない。
+- `--builds` / `--caches` → 削除スコープをビルド成果物のみ / キャッシュのみに絞る（併用可）。
+- `--nix` → Step 5 だけを実行する。`nh clean all --dry` の報告と提案だけで、何も削除しない。
+- `--archive` → Step 7 のメディア退避だけを行う。
+
+`--dry-run` は任意の変種への修飾子として働く。
 
 ## 実行スタイル
 
@@ -130,7 +142,7 @@ ln -s "/Volumes/<drive>/<dst>" "<src>"
   - `~/.claude/projects` / `~/.claude/sessions`（Claude Code 管理領域。transcripts は cleanupPeriodDays が管理する）
   - `/nix/store` への直接操作
   - `~/Library/Mobile Documents`（iCloud 同期領域。ローカル削除がクラウドに伝播する）
-- 削除は Step 3 で承認された一覧の範囲のみ
+- 削除は Step 3 で承認された一覧の範囲のみ。スコープを絞るフラグ（`--builds` / `--caches` / `--nix` / `--archive`）はこの承認も、上の「絶対に触らないもの」も免除しない
 
 ## Gotchas
 
