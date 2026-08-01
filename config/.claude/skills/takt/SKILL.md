@@ -7,7 +7,8 @@ description: >-
   「タスクだけ積んでおいて」「PR に積み増して」「takt 回して」など、takt へのタスク投入・実行を
   頼まれたときに使用すること。`takt add` は対話専用、`takt run` は stdout が数十万 token に
   なるため、投入は store API を直接呼び、実行は cmux の別 pane に逃がす。
-  issue の起票・PR のマージは対象外(起票は issue スキル)。
+  PR のマージは対象外。issue が未起票なら issue スキルへ委譲して起票してから積む
+  (issue 無しで積む経路は用意しない)。
   --run で pane 起動と完了検知まで、--dry-run で order.md 作成まで、
   --workflow / --branch / --pr で選択を明示できる。
 ---
@@ -40,7 +41,7 @@ description: >-
 - `--run` → フェーズ 6。cmux の別 pane で `takt -q run` を起動し、完了まで見守る。
   単独なら既存の pending を回すだけ、`<issue番号> --run` なら積んでから回す。
 - `--dry-run` → order.md を作るところで止め、`addTask` は実行しない。
-- `--workflow <name>` → フェーズ 2 の判定を省略して明示する。
+- `--workflow <name>` → フェーズ 2 の判定を省略して明示する。**実在確認だけは飛ばさない**。
 - `--pr <番号>` / `--branch <name>` → 既存 PR / ブランチへの積み増し(フェーズ 4)。
 - `--no-auto-pr` → PR を作らせない(検証だけ回したいとき)。
 
@@ -54,9 +55,17 @@ git fetch origin
 
 - **pending / running を必ず見る**(下記)。実行中の run があれば積んだ瞬間に走り出すため、
   ユーザーに「今から走る」ことを伝えてから積む
-- **issue が無ければ先に起票する**。yt-auto-* の intake は「issue 番号を確定できない実行は blocked」を
-  明示規約にしており、order.md だけ渡すと 3 回とも blocked → auto-requeue 上限(2/2)で failed する
-  (実装には一切入らない)。builtin の `simple-*` にはこの制約が無い
+- **issue が無ければ `issue` スキルを呼んで起票し、採番された番号で積む**。会話の流れで
+  「これも積んで」と言われた場合も同じで、**issue 無しで積む経路は用意しない**。起票の品質ゲート
+  (インタビューでの合意・検証可能な要件・影響範囲)は `issue` スキルに一元化されており、そこを
+  迂回すると order.md だけが仕様の正本になって突き合わせが効かなくなる。`issue` スキル自身が
+  1 問ずつのインタビューを挟むので、起票内容はそこでユーザーと合意される
+- **intake を持つレーンでは issue が実質必須**。takt 本体は issue 番号が無くても
+  `{ exists: false }` を返すだけでエラーにしない(`DefaultSystemStepServices` の `issue_context`)。
+  blocked にするのは workflow 側の規約で、yt-auto-* / tayk-* の intake は「issue 番号を確定
+  できない実行は blocked」を明示している。order.md だけ渡すと 3 回とも blocked →
+  auto_requeue 上限(2/2)で failed する(実装には一切入らない)。builtin の `simple-*` には
+  intake が無いのでこの制約もかからない
 - 新規ブランチで走らせるなら投入前に main を `git pull --ff-only`。takt はクローン元のローカルブランチから
   複製するため、main が origin より遅れているとマージ済みの workflow 定義がクローンに入らず run が壊れる
   (既存ブランチへの積み増しはリモート優先なので影響しない)
@@ -102,6 +111,10 @@ cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨�
 
 ### 判定順
 
+0. **`--workflow <name>` の明示指定** — あればこれに従う。ただし**実在確認は省かない**。
+   実在一覧に無ければその場で指摘し、近い名前を候補として出して確認を取る。
+   `docs/takt-operations.md` やラベルが指すレーンと食い違うときは、指定を優先しつつ
+   食い違いを一言告げる(意図的な振り替えなのか取り違えなのかはユーザーにしか分からない)
 1. **`docs/takt-operations.md`** — あればこれを正とする(yt-auto 系の 2 つにはある。tayk には無い)
 2. **issue のラベル** — 下記
 3. **内容からの推定** — 下記
@@ -120,6 +133,9 @@ gh issue view <N> --json labels --jq '.labels[].name'
   実在一覧に無ければラベルを鵜呑みにせず、内容から選び直して理由を一言添える
 - 汎用ラベル(`bug` / `documentation` / `enhancement`)は役割のヒントに留める。ラベル体系も
   リポジトリごとに違うので `gh label list` で実在を確認してから対応付ける
+- **ラベルはレーン選択だけでなく実装にも効く**。`issue_context` は body だけでなく labels も
+  workflow へ渡すので、intake を持つレーンではラベルの過不足がそのまま intake の判断に入る。
+  起票時にラベルを付け忘れていたら、積む前に `gh issue edit <N> --add-label` で補う
 
 ### 内容からの判定
 
