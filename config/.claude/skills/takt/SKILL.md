@@ -28,6 +28,9 @@ description: >-
   食い違いや自己矛盾を仕様矛盾として blocked にする。**片方だけ直さない**
 - **`takt add` を呼ばない**。workflow 選択 / worktree / auto_pr を prompt する対話 UI に落ちる。
   未知サブコマンド(`takt task list` など)も同じく対話モードに落ちるので非対話では叩かない
+- **直接実行(`takt "#N"` / `takt -w <wf> "#N"` / `takt -i <N>`)も使わない**。worktree を作らず
+  **現ブランチをそのまま書き換える**ので、worktree 必須の規約と正面から衝突する(下記「落とし穴」)。
+  積んで `takt run` で回す経路だけを使う
 - **tasks.yaml を書かない**。TaskStore は `.takt/tasks.yaml.lock` のファイルロック + tmp→rename で
   書くため、手書きは実行中の `takt run` と競合して他タスクの記録を飛ばす
 - **積む = すぐ走り得る**。実行中の `takt run` は `claimNextTasks` で空きスロット分の pending を
@@ -344,6 +347,14 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 
 ## 落とし穴
 
+- **直接実行は worktree を作らない(実装ハードコード)**。`takt "#N"` / `takt -w <wf> "#N"` /
+  `takt -i <N>` が通る `selectAndExecuteTask` は `execCwd = cwd` を使い、
+  `worktree: false` をログに直書きしている。worktree を作る `confirmAndCreateWorktree` は
+  **この経路から呼ばれない**。つまり**メインチェックアウトの現ブランチが直接書き換わる**。
+  worktree が要るなら `add-task.mjs` で積む経路を通す(`takt add` は `worktree: true` を渡し、
+  `takt run` が `<repo-parent>/takt-worktrees/` に隔離クローンを作る)。
+  `--pipeline` も同様に worktree を作らない(help に *non-interactive, no worktree,
+  direct branch creation* と明記。CI 用)
 - **`--workflow` の実在検証は誰もしない**。`add-task.mjs` は値の有無しか見ず、TaskStore も
   レーン名を検証しない。存在しない名前は積めてしまい、`takt run` の実行時に初めて落ちる。
   フェーズ 2 の「実在レーンの確認」を飛ばさない
