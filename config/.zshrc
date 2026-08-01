@@ -1,6 +1,12 @@
 # PATH configuration
 export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 
+# cmux CLI（cask 由来。app bundle 内にあるので PATH に入らず、cmux スキル群が
+# 前提にしている裸の `cmux` が解決できない）。
+# 同じ bin に `open` と `ghostty` が同居するため **必ず末尾に足す**。
+# 先頭に置くと macOS 標準の /usr/bin/open を覆い隠す。
+export PATH=$PATH:/Applications/cmux.app/Contents/Resources/bin
+
 # Oh My Zsh installation
 export ZSH="$HOME/.oh-my-zsh"
 
