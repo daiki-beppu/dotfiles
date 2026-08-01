@@ -39,6 +39,7 @@ GitHub issue を実装し PR 化するスキル。**最終状態は「gh-stack �
 | 分割基準 | 振る舞いが2つ以上(issue スキルと同一。要件2件以上 / 独立した関心事2つ以上 / 影響ファイル4件以上は代理指標。迷う場合は分割提示側に倒す) |
 | 段数の上限 | 8 段。超える場合はどこまで積むかユーザーに確認する |
 | 段の実装 | 段が2つ以上なら subagent に委任。1つだけなら親が自分で実装する |
+| 実装 policy | takt の facet を読ませる。実装 = `coding` + `testing`、CI fix = さらに `ai-antipattern`(takt の `implement` / `ai-antipattern-fix` step と同じ割当)。takt 未導入のリポジトリでは省略する |
 | PR 作成方式 | `gh stack submit --auto`(既定で draft) |
 | submit のタイミング | 段の commit 直後。CI 完了は待たずに次段の実装へ進む(パイプライン) |
 | worktree 置き場 | `$REPO_ROOT/.claude/worktrees/<slug>/`(CLAUDE.md 規約)。1スタック = 1 worktree |
@@ -171,6 +172,22 @@ fi
 
 **main を checkout してから作る理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "head"`(= セッションの cwd の HEAD)から分岐する。feature ブランチにいればそこから分岐してしまうため、どのブランチにいるかがそのままベースになる。`git worktree add` も同様にローカル HEAD 基準。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
 
+#### 1-c. 実装 policy を解決する
+
+worktree が決まったら、**その worktree の中で** policy のパスを1回だけ解決する。段ごとに引き直さない(同じスタックなら結果は変わらない)。
+
+```bash
+cd "<worktree の絶対パス>"
+~/.claude/skills/issue-direct/references/resolve-policy.sh coding testing ai-antipattern
+```
+
+出力された絶対パスを控え、Step 2-2 / 3-1 の subagent プロンプトにそのまま埋め込む。**親はこのファイルを開かない**(段が1つで親自身が実装する場合を除く)。3 本で 60KB 超あり、司令塔のコンテキストを圧迫する。
+
+- 解決順は takt 本体と同じ **プロジェクト `.takt/facets/policies/` → global `~/.takt/facets/policies/` → builtin**。カスタム policy を持つリポジトリではそちらが返るので、リポジトリ固有の規約が自動的に効く
+- **takt が未導入のリポジトリでは何も出力されない**(stderr に not found が出て exit 0)。その場合は policy 無しで進む。ここでスキルを止めない
+- リポジトリ固有の policy が他にもないかは `resolve-policy.sh --list` で見える。issue の領域に合致するもの(例: `terraform`、`screen-api`)があれば実装 subagent の一覧に足してよい
+- Codex から実行している場合、スキルの置き場は `~/.codex/skills/issue-direct/references/resolve-policy.sh`(dotfiles 内の同じ実体への symlink)
+
 ### 2. 段ループ(パイプライン)
 
 段の列を下から順に処理する。**CI の完了は待たない。** submit したら background に投げたまま次の段の実装へ進む。CI 待ちが段をまたいで重なることで、スタック全体の所要時間が「最も遅い1段の CI」に近づく。
@@ -215,6 +232,14 @@ issue #<Ni>: <タイトル>
 
 要件は `gh issue view <Ni> --json title,body,labels` で自分で取得してください。
 
+## 着手前に読むもの(コードを書き始める前に必ず読む)
+- <coding policy の絶対パス>
+- <testing policy の絶対パス>
+
+このリポジトリのコーディング規約であり、**issue の要件と同じ強制力を持つ**。自分の書き癖と食い違ったときは policy に従う。
+
+policy と issue の要件が噛み合わない場合(policy に従うと要件を満たせない / 要件を満たすと policy に反する)は、**どちらを優先するか自分で決めずに** 実装を止め、STATUS: blocked で噛み合わない箇所を具体的に返す。**判断に迷う場合も blocked に倒す**。ここは人間が裁定する領域で、勝手に折り合いを付けた実装を出す方が手戻りが大きい。
+
 ## 進め方
 - テストで固定できる挙動は `tdd` スキルを駆動し、赤→緑で1枚ずつ進める。どこを TDD の対象にするか(seam)は実装開始前に決める。設定変更やドキュメント更新のようにテストで固定する対象が無い場合のみ TDD を省く
 - typecheck と、触っている範囲の単体テストはこまめに実行する。フルテストスイートと lint は commit 前に1回
@@ -229,9 +254,9 @@ COMMIT: <コミットの subject>
 NOTES: <スコープ外で気づいたこと。無ければ none>
 ```
 
-**issue 本文を親が読んで埋め込まない。** 番号だけ渡して subagent 側に `gh issue view` させる。親が本文を読むと段数分の要件テキストが親のコンテキストに積み上がり、委任の効果が半減する。
+**issue 本文を親が読んで埋め込まない。** 番号だけ渡して subagent 側に `gh issue view` させる。親が本文を読むと段数分の要件テキストが親のコンテキストに積み上がり、委任の効果が半減する。policy も同じ理由で**中身ではなくパスだけ**を渡す(1-c で控えた絶対パスをそのまま貼る)。1-c で何も解決できなかった場合は「## 着手前に読むもの」の節ごと省く。
 
-**段が1つだけの場合**は委任せず親が自分で実装する(進め方は上記「## 進め方」と同じ)。往復のコストに見合わないため。
+**段が1つだけの場合**は委任せず親が自分で実装する(進め方は上記「## 進め方」と同じ)。往復のコストに見合わないため。この場合は**親自身が着手前に policy を読む**(段が1つなら CI 監視の負荷も軽く、41KB を抱えても司令塔の判断は鈍らない)。
 
 subagent が `STATUS: blocked` を返した、あるいは commit が作られていない場合は、**そこで段ループを止める**。理由を添えてユーザーに報告し、そこまでの段は submit 済みのまま残す(上段は下段に依存するため、失敗した段を飛ばして先へ進むことはできない)。
 
@@ -331,6 +356,15 @@ git worktree `<worktree の絶対パス>` で、PR #<PR_NUM>(issue #<Ni>)の CI 
 ## 失敗している check
 <check 名と、gh run view --log-failed の該当部分>
 
+## 着手前に読むもの(修正を書き始める前に必ず読む)
+- <coding policy の絶対パス>
+- <testing policy の絶対パス>
+- <ai-antipattern policy の絶対パス>
+
+ai-antipattern は**修正を出す前の自己点検基準**として使う。「テストを弱めて通す」「指摘行だけ書き換える」「使われない互換コードを足す」はここで弾かれる。
+
+**CI を通す唯一の道が policy 違反になる場合は、policy を破って通さない。** STATUS: blocked で「何を通すために何を破る必要があるか」を返す(判断に迷う場合も blocked に倒す)。green を優先して規約を崩した修正は、CI が通っていても差し戻しになる。
+
 ## 進め方
 - 指摘行だけを直さず「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
 - 表面的な patch で揉み消さない(テストの削除・スキップ・期待値の書き換えで通すのは不可)
@@ -357,7 +391,7 @@ gh stack top                  # 最上段へ戻る
 修正した段と、rebase で内容が変わった上段の CI を投げ直し、Step 3 の回収に戻る。ラウンド +1。
 
 - **同じ段で 3 周を超えたら**ユーザーに状況を報告し人手判断を仰ぐ(自動で回し続けない)
-- **`STATUS: out-of-scope`** が返った場合もユーザーに報告し判断を仰ぐ
+- **`STATUS: out-of-scope`** / **`STATUS: blocked`** が返った場合もユーザーに報告し判断を仰ぐ。**親が代わりに裁定して自分で修正しない**(policy と要件の噛み合わなさは人間が決める領域で、親が引き取って直すと同じ判断を記録なしで通すことになる)
 
 ### 4. 完了報告
 
@@ -383,6 +417,8 @@ worktree はスタックごと残す(PR が未 merge であることに加え、
 - 段が2つ以上なら実装と CI fix を subagent に委任する。`run_in_background: false` を必ず指定し、`isolation: worktree` は使わない(同一 worktree を共有する)。委任先には `git checkout` / `gh stack` / `git push` を禁じる
 - subagent の返した実装を親が読み直して点検しない。品質の担保は各段の TDD と CI であって親の再読ではない
 - 集合外の blocker が `OPEN` でも **PR があればその上に積んで着手する**。PR が無い blocker が残っている場合だけ実装に入らずユーザーに確認する
+- 実装・fix の前に takt の policy を読ませる(実装 = `coding` + `testing`、fix = さらに `ai-antipattern`)。パスは worktree 内で `references/resolve-policy.sh` を1回実行して解決し、プロンプトには**中身ではなくパス**を埋める。親は開かない(段が1つで自分が実装するときだけ読む)。takt 未導入なら省略して進み、スキルは止めない
+- **policy と issue の要件が噛み合わない場合、委任先は独断で優先順位を決めず `blocked` で返す。親も自分で裁定せずユーザーに報告する**(迷う場合も止める側に倒す)。CI green のために policy を破ることは許さない
 - テストで固定できる挙動は `tdd` スキルを駆動する。seam は実装開始前に決める
 - PR は `gh stack submit --auto` で作る。`gh pr create` を直接使わない(段が1つで exit code 9 のときだけ例外)。既定の draft のまま出し、タイトルと本文(`Closes #<Ni>` を含む)は作成後に `gh pr edit` で設定する
 - 段の CI は待たずに background へ投げ、次の段へ進む。ただし**下段が red と分かった時点で段の積み増しを止め、先に fix する**
