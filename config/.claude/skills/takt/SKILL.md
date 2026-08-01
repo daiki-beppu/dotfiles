@@ -33,12 +33,13 @@ description: >-
 - **積む = すぐ走り得る**。実行中の `takt run` は `claimNextTasks` で空きスロット分の pending を
   ポーリングして拾う。「積んでおいて後で回す」つもりでも即実行になり得る
 - **`takt run` の stdout をエージェントが読まない**。完了時に stdout / trace / JSONL が
-  数十万 token になる。pane に流して人間が視認し、エージェントは完了シグナルと `tail -80` だけ見る
+  数十万 token になる。pane にそのまま流して人間が視認し、エージェントは完了シグナルと
+  `tasks.yaml` の status だけ見る
 
 ## Invocation variants
 
 - Bare / `<issue番号>` → フェーズ 1〜5 を通す(積むまで)。`takt run` は回さない。
-- `--run` → フェーズ 6。cmux の別 pane で `takt -q run` を起動し、完了まで見守る。
+- `--run` → フェーズ 6。cmux の別 pane で `takt run` を起動し、完了まで見守る。
   単独なら既存の pending を回すだけ、`<issue番号> --run` なら積んでから回す。
 - `--dry-run` → order.md を作るところで止め、`addTask` は実行しない。
 - `--workflow <name>` → フェーズ 2 の判定を省略して明示する。**実在確認だけは飛ばさない**。
@@ -248,16 +249,21 @@ pane の作り方はここでは決め打ちせず、[cmux-workspace](../cmux-wo
 
 ### 起動
 
-pane 側で takt を起動し、終了時に **sentinel ファイルと cmux の同期トークンの両方**を発火させる。
-`-q` はトップレベル option なので `takt -q run` の順で指定する。
+pane 側では **`takt run` をそのまま実行する**。終了後に完了トークンを発火させるだけ。
 
 ```sh
-SLUG=<slug>; LOG=/tmp/takt_${SLUG}.log; DONE=/tmp/takt_${SLUG}.done; TOKEN=takt-${SLUG}
-rm -f "$DONE"
+SLUG=<slug>; TOKEN=takt-${SLUG}
 
-cmux send --surface surface:<N> \
-  "cd <repo_root> && takt -q run 2>&1 | tee ${LOG}; touch ${DONE}; cmux wait-for -S ${TOKEN}\n"
+cmux send --surface surface:<N> "cd <repo_root> && takt run; cmux wait-for -S ${TOKEN}\n"
 ```
+
+**`-q` を付けない**。`-q` / `--quiet` は *Minimal output mode: suppress AI output (for CI)* で、
+AI の出力そのものを落とす。pane は人間が視認するためにあるので、**出力が流れている = 進んでいる /
+止まっている = 詰まっている** が一目で分かる状態を保つ。`-q` はその判断材料を消す。
+
+**`tee` も挟まない**。takt 自身が実行クローンの `.takt/runs/<run_slug>/` に `trace.md` /
+`logs/*.jsonl` / `reports/` を残すので、別途ログを取る必要が無い。パイプを挟むとバッファリングで
+出力が遅延し、やはり視認性が落ちる。
 
 末尾の `\n` が実行トリガ(`cmux send` が改行として解釈する)。付け忘れるとコマンドは pane の
 プロンプトに入力されたまま実行されず、完了シグナルも永遠に来ない。
@@ -269,51 +275,69 @@ cmux send --surface surface:<N> \
 
 ### 完了検知
 
-`cmux wait-for` を主、sentinel ファイルを保険にした 1 行で待つ。
+トークンの出現を 1 行で待つ。
 
 ```sh
-cmux wait-for takt-<slug> --timeout 7200 || while [ ! -f /tmp/takt_<slug>.done ]; do sleep 30; done
-echo done
+cmux wait-for takt-<slug> --timeout 7200
 ```
 
 - **Claude Code**: この 1 行を `Bash` の `run_in_background: true` で投げる。exit で harness が
   自動再呼び出しするので**こちらから poll しない**。timeout は `3600000ms` 程度
 - **Codex / その他 CLI**: 自動再呼び出しが無いので、同じ 1 行を前景で実行してブロックさせる
 
-二段構えにする理由:
+`cmux wait-for` の性質(いずれも実測):
 
-- `cmux wait-for` は signal が先に来ても取りこぼさない(トークンが保持される)。消費されるのは
-  wait 成功時だけなので、`--timeout` で切れても同じ行を再実行してよい
-- ただし `--timeout` の上限は未検証で、長時間 run で早期に `exit 1` する可能性が残る。
-  そのとき `||` の後ろの sentinel ループが受け止める
-- sentinel ファイルは下記 fallback とも経路が揃う
+- **signal が先に来ても取りこぼさない**。トークンは保持されるので、待ち始める前に takt が
+  終わってしまうレースを踏まない
+- **消費されるのは wait 成功時だけ**。timeout では消費しないので、切れたら同じ行を再実行してよい
+  (sentinel ファイルのような事前クリーンアップも不要)
+- **`--timeout 7200` は受理され、クランプされずに待機を継続する**
+- timeout の exit code は `1`
 
 **作らない・使わない**: 別 wait スクリプト、30s 進捗 echo ループ、`ScheduleWakeup`、`Monitor`、
-`cmux read-screen` の poll。いずれも token を無駄に食う。`[ -f ... ]` の単発チェックで次へ進むのも
-不可(実行中のまま後続が走る)。shell 内で完結する 1 コマンドの `while` はこれに該当しない。
+`cmux read-screen` の繰り返し poll。いずれも token を無駄に食う。
+shell 内で完結する 1 コマンドの待機はこれに該当しない。
 
 ### cmux 非搭載環境の fallback
 
 `CMUX_WORKSPACE_ID` が空、または `cmux` が PATH に無いときは pane を使わず detach する。
-検知は sentinel ファイルだけで行う(`cmux wait-for` の行は使わない)。
+**この経路でだけ**、出力の行き先が無いのでリダイレクトし、検知は sentinel ファイルで行う。
 
 ```sh
+LOG=/tmp/takt_<slug>.log; DONE=/tmp/takt_<slug>.done; rm -f "$DONE"
+
 # Claude Code: run_in_background: true
-takt -q run > "$LOG" 2>&1; touch "$DONE"
+takt run > "$LOG" 2>&1; touch "$DONE"
 
 # Codex
-nohup sh -c "takt -q run > \"$LOG\" 2>&1; touch \"$DONE\"" &
+nohup sh -c "takt run > \"$LOG\" 2>&1; touch \"$DONE\"" &
 ```
+
+検知は sentinel の出現待ち(`cmux wait-for` は使えない):
+
+```sh
+while [ ! -f /tmp/takt_<slug>.done ]; do sleep 30; done; echo done
+```
+
+`[ -f ... ]` の単発チェックで次へ進んではならない(実行中のまま後続が走る)。
 
 ### 完了時の確認
 
-単一の `takt -q run` は pending を全消化してから exit するので、この 1 判定で全件を待てる。
+単一の `takt run` は pending を全消化してから exit するので、この 1 判定で全件を待てる。
 `tasks.yaml` で各 task の最終 status を読む。
 
 | status | 見るもの |
 | --- | --- |
-| `completed` | `tail -80 "$LOG"` で `Auto-committed: <SHA>` と所要時間。PR URL は `tasks.yaml` の `pr_url`、無ければ `gh pr list --head <branch>` |
-| `failed` / `aborted` | `tail -80 "$LOG"` で原因。詳細は `.takt/runs/<run_slug>/reports/` の該当セクションだけ |
+| `completed` | PR URL は `tasks.yaml` の `pr_url`、無ければ `gh pr list --head <branch>` |
+| `failed` / `aborted` | 下記のログで原因を読む |
+
+**ログの所在に注意**。takt はタスクを隔離クローンで実行するため、**メインチェックアウトの
+`.takt/runs/` には builtin workflow の run しか無い**。実行の実績を辿るときは
+`.takt/clone-meta/<name>.json` の `clonePath` を読み、その配下の
+`.takt/runs/<run_slug>/reports/` を見る。
+
+pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 80` を**完了後に 1 回だけ**
+使う(`tee` を張らない代わりの手段。繰り返し poll はしない)。
 
 `.takt/runs/**/logs/*.jsonl` と `trace.md` は全文表示しない。`wc -c` / `du -sh` / `jq` で
 集計してから必要行だけ読む。完了後の報告は status・PR URL・テスト結果・review verdict に絞る。
@@ -347,3 +371,6 @@ nohup sh -c "takt -q run > \"$LOG\" 2>&1; touch \"$DONE\"" &
   `open` と `ghostty` が同居しており、先頭に置くと macOS 標準の `/usr/bin/open` を覆い隠す
 - **pane に送るコマンドは repo root への `cd` から始める**。helper pane の cwd は caller と
   同じとは限らず、`.takt/` を見つけられないまま `takt run` が空振りする
+- **pane では `-q` を付けない・`tee` を挟まない**。`-q` は AI 出力を落とす CI 向けオプションで、
+  `tee` はバッファ遅延を招く。どちらも「止まっているのか進んでいるのか」の判断材料を潰す。
+  pane に出力を素通しさせることが、この経路の存在意義そのもの
