@@ -48,7 +48,7 @@ description: >-
 
 ```sh
 ls .takt/workflows/                                  # レーン一覧。無ければこのリポジトリは takt 経路ではない
-gh issue view <N> --json number,title,body,state
+gh issue view <N> --json number,title,body,state,labels
 git fetch origin
 ```
 
@@ -71,21 +71,74 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 
 ## フェーズ 2: workflow の選択
 
-`docs/takt-operations.md` があればそれを正とする。無ければ判定順:
+**レーン名も選択軸もリポジトリごとに違う。このスキルに書かれた名前は例であって、実在確認なしに
+`--workflow` へ渡してはいけない**。`add-task.mjs` は実在検証をしないので、存在しないレーン名でも
+黙って積まれ、`takt run` で初めて落ちる。
+
+実測(2026-08 時点):
+
+| リポジトリ | プロジェクト固有レーン | 選択軸 |
+| --- | --- | --- |
+| `youtube-automation` | `yt-auto-{audit,docs,feature,fix,impl-review,intake,maintenance}` / `audit-unit-split` | 意図別 |
+| `libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
+| `specv` / `dotfiles` | 無し(builtin のみ) | builtin の軸に従う |
+
+### 実在レーンの確認(毎回やる)
+
+```sh
+ls .takt/workflows/ 2>/dev/null    # プロジェクト固有レーン。無ければ builtin だけが対象
+
+# builtin(0.54.1 で 62 本)。言語は .takt/config.yaml の language に対応
+BUILTIN=$(dirname "$(dirname "$(realpath "$(which takt)")")")/lib/node_modules/takt/builtins/ja
+ls "$BUILTIN/workflows/" | sed 's/\.yaml$//'
+cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨順
+```
+
+### 判定順
+
+1. **`docs/takt-operations.md`** — あればこれを正とする(`youtube-automation` にはある)
+2. **issue のラベル** — 下記
+3. **内容からの推定** — 下記
+
+### issue のラベルを見る
+
+```sh
+gh issue view <N> --json labels --jq '.labels[].name'
+```
+
+- **`takt:<name>` 形式は workflow の直接指定**。dotfiles は `takt:default-mini` / `takt:lite` /
+  `takt:docs` / `takt:manual` を運用している
+- **`takt:manual` は「takt に積まない・手動実装が妥当」の意思表示**。積む前にユーザーへ確認する
+- **ラベルが指すレーンが実在しないことがある**。workflow 資産を撤去してもラベルは GitHub 側に
+  残るため(実測: dotfiles の `takt:lite` / `takt:docs` が指す `lite` / `docs` は builtin に無い)。
+  実在一覧に無ければラベルを鵜呑みにせず、内容から選び直して理由を一言添える
+- 汎用ラベル(`bug` / `documentation` / `enhancement`)は役割のヒントに留める。ラベル体系も
+  リポジトリごとに違うので `gh label list` で実在を確認してから対応付ける
+
+### 内容からの判定
+
+**プロジェクト固有レーンがあればその設計に従う**。意図別レーンを持つ `youtube-automation` の場合:
 
 | 状況 | レーン |
 | --- | --- |
 | 壊れている(バグ・回帰) | `yt-auto-fix` |
 | コードを変えず文書 / skill だけ | `yt-auto-docs` |
 | 挙動を変えずに構造を変える(refactor) | `yt-auto-maintenance` |
-| takt の workflow / facet / 実行トレース自体を点検する | `yt-auto-audit-runs` |
 | 調査して報告するだけ | `yt-auto-audit` |
 | それ以外(新機能・機能拡張) | `yt-auto-feature` |
 
-`yt-auto-intake` / `yt-auto-impl-review` は callable sub-workflow であり**直接投入しない**。
+**builtin だけの場合、選択軸は意図ではなく「対象スタック × 深度」**になる:
 
-判定できたら結果を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が混ざる等)は、
-積む前にどちらで回すか確認する。
+- スタック: `frontend` / `backend` / `dual`(両方) / `cli` / `terraform` / 無印(汎用)
+- 深度: `simple-*`(最小) → `*-mini`(軽量) → 無印 → `*-high`(厚い)
+- 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
+- takt 自身の開発は `takt-default*`
+
+**callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。
+`youtube-automation` では `yt-auto-intake` / `yt-auto-impl-review` が該当する。
+
+判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
+混ざる等)は、積む前にどちらで回すか確認する。
 
 ## フェーズ 3: order.md を書く
 
@@ -239,6 +292,9 @@ nohup sh -c "takt -q run > \"$LOG\" 2>&1; touch \"$DONE\"" &
 
 ## 落とし穴
 
+- **`--workflow` の実在検証は誰もしない**。`add-task.mjs` は値の有無しか見ず、TaskStore も
+  レーン名を検証しない。存在しない名前は積めてしまい、`takt run` の実行時に初めて落ちる。
+  フェーズ 2 の「実在レーンの確認」を飛ばさない
 - **pending の実行順を入れ替える API は無い**。`claimNextTasks` は先頭から拾い `addTask` は末尾に足す。
   割り込ませたいときは「先行 pending を `deleteTask(name, 'pending')` → 割り込みを `addTask` →
   先行を積み直す」。task_dir 配下の order.md は消えないので、積み直しは
