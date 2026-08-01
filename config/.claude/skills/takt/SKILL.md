@@ -75,13 +75,19 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 `--workflow` へ渡してはいけない**。`add-task.mjs` は実在検証をしないので、存在しないレーン名でも
 黙って積まれ、`takt run` で初めて落ちる。
 
-実測(2026-08 時点):
+実測(2026-08-01 時点):
 
 | リポジトリ | プロジェクト固有レーン | 選択軸 |
 | --- | --- | --- |
-| `youtube-automation` | `yt-auto-{audit,docs,feature,fix,impl-review,intake,maintenance}` / `audit-unit-split` | 意図別 |
-| `libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
-| `specv` / `dotfiles` | 無し(builtin のみ) | builtin の軸に従う |
+| `~/02-yt/tayk` | `tayk-{audit-architecture,audit-runs,feature,fix,intake}` (5) | 意図別 |
+| `~/02-yt/00-automation` | `yt-auto-*` 8 本 + `audit-unit-split` | 意図別 |
+| `~/01-dev/projects/youtube-automation` | `yt-auto-*` **7 本** + `audit-unit-split` | 意図別 |
+| `~/01-dev/projects/libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
+| `~/01-dev/{dotfiles,takt}` / `~/01-dev/projects/specv` | 無し(builtin のみ) | スタック × 深度 |
+
+**同名リポジトリでもレーン構成が違う**。上の 2 つはどちらも "youtube-automation" だが、
+remote が `mhs2sowarabeuta-lang/` と `daiki-beppu/` で別物で、前者にだけ `yt-auto-audit-runs` が
+ある。リポジトリ名だけで判断せず、**作業ディレクトリの `.takt/workflows/` を直接見る**。
 
 ### 実在レーンの確認(毎回やる)
 
@@ -96,7 +102,7 @@ cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨�
 
 ### 判定順
 
-1. **`docs/takt-operations.md`** — あればこれを正とする(`youtube-automation` にはある)
+1. **`docs/takt-operations.md`** — あればこれを正とする(yt-auto 系の 2 つにはある。tayk には無い)
 2. **issue のラベル** — 下記
 3. **内容からの推定** — 下記
 
@@ -117,25 +123,31 @@ gh issue view <N> --json labels --jq '.labels[].name'
 
 ### 内容からの判定
 
-**プロジェクト固有レーンがあればその設計に従う**。意図別レーンを持つ `youtube-automation` の場合:
+**プロジェクト固有レーンがあればその設計に従う**。意図別レーンは `<prefix>-<意図>` の命名で、
+prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語彙も揃っていない**:
 
-| 状況 | レーン |
-| --- | --- |
-| 壊れている(バグ・回帰) | `yt-auto-fix` |
-| コードを変えず文書 / skill だけ | `yt-auto-docs` |
-| 挙動を変えずに構造を変える(refactor) | `yt-auto-maintenance` |
-| 調査して報告するだけ | `yt-auto-audit` |
-| それ以外(新機能・機能拡張) | `yt-auto-feature` |
+| 状況 | 意図の語 | 実在例 |
+| --- | --- | --- |
+| 壊れている(バグ・回帰) | `fix` | `yt-auto-fix` / `tayk-fix` |
+| コードを変えず文書 / skill だけ | `docs` | `yt-auto-docs`(tayk には無い) |
+| 挙動を変えずに構造を変える(refactor) | `maintenance` | `yt-auto-maintenance`(tayk には無い) |
+| 調査して報告するだけ | `audit` | `yt-auto-audit` / `tayk-audit-architecture` |
+| workflow / facet / 実行トレース自体を点検する | `audit-runs` | `tayk-audit-runs` / `yt-auto-audit-runs`(`00-automation` のみ) |
+| それ以外(新機能・機能拡張) | `feature` | `yt-auto-feature` / `tayk-feature` |
+
+この表は**語彙の対応であって実在の保証ではない**。同じ意図の語が全リポジトリにあるとは限らない
+(実測: `docs` / `maintenance` は yt-auto 系にしか無く、`audit-runs` は yt-auto 系でも
+リポジトリによって有無が分かれる)。必ず実在一覧と突き合わせる。
 
 **builtin だけの場合、選択軸は意図ではなく「対象スタック × 深度」**になる:
 
 - スタック: `frontend` / `backend` / `dual`(両方) / `cli` / `terraform` / 無印(汎用)
 - 深度: `simple-*`(最小) → `*-mini`(軽量) → 無印 → `*-high`(厚い)
 - 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
-- takt 自身の開発は `takt-default*`
+- takt / tayk 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
 
 **callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。
-`youtube-automation` では `yt-auto-intake` / `yt-auto-impl-review` が該当する。
+`intake` は両系列にあり、`impl-review` は yt-auto 系のみ。
 
 判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
 混ざる等)は、積む前にどちらで回すか確認する。
