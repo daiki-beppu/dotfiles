@@ -2,14 +2,15 @@
 name: takt
 description: >-
   起票済みの GitHub issue を takt のタスクキューへ積み、cmux の別 pane で workflow を回して
-  完了まで見守る(workflow 判定 → pane で takt add → 検証 → pane で takt run → 完了検知)。
+  完了まで見守る(workflow 判定 → 非対話で投入 → 検証 → pane で takt run → 完了検知)。
   「takt に積んで」「takt task 追加」「#N を takt で回して」「タスクだけ積んでおいて」
   「PR に積み増して」「takt 回して」など、takt へのタスク投入・実行を頼まれたときに使用すること。
-  takt add(対話 UI)も takt run(stdout が数十万 token)もエージェントが前景で抱えず、
-  どちらも cmux の別 pane に逃がす。PR のマージは対象外。issue が未起票なら issue スキルへ
+  投入は takt の内部 API を直呼びして対話ゼロで済ませ(branch / base / draft まで指定できる)、
+  stdout が数十万 token になる takt run だけを cmux の別 pane に逃がす。
+  PR のマージは対象外。issue が未起票なら issue スキルへ
   委譲して起票してから積む(issue 無しで積む経路は用意しない)。
-  --run で run と完了検知まで、--dry-run で送信予定コマンドの提示まで、
-  --workflow / --branch / --pr で選択を明示できる。
+  --run で run と完了検知まで、--dry-run で実行予定の提示まで、
+  --workflow / --branch / --base / --draft / --pr で選択を明示できる。
 ---
 
 # takt タスク投入・実行
@@ -17,18 +18,20 @@ description: >-
 ## 概要
 
 起票済み issue を takt のキューへ積み、`--run` が渡されたときだけ続けて回す。
-**`takt add` と `takt run` はどちらも cmux の別 pane で実行する**。
+**投入は対話ゼロで行い、`takt run` だけを cmux の別 pane で実行する**。
 
 **bare invocation では `takt run` を回さない**(いつ走らせるかは人間の判断であり、
 積んだ瞬間に走り出す構成もあるため)。回すのは `--run` を明示されたときだけ。
 
 設計の骨子:
 
-- **issue が仕様の正本**。`takt add "#N"` は issue 本文を取得して order.md に書き込むので、
+- **issue が仕様の正本**。投入時に issue 本文を取得して order.md に書き込むので、
   **issue 本文の品質がそのまま実装の入力になる**。事前に置いた order.md は上書きされるため、
   自前で書かず issue 側を直す
-- **`takt add` は pane で回す**。workflow 選択 / worktree / auto_pr を prompt する対話 UI なので
-  エージェントだけでは完結しない。`-w` で workflow だけは非対話に固定できる。
+- **`takt add` は使わず、内部 API を直呼びして積む**。`takt add` は worktree / branch /
+  auto_pr を prompt する対話 UI で、**グローバル option を 1 つも受け付けない**
+  (`addTask` が読むのは `opts.workflow` と `opts.prNumber` だけ)。`saveEnqueuedTaskFile` を
+  直接呼べば branch / base / draft まで指定して対話ゼロで積める(フェーズ 3)。
   未知サブコマンド(`takt task list` など)は対話モードに落ちるので叩かない
 - **直接実行(`takt "#N"` / `takt -w <wf> "#N"` / `takt -i <N>`)は使わない**。worktree を作らず
   **現ブランチをそのまま書き換える**ので、worktree 必須の規約と正面から衝突する(下記「落とし穴」)。
@@ -46,11 +49,15 @@ description: >-
 - Bare / `<issue番号>` → フェーズ 1〜4 を通す(積むまで)。`takt run` は回さない。
 - `--run` → フェーズ 5。cmux の別 pane で `takt run` を起動し、完了まで見守る。
   単独なら既存の pending を回すだけ、`<issue番号> --run` なら積んでから回す。
-- `--dry-run` → pane に送る直前で止め、選んだ workflow と送信予定コマンドを提示するだけ。
+- `--dry-run` → 投入の直前で止め、選んだ workflow と投入予定の設定
+  (branch / base / auto_pr / draft)を提示するだけ。
 - `--workflow <name>` → フェーズ 2 の判定を省略して明示する。**実在確認だけは飛ばさない**。
-- `--pr <番号>` / `--branch <name>` → 既存 PR / ブランチへの積み増し。フェーズ 3 の対話 3
-  (`Branch name`)に入れる値として扱う。
-- `--no-auto-pr` → フェーズ 3 の対話 4(`Auto-create PR?`)で No を選ぶよう伝える。
+- `--branch <name>` → 投入する branch を明示する。既存ブランチへの積み増しもこれ。
+- `--pr <番号>` → その PR の head ブランチへ積み増す(`--branch` に入れる値を
+  `gh pr view` で引いてから渡す)。
+- `--base <name>` → base branch を明示する。省略時は takt の既定解決に任せる。
+- `--draft` → draft PR で作る。**省略時は通常 PR**(対話 UI の既定とは逆。フェーズ 3)。
+- `--no-auto-pr` → PR を自動作成しない(`autoPr: false`)。
 
 ## フェーズ 1: 前提確認
 
@@ -79,9 +86,10 @@ git fetch origin
 
 ### issue 本文がそのまま order.md になる
 
-`takt add "#N"` は issue 本文を取得して `.takt/tasks/<slug>/order.md` に書き込む
-(`enqueueService.js` の `options.orderContent ?? taskContent`)。つまり **issue 本文の品質が
-そのまま実装の入力になる**。積む前に本文を読み、下記があれば **issue 側を直してから**積む:
+投入時に `resolveIssueTask("#N")` が issue 本文を取得し、`.takt/tasks/<slug>/order.md` へ
+書き込まれる(`enqueueService.js` の `options.orderContent ?? taskContent`)。つまり
+**issue 本文の品質がそのまま実装の入力になる**。積む前に本文を読み、下記があれば
+**issue 側を直してから**積む:
 
 - **自己矛盾**。「削除以外の変更は行わない」と「CHANGELOG 更新が必須」の併記のような食い違いは
   intake が仕様矛盾として blocked にする。完了条件で要求する文書更新は「変更種別の限定」節で
@@ -108,8 +116,8 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 ## フェーズ 2: workflow の選択
 
 **レーン名も選択軸もリポジトリごとに違う。このスキルに書かれた名前は例であって、実在確認なしに
-`-w` へ渡してはいけない**。存在しない名前なら `takt add` が `Workflow not found` で止まるので
-事故にはならないが、**存在はするが意図と違うレーン**を渡すと黙って積まれる。
+投入してはいけない**。存在しない名前ならフェーズ 3 の `determineWorkflow` が止めるので事故には
+ならないが、**存在はするが意図と違うレーン**を渡すと黙って積まれる。
 
 実測(2026-08-01 時点):
 
@@ -195,39 +203,115 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
 混ざる等)は、積む前にどちらで回すか確認する。
 
-## フェーズ 3: pane で `takt add` を回す
+## フェーズ 3: 非対話で積む
 
-`takt add` は対話 UI なのでエージェントだけでは完結しない。**pane に送ってユーザーに応答してもらう**。
-pane の確保は [cmux-workspace](../cmux-workspace/SKILL.md) の **Right-Side Helper Pane** ポリシーに
-従う(フェーズ 5 の `takt run` と同じ helper pane を使い回す)。
+**`takt add` は使わない**。ユーザーに 6 問のプロンプトを手入力させる代わりに、
+takt の内部 API を直呼びして対話ゼロで積む。pane も要らない。
+
+### なぜ CLI ではなく内部 API なのか
+
+`takt add` の対話は**グローバル option では 1 つも埋められない**。`addTask` が読むのは
+`opts.workflow` と `opts.prNumber` だけで、worktree 設定は必ず `promptWorktreeSettings(cwd)`
+から取るため、**`-b` / `--auto-pr` / `--draft` を渡しても捨てられる**。
+
+`TAKT_NO_TTY=1`(`shared/prompt/tty.js` の公式分岐)を立てれば `promptInput` は `null`、
+`confirm` は既定値かパイプ入力を返すので対話ゼロにはなる。だが **`promptInput` はパイプを
+読まないので `Branch name` だけが auto に固定される**(`confirm` にはパイプ経路があるのに
+`promptInput` には無い、takt 側の非対称)。`script(1)` で疑似 TTY を与える手は、入力が
+先読みされて EOF で落ちるため成立しない(実測)。gh-stack 前提で branch を指定する運用では
+どれも足りないので、`saveEnqueuedTaskFile` を直接呼ぶ。
+
+### 投入
+
+```sh
+TAKT_ROOT=$(dirname "$(dirname "$(realpath "$(which takt)")")")/lib/node_modules/takt
+TAKT_NODE=$(grep -o '/nix/store/[^ ]*/bin/node' "$(realpath "$(which takt)")" | head -1)
+TAKT_NODE=${TAKT_NODE:-$(command -v node)}
+
+TAKT_ROOT="$TAKT_ROOT" TAKT_CWD="<repo_root>" \
+TAKT_WF="<workflow>" TAKT_ISSUE="<N>" \
+TAKT_BRANCH="<branch|空>" TAKT_BASE="<base|空>" \
+TAKT_AUTO_PR=true TAKT_DRAFT=false \
+"$TAKT_NODE" --input-type=module <<'EOF'
+const root = process.env.TAKT_ROOT, cwd = process.env.TAKT_CWD;
+const { determineWorkflow } = await import(`${root}/dist/features/tasks/execute/selectAndExecute.js`);
+const { resolveIssueTask } = await import(`${root}/dist/infra/git/index.js`);
+const { saveEnqueuedTaskFile } = await import(`${root}/dist/infra/task/enqueuedTaskFile.js`);
+
+const wf = await determineWorkflow(cwd, process.env.TAKT_WF);
+if (!wf) { console.error('Workflow not found'); process.exit(1); }
+
+const issue = Number(process.env.TAKT_ISSUE);
+const body = resolveIssueTask(`#${issue}`, cwd);
+
+const created = await saveEnqueuedTaskFile(cwd, body, {
+  workflow: wf, issue, worktree: true,
+  branch: process.env.TAKT_BRANCH || undefined,
+  baseBranch: process.env.TAKT_BASE || undefined,
+  autoPr: process.env.TAKT_AUTO_PR !== 'false',
+  draftPr: process.env.TAKT_DRAFT === 'true',
+});
+console.log(JSON.stringify({ ...created, workflow: wf }));
+EOF
+```
+
+値は**環境変数で渡す**(ヒアドキュメントに直書きするとブランチ名や issue 本文の quoting 事故に
+なる)。`<<'EOF'` のクォートも外さない。node は takt 同梱のものを使う — nix ラッパーの
+shebang から引くので、**store パスは直書きしない**。
+
+### この経路で落としてはいけないもの
+
+- **`determineWorkflow` を必ず通す**。`takt add -w` が持っていた実在確認がこれ。省いて
+  `workflow` を直書きすると、**存在しないレーン名がそのまま tasks.yaml に積まれる**
+  (`Workflow not found` で止まる防護が消える)
+- **`worktree: true` を必ず渡す**。落とすと run が隔離クローンを作らず、worktree 必須の規約が崩れる
+- **`resolveIssueTask` で issue 本文を取る**。自前の文字列に替えると「issue が仕様の正本」が
+  崩れる(フェーズ 1)
+- **`baseBranch` の実在は呼び出し側で確認する**。対話版の `resolveExistingBaseBranch` は
+  実在しない base を聞き直すが、**内部 API にその検証は無い**。渡す前に
+  `git rev-parse --verify <base>` を通す
+
+### draft の既定が対話 UI と逆になる
+
+対話 UI の `Create as draft?` は**既定 Yes**(Enter 連打で draft PR)。この経路では
+`TAKT_DRAFT` を明示するので、**指定しなければ通常 PR** になる。draft が欲しいときだけ
+`--draft` を受けて `TAKT_DRAFT=true` にする。
+
+### 内部 API が壊れたときの fallback
+
+`import` が失敗する(takt 更新で `dist/` の構造が変わった)ときは、**握りつぶさずユーザーに
+告げてから**従来の対話経路に落ちる。pane の確保は [cmux-workspace](../cmux-workspace/SKILL.md) の
+**Right-Side Helper Pane** ポリシーに従う(フェーズ 5 と同じ helper pane でよい)。
 
 ```sh
 cmux send --surface surface:<N> "cd <repo_root> && takt -w <workflow> add \"#<N>\"\n"
 ```
 
-`-w` はグローバル option だが、`add` の action が `optsWithGlobals()` でマージするので届く。これで
-workflow 選択 UI がスキップされ、**実在しないレーン名ならその場で `Workflow not found` で止まる**
-(積まれない)。フェーズ 2 の実在確認と合わせて二重の防護になる。
-
-### ユーザーが応答する対話
-
-`promptWorktreeSettings(cwd)` は `cwd` しか受け取らず、**グローバル option では 1 つもスキップ
-できない**(`--auto-pr` / `-b` / `--draft` を渡しても無視される)。送信時に以下を伝えてから渡す:
+このとき応答してもらう対話は 6 つ。**3 の `Branch name` と 5 の draft は既定のままだと意図と
+食い違う**ので、入れる値を送信時に必ず添える(空欄で送らせない)。
 
 | 順 | プロンプト | 既定 | 備考 |
 | --- | --- | --- | --- |
 | 1 | `Base branch として <現ブランチ> を使いますか？` | Yes | main / master にいるときは聞かれない |
 | 2 | `Worktree path (Enter for auto)` | auto | 空 Enter でよい |
-| 3 | `Branch name (Enter for auto)` | auto | **既存 PR に積み増すならここに既存ブランチ名を入れる** |
+| 3 | `Branch name (Enter for auto)` | auto | **積み増し先があるならここに入れる値を明示する** |
 | 4 | `Auto-create PR?` | Yes | |
 | 5 | `Create as draft?` | **Yes** | Enter 連打すると **draft PR** になる。通常の PR が欲しければ No |
 | 6 | 最終確認 | Yes | |
 
-**5 の既定が Yes** である点に注意。draft を望まないなら、送信時にその旨を添える。
+fallback に落ちたことは報告に必ず含める(このスキル側の修正が要るサインなので、
+`takt-sync` スキルでの追随対象になる)。
 
 ### 既存 PR への積み増し
 
-対話 3 の `Branch name` に既存ブランチ名を入れるだけで成立し、新しい PR は作られない。根拠は 3 点:
+`TAKT_BRANCH` に既存ブランチ名を入れるだけで成立し、新しい PR は作られない。
+`--pr <番号>` で渡されたときは head ブランチを引いてから入れる:
+
+```sh
+gh pr view <番号> --json headRefName --jq .headRefName
+```
+
+根拠は 3 点:
 
 - `clone.js::createSharedClone` の分岐順は **リモートに同名ブランチあり → clone して origin から
   fetch → `checkout -B`** が最優先。メインチェックアウトの HEAD やローカルブランチに依存しないので、
@@ -239,13 +323,14 @@ workflow 選択 UI がスキップされ、**実在しないレーン名なら�
 
 ## フェーズ 4: 検証と申し送り
 
-ユーザーが対話を終えたら、積まれた内容を確認する。
+積んだ内容を確認する。投入コマンドの戻り値(`taskName` / `tasksFile`)だけでなく、
+**実際に書かれたレコードを読む**(`branch` / `base_branch` / `draft_pr` が意図どおり入ったか)。
 
 ```sh
-tail -18 .takt/tasks.yaml    # status: pending / workflow / branch / issue / task_dir を確認
+tail -18 .takt/tasks.yaml    # status: pending / workflow / branch / base_branch / draft_pr / issue / task_dir
 ```
 
-報告に含める: 積んだ slug、選んだ workflow とその理由、積み増し先 PR、
+報告に含める: 積んだ slug、選んだ workflow とその理由、branch と draft の別、積み増し先 PR、
 `takt run` を誰がいつ回すか(`--run` なら続けてフェーズ 5 に進む旨)、
 running があれば即実行になる旨。
 
@@ -258,8 +343,8 @@ running があれば即実行になる旨。
 
 pane の作り方はここでは決め打ちせず、[cmux-workspace](../cmux-workspace/SKILL.md) スキルの
 **Right-Side Helper Pane** ポリシーに従う(既存の helper pane があれば surface を足す /
-無ければ右に 1 つだけ作る / 作成系には `--focus false`)。フェーズ 3 で `takt add` を送った
-surface が空いていれば、そのまま使い回してよい。
+無ければ右に 1 つだけ作る / 作成系には `--focus false`)。フェーズ 3 は pane を使わないので、
+**このスキルが pane を要するのはここだけ**(フェーズ 3 が fallback に落ちた場合を除く)。
 
 このスキル側で足す制約は 2 つだけ:
 
@@ -372,18 +457,21 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
   `takt -i <N>` が通る `selectAndExecuteTask` は `execCwd = cwd` を使い、
   `worktree: false` をログに直書きしている。worktree を作る `confirmAndCreateWorktree` は
   **この経路から呼ばれない**。つまり**メインチェックアウトの現ブランチが直接書き換わる**。
-  worktree が要るなら `takt add` → `takt run` の経路を通す(`add` は `worktree: true` を渡し、
+  worktree が要るなら**積んで `takt run` で回す**経路を通す(投入時に `worktree: true` を渡し、
   `run` が `<repo-parent>/takt-worktrees/` に隔離クローンを作る)。
   `--pipeline` も同様に worktree を作らない(help に *non-interactive, no worktree,
   direct branch creation* と明記。CI 用)
-- **`takt add` は order.md を上書きする**。`enqueueService.js` が
+- **投入は order.md を上書きする**。`enqueueService.js` が
   `options.orderContent ?? taskContent` を `<task_dir>/order.md` へ書き込むため、事前に置いた
   内容は残らない。仕様は issue 本文の側で整える(フェーズ 1「issue 本文がそのまま order.md になる」)
-- **`-w` で渡したレーン名は検証されるが、対話で選ぶ分には UI が実在レーンしか出さない**。
-  `takt -w <存在しない名前> add` は `determineWorkflow` が `Workflow not found` で止める
-  (積まれない)。ただしフェーズ 2 の実在確認を省くと、**存在はするが意図と違うレーン**を
-  黙って渡すことになる。名前の実在と選択の妥当性は別物
-- **pending の実行順を入れ替える手段は乏しい**。`claimNextTasks` は先頭から拾い、`add` は末尾に
+- **内部 API は `dist/` の構造に依存する**。import パスや `SaveEnqueuedTaskFileOptions` の形は
+  takt のバージョン更新で変わり得る(CLI の互換保証の外側)。**更新後は最初の 1 件で
+  `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
+  壊れていたらフェーズ 3 の fallback へ落とし、`takt-sync` の追随対象として報告する
+- **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
+  `Workflow not found` で止まる(積まれない)。ただしフェーズ 2 の判定を省くと、**存在はするが
+  意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物
+- **pending の実行順を入れ替える手段は乏しい**。`claimNextTasks` は先頭から拾い、投入は末尾に
   足す。割り込ませたいときは先行 pending を
   `takt list --non-interactive --action delete --branch <name>` で外し、割り込みを積んでから
   先行を積み直す(`--branch` は省略不可)
@@ -397,13 +485,14 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 - **重い run を他リポジトリの takt run と同時に走らせない**。クローン置き場
   `<repo-parent>/takt-worktrees/` は同じ親を持つ別リポジトリと共有されており、外部リソースを
   実際に掴むテスト(実 ffmpeg・npm 実ダウンロード等)が並行負荷で落ちる
-- **`.takt/tasks/` が gitignore 済みか確認する**。`takt add` が order.md を置くので、除外されて
+- **`.takt/tasks/` が gitignore 済みか確認する**。投入が order.md を置くので、除外されて
   いないとメインチェックアウトの作業ツリーが汚れる。新しいリポジトリでは投入前に
   `git check-ignore -v` で見る
 - **nix store のパスを直書きしない**。takt バイナリは flake 管理でバージョンごとにハッシュが
   変わる。builtin レーン一覧を引くときも `which takt` + `realpath` から辿る(フェーズ 2)
-- **`Create as draft?` の既定は Yes**。フェーズ 3 の対話を Enter 連打すると draft PR になる。
-  通常の PR が欲しいときは明示的に No を選ぶようユーザーに伝える
+- **draft の既定が経路によって逆になる**。内部 API 経路は `TAKT_DRAFT` を明示するので
+  **指定しなければ通常 PR**、対話 fallback の `Create as draft?` は**既定 Yes**(Enter 連打で
+  draft PR)。fallback に落ちたときだけ、通常 PR が欲しければ明示的に No を選ぶよう伝える
 - **`cmux` は PATH に無いことがある**。cask 由来で実体は
   `/Applications/cmux.app/Contents/Resources/bin/cmux`。`config/.zshrc` で PATH の**末尾**に
   追加してあるが、反映前のシェルでは解決できない。**先頭に足してはいけない** — 同じ bin に
