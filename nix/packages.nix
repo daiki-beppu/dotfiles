@@ -229,6 +229,14 @@ in
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
     link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
 
+    # Codex
+    # グローバル規約の実体は config/.claude/CLAUDE.md 1 枚。
+    # Codex はそれを ~/.codex/AGENTS.md という名前で読むだけなので、
+    # 内容を複製せず同じソースへ symlink する（2 枚に分けると drift する）。
+    # ~/.codex 自体は Codex が実行時状態を書く通常ディレクトリ。
+    mkdir -p "$HOME/.codex"
+    link_force "${dotfilesDir}/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+
     # takt
     # ~/.takt 自体は takt が実行時状態を書く通常ディレクトリ。
     # グローバルで git 管理するのは config.yaml のみ。
