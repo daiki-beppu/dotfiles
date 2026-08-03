@@ -299,8 +299,7 @@ cmux send --surface surface:<N> "cd <repo_root> && takt -w <workflow> add \"#<N>
 | 5 | `Create as draft?` | **Yes** | Enter 連打すると **draft PR** になる。通常の PR が欲しければ No |
 | 6 | 最終確認 | Yes | |
 
-fallback に落ちたことは報告に必ず含める(このスキル側の修正が要るサインなので、
-`takt-sync` スキルでの追随対象になる)。
+fallback に落ちたことは報告に必ず含める(このスキル側の修正が要るサイン)。
 
 ### 既存 PR への積み増し
 
@@ -467,7 +466,7 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 - **内部 API は `dist/` の構造に依存する**。import パスや `SaveEnqueuedTaskFileOptions` の形は
   takt のバージョン更新で変わり得る(CLI の互換保証の外側)。**更新後は最初の 1 件で
   `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
-  壊れていたらフェーズ 3 の fallback へ落とし、`takt-sync` の追随対象として報告する
+  壊れていたらフェーズ 3 の fallback へ落とし、このスキルの修正が要るサインとして報告する
 - **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
   `Workflow not found` で止まる(積まれない)。ただしフェーズ 2 の判定を省くと、**存在はするが
   意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物
