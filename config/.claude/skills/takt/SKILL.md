@@ -80,6 +80,11 @@ git fetch origin
   できない実行は blocked」を明示している。order.md だけ渡すと 3 回とも blocked →
   auto_requeue 上限(2/2)で failed する(実装には一切入らない)。builtin の `simple-*` には
   intake が無いのでこの制約もかからない
+- **intake の組み込み方は 2 通りある**。`kind: workflow_call` で別 workflow を呼ぶ形と、
+  0.55.0 で入った step fragment(`uses: intake` で `.takt/steps/intake.yaml` を展開)の形。
+  **後者は `.takt/workflows/` に出てこない**ので、レーン一覧に `*-intake` が無いことを
+  「intake 無し」と読み違えない(実測: `00-automation` は fragment 形式、
+  `youtube-automation` / `tayk` は workflow 形式)
 - 新規ブランチで走らせるなら投入前に main を `git pull --ff-only`。takt はクローン元のローカルブランチから
   複製するため、main が origin より遅れているとマージ済みの workflow 定義がクローンに入らず run が壊れる
   (既存ブランチへの積み増しはリモート優先なので影響しない)
@@ -87,7 +92,7 @@ git fetch origin
 ### issue 本文がそのまま order.md になる
 
 投入時に `resolveIssueTask("#N")` が issue 本文を取得し、`.takt/tasks/<slug>/order.md` へ
-書き込まれる(`enqueueService.js` の `options.orderContent ?? taskContent`)。つまり
+書き込まれる(`dist/infra/task/enqueueService.js` の `options.orderContent ?? taskContent`)。つまり
 **issue 本文の品質がそのまま実装の入力になる**。積む前に本文を読み、下記があれば
 **issue 側を直してから**積む:
 
@@ -117,17 +122,24 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 
 **レーン名も選択軸もリポジトリごとに違う。このスキルに書かれた名前は例であって、実在確認なしに
 投入してはいけない**。存在しない名前ならフェーズ 3 の `determineWorkflow` が止めるので事故には
-ならないが、**存在はするが意図と違うレーン**を渡すと黙って積まれる。
+ならないが、**存在はするが意図と違うレーン**と**存在はするが callable な部品**は黙って積まれる
+(後者は run まで発覚しない。下記)。
 
-実測(2026-08-01 時点):
+実測(2026-08-04 時点):
 
 | リポジトリ | プロジェクト固有レーン | 選択軸 |
 | --- | --- | --- |
 | `~/02-yt/tayk` | `tayk-{audit-architecture,audit-runs,feature,fix,intake}` (5) | 意図別 |
-| `~/02-yt/00-automation` | `yt-auto-*` 8 本 + `audit-unit-split` | 意図別 |
+| `~/02-yt/00-automation` | `yt-auto-*` **6 本** + `audit-unit-split` | 意図別 |
 | `~/01-dev/projects/youtube-automation` | `yt-auto-*` **7 本** + `audit-unit-split` | 意図別 |
 | `~/01-dev/projects/libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
 | `~/01-dev/{dotfiles,takt}` / `~/01-dev/projects/specv` | 無し(builtin のみ) | スタック × 深度 |
+
+**本数が減ってもレーンの廃止とは限らない**。`00-automation` は 2026-08-01 時点で 8 本だったが、
+0.55.0 の step fragment 化で `.takt/steps/` へ移った分だけ `.takt/workflows/` から消えている
+(実測: `intake.yaml` が `.takt/steps/` にあり、各レーンが `uses: intake` で展開している。
+review 系も `reviewers.yaml` / `design-review.yaml` などとして同じ場所にある)。
+**投入対象として選べるレーンが減った**のは事実だが、機能が消えたわけではない。
 
 **同名リポジトリでもレーン構成が違う**。上の 2 つはどちらも "youtube-automation" だが、
 remote が `mhs2sowarabeuta-lang/` と `daiki-beppu/` で別物で、前者にだけ `yt-auto-audit-runs` が
@@ -137,12 +149,18 @@ remote が `mhs2sowarabeuta-lang/` と `daiki-beppu/` で別物で、前者に�
 
 ```sh
 ls .takt/workflows/ 2>/dev/null    # プロジェクト固有レーン。無ければ builtin だけが対象
+ls .takt/steps/ 2>/dev/null        # step fragment。レーンではないので投入対象にはならない
 
-# builtin(0.54.1 で 62 本)。言語は .takt/config.yaml の language に対応
+# builtin(0.55.1 で 66 本)。言語は .takt/config.yaml の language に対応
 BUILTIN=$(dirname "$(dirname "$(realpath "$(which takt)")")")/lib/node_modules/takt/builtins/ja
 ls "$BUILTIN/workflows/" | sed 's/\.yaml$//'
 cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨順
 ```
+
+`.takt/steps/` は 0.55.0 で入った再利用可能な単一ステップ部品(`uses: <name>` で展開される)。
+探索先は `.takt/steps/` / `~/.takt/steps/` / builtin `steps/` / repertoire パッケージの `steps/`
+の 4 か所で、**レーンとしては投入できない**。一覧に出てこない機能がレーンに埋まっていることの
+説明になるので、「思ったより本数が少ない」ときはここを見る。
 
 ### 判定順
 
@@ -197,8 +215,35 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 - 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
 - takt / tayk 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
 
-**callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。
-`intake` は両系列にあり、`impl-review` は yt-auto 系のみ。
+0.54〜0.55 で builtin の構成が動いたので、以前の選び方をそのまま持ち込まない:
+
+- **`simple` 系列が 🚀 Quick Start の先頭に来た**。モデルの判断を信じて orchestration を
+  最小化する設計で、`simple` / `simple-mini` + スタック別 5 本
+- **`default-high` / `dual` は Team Leader 委譲をやめて直接実装するようになった**。
+  leader 経路が欲しいときは `takt-default-team-high` を明示する
+- **QA reviewer は撤去された**(`qa-reviewer` persona / `qa` policy / `qa-review` output contract
+  が削除され、観点は coding policy に統合)。これらを参照する自作 workflow が残っていれば
+  投入先として選ぶ前に facet 参照を張り替える
+
+**callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。builtin にも
+0.55.1 時点で 12 本ある — `development-core` / `mini-core` / `simple-core` / `peer-review` /
+`peer-review-suite-{base,cqrs,frontend,frontend-cqrs}` /
+`merge-readiness-{,dual-,finding-contract-}final-gate` / `review-remediation`。
+`ls builtins/ja/workflows/` には**普通のレーンと並んで出てくる**ので名前だけでは区別できない。
+判別は `subworkflow.callable` を直接見る:
+
+```sh
+cd "$BUILTIN/workflows" && grep -l "callable: true" *.yaml | sed 's/\.yaml$//'
+```
+
+**投入は素通りする。落ちるのは run のとき**。`determineWorkflow` は callable を弾かず
+そのまま tasks.yaml に積み(実測)、`WorkflowEngine` の構築時に初めて
+`Configuration error: callable workflow "<name>" must be started from a workflow_call` を投げる。
+つまり**存在しないレーン名と違って積んだ時点では気づけない**ので、ここで確認する。
+
+プロジェクト固有レーンでは `intake` / `impl-review` が該当する(`tayk-intake` /
+`yt-auto-intake` / `yt-auto-impl-review`。ただし `00-automation` では step fragment に移行済みで
+そもそも一覧に出ない)。
 
 判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
 混ざる等)は、積む前にどちらで回すか確認する。
@@ -258,6 +303,10 @@ EOF
 値は**環境変数で渡す**(ヒアドキュメントに直書きするとブランチ名や issue 本文の quoting 事故に
 なる)。`<<'EOF'` のクォートも外さない。node は takt 同梱のものを使う — nix ラッパーの
 shebang から引くので、**store パスは直書きしない**。
+
+**0.55.1 で 3 つの import パスと引数の形はそのまま通る**(実測)。`SaveEnqueuedTaskFileOptions` は
+`managedPr` / `shouldPublishBranchToOrigin` / `contextPrNumber` が増えたが、いずれも
+省略時は従来の挙動なので上のスクリプトは変えなくてよい。
 
 ### この経路で落としてはいけないもの
 
@@ -457,23 +506,62 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
   `worktree: false` をログに直書きしている。worktree を作る `confirmAndCreateWorktree` は
   **この経路から呼ばれない**。つまり**メインチェックアウトの現ブランチが直接書き換わる**。
   worktree が要るなら**積んで `takt run` で回す**経路を通す(投入時に `worktree: true` を渡し、
-  `run` が `<repo-parent>/takt-worktrees/` に隔離クローンを作る)。
-  `--pipeline` も同様に worktree を作らない(help に *non-interactive, no worktree,
-  direct branch creation* と明記。CI 用)
+  `run` が `<repo-parent>/takt-worktrees/` に隔離クローンを作る)。`--pipeline` も worktree を
+  作らない(help に *non-interactive, no worktree, direct branch creation* と明記。CI 用)
+- **`--auto-pr` / `--draft` は `--pipeline` 専用になった**。非 pipeline で渡すと実行に入る前に
+  `[ERROR] --auto-pr/--draft are supported only in --pipeline mode` で exit する
+  (`routing.js::executeDefaultAction` の最初のガード)。**他所の手順書が
+  `takt --auto-pr -w <wf> "#<N>"` を指していたらそれは古い**。このスキルの経路では
+  PR 自動作成は投入時の `autoPr` フラグ(フェーズ 3)で表現するので、CLI の `--auto-pr` は使わない
+- **`--pipeline` に切り替えても素直には通らない。3 段階でずれる**。1 つ直すと次が出るので、
+  行き当たりばったりに直さず最初から 3 つとも満たす:
+  1. **`-w` が必須**。無いと `--workflow (-w) is required in pipeline mode`
+  2. **issue は `-i <N>` でしか渡らない**。positional の `"#<N>"` は pipeline では読まれず
+     (`resolveTaskContent` が見るのは `prNumber` → `issueNumber` → `-t` だけ)、
+     `Either --issue, --pr, or --task must be specified` になる
+  3. **必ず `git checkout -b <branch>` を cwd で実行する**(`steps.js::resolveExecutionContext`)。
+     つまり**ブランチの作成権は takt 側にある**。worktree 必須の規約と両立させたいなら
+     `git worktree add -b <branch>` で**ブランチまで作ってはいけない** — detached で worktree を
+     作り、`-b <branch>` は takt に渡す。先にブランチを作ると `already exists` で衝突する
 - **投入は order.md を上書きする**。`enqueueService.js` が
   `options.orderContent ?? taskContent` を `<task_dir>/order.md` へ書き込むため、事前に置いた
   内容は残らない。仕様は issue 本文の側で整える(フェーズ 1「issue 本文がそのまま order.md になる」)
 - **内部 API は `dist/` の構造に依存する**。import パスや `SaveEnqueuedTaskFileOptions` の形は
   takt のバージョン更新で変わり得る(CLI の互換保証の外側)。**更新後は最初の 1 件で
   `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
-  壊れていたらフェーズ 3 の fallback へ落とし、このスキルの修正が要るサインとして報告する
+  壊れていたらフェーズ 3 の fallback へ落とし、このスキルの修正が要るサインとして報告する。
+  実際 `enqueueService.js` は 0.55.1 までに `dist/infra/task/` へ移動しており(`saveEnqueuedTaskFile`
+  の import 元は変わっていない)、**パスの移動は起きる前提で扱う**
+- **takt 経由の run では Claude が自分のスキルを見ない**。0.55.0 の BREAKING で
+  `provider_options.claude.skills.enabled` の既定が `false` になり、`claude-sdk` は `skills: []`、
+  CLI 系(`claude` / `claude-terminal`)は `--disable-slash-commands` 付きで起動する
+  (custom slash command も同時に死ぬ)。**「あのスキルを使って実装して」と issue 本文に書いても
+  効かない**ので、手順が要るなら issue 本文に直接書く。復活させるなら
+  `.takt/config.yaml` で `provider_options.claude.skills.enabled: true`(検証済み最低版は
+  Claude Code 2.1.220)
+- **`max_steps` は workflow ツリー全体の共有予算になった**(0.55.0 BREAKING)。`workflow_call` は
+  ステップ数にカウントされない制御ノードで、予算は root の `max_steps` だけが持つ。
+  **callable workflow に `max_steps` を書くとロード時に落ちる**。上限に当たって止まった run を
+  そのまま伸ばしたいときは `takt run --ignore-exceed`(共有予算を延長する。pane に送る行に足す)
+- **run の report ディレクトリ名が変わった**(0.55.0 BREAKING)。`.takt/runs/*/reports/` 配下は
+  `iteration-N--step-X--workflow-Y` から `call-…` セグメントになり、**旧形式の run を読む /
+  resume する経路は削除された**(移行措置なし)。0.55.0 より前に走った run のログを漁るときは
+  パス形式が違う前提で探す
 - **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
   `Workflow not found` で止まる(積まれない)。ただしフェーズ 2 の判定を省くと、**存在はするが
   意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物
+- **`determineWorkflow` は callable sub-workflow を弾かない**。`development-core` のような部品名を
+  渡すと投入は成功し、`takt run` が拾った瞬間に
+  `callable workflow "<name>" must be started from a workflow_call` で failed になる。
+  実在確認だけでは防げないので、フェーズ 2 の `grep -l "callable: true"` を通す
 - **pending の実行順を入れ替える手段は乏しい**。`claimNextTasks` は先頭から拾い、投入は末尾に
   足す。割り込ませたいときは先行 pending を
   `takt list --non-interactive --action delete --branch <name>` で外し、割り込みを積んでから
   先行を積み直す(`--branch` は省略不可)
+- **`--branch` は `takt list --help` に出ないが効く**。グローバル option (`-b, --branch`) を
+  サブコマンド側が `optsWithGlobals()` で拾う構造なので、ローカル option 一覧
+  (`--non-interactive` / `--action` / `--format` / `--yes`)には現れない。
+  **help に無い = 廃止された、と読まない**
 - **完了済みタスクの記録は tasks.yaml から消えることがある**(実測あり)。run の実績を追うときは
   `.takt/clone-meta/*.json` の `clonePath` 配下を辿る。takt はタスクを隔離クローンで実行するため、
   メインチェックアウトの `.takt/runs` には builtin workflow の run しか無い
