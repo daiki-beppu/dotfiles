@@ -197,6 +197,7 @@
                     "nani"
                     "notion"
                     "nvidia-geforce-now"
+                    "obs"
                     "raycast"
                     "visual-studio-code"
                     "zoom"
