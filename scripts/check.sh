@@ -6,7 +6,7 @@
 #   scripts/check.sh nix-eval     # run only the nix-eval check
 #   scripts/check.sh shellcheck links   # run only the named checks
 #
-# Available checks: nix-eval, shellcheck, links, hooks
+# Available checks: nix-eval, shellcheck, links, hooks, agent-skills
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -162,12 +162,69 @@ check_hooks() {
 }
 
 # ---------------------------------------------------------------------------
+# Check: agent-skills
+# Validates the Codex Cloud manifest and exercises the shared symlink syncer
+# without touching the real user scope.
+# ---------------------------------------------------------------------------
+check_agent_skills() {
+  echo "== agent-skills =="
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' RETURN
+
+  mkdir -p \
+    "$tmp_dir/destination/external-real" \
+    "$tmp_dir/external-source" \
+    "$tmp_dir/legacy/external-real"
+  ln -s "$tmp_dir/external-source" "$tmp_dir/destination/external-link"
+  ln -s "$REPO_ROOT/config/.claude/skills/issue-direct" "$tmp_dir/legacy/issue-direct"
+
+  AGENT_SKILLS_DIR="$tmp_dir/destination" \
+    LEGACY_AGENT_SKILLS_DIR="$tmp_dir/legacy" \
+    bash scripts/sync-agent-skills.sh --manifest config/codex-cloud/skills.txt
+
+  local skill
+  for skill in issue-direct gh-stack; do
+    [ -L "$tmp_dir/destination/$skill" ] || {
+      echo "MISSING: Cloud skill link was not created: $skill" >&2
+      return 1
+    }
+    [ -f "$tmp_dir/destination/$skill/SKILL.md" ] || {
+      echo "BROKEN: Cloud skill link has no SKILL.md: $skill" >&2
+      return 1
+    }
+  done
+
+  [ -d "$tmp_dir/destination/external-real" ] || {
+    echo "REMOVED: sync replaced an externally managed skill directory" >&2
+    return 1
+  }
+  [ -L "$tmp_dir/destination/external-link" ] || {
+    echo "REMOVED: sync replaced an externally managed skill symlink" >&2
+    return 1
+  }
+  [ ! -e "$tmp_dir/legacy/issue-direct" ] || {
+    echo "STALE: legacy dotfiles-managed skill symlink was not removed" >&2
+    return 1
+  }
+  [ -d "$tmp_dir/legacy/external-real" ] || {
+    echo "REMOVED: migration deleted an externally managed legacy skill" >&2
+    return 1
+  }
+
+  if rg -n '[.]codex/skills' config nix scripts README.md CLAUDE.md; then
+    echo "ERROR: legacy Codex skill path remains in active configuration" >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 main() {
   local -a checks=("$@")
   if [ "${#checks[@]}" -eq 0 ]; then
-    checks=(nix-eval shellcheck links hooks)
+    checks=(nix-eval shellcheck links hooks agent-skills)
   fi
 
   local -a ran=()
@@ -180,8 +237,9 @@ main() {
       shellcheck) ran+=("$c"); check_shellcheck || failed+=("$c") ;;
       links) ran+=("$c"); check_links || failed+=("$c") ;;
       hooks) ran+=("$c"); check_hooks || failed+=("$c") ;;
+      agent-skills) ran+=("$c"); check_agent_skills || failed+=("$c") ;;
       *)
-        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks)" >&2
+        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, agent-skills)" >&2
         exit 2
         ;;
     esac

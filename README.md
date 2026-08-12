@@ -84,6 +84,18 @@ dotfiles/
 | 全依存を最新化 | `nix flake update --flake ~/01-dev/dotfiles` |
 | ロールバック | `sudo darwin-rebuild switch --rollback` |
 
+## Codex Cloud
+
+Codex Cloud では dotfiles を clone した後、次の共通 bootstrap を実行する。
+
+```bash
+"$HOME/.local/share/dotfiles/scripts/setup-codex-cloud.sh"
+```
+
+Cloud に公開するスキル一覧は `config/codex-cloud/skills.txt`、スキルの実体は
+`config/.claude/skills/` が正本。bootstrap は対象だけを公式 user scope の
+`~/.agents/skills/` へ symlink するため、Cloud 側にスキルを複製しない。
+
 ## macOS 設定 (system.defaults)
 
 `flake.nix` で宣言的に管理:

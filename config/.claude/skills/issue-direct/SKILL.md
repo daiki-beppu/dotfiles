@@ -186,7 +186,7 @@ cd "<worktree の絶対パス>"
 - 解決順は takt 本体と同じ **プロジェクト `.takt/facets/policies/` → global `~/.takt/facets/policies/` → builtin**。カスタム policy を持つリポジトリではそちらが返るので、リポジトリ固有の規約が自動的に効く
 - **takt が未導入のリポジトリでは何も出力されない**(stderr に not found が出て exit 0)。その場合は policy 無しで進む。ここでスキルを止めない
 - リポジトリ固有の policy が他にもないかは `resolve-policy.sh --list` で見える。issue の領域に合致するもの(例: `terraform`、`screen-api`)があれば実装 subagent の一覧に足してよい
-- Codex から実行している場合、スキルの置き場は `~/.codex/skills/issue-direct/references/resolve-policy.sh`(dotfiles 内の同じ実体への symlink)
+- Codex から実行している場合、スキルの置き場は `~/.agents/skills/issue-direct/references/resolve-policy.sh`（dotfiles 内の同じ実体への symlink）
 
 ### 2. 段ループ(パイプライン)
 

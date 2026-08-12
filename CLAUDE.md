@@ -16,3 +16,8 @@ Nix + Home Manager ベースの dotfiles 管理リポジトリ。
 
 スキル・設定の編集は必ず dotfiles 側（`config/.claude/`）で行う。
 `~/.claude/` を直接書き換えると symlink を実ファイルに置き換えて管理から外れる。
+
+Codex の user scope スキルは `~/.agents/skills/` に置く。dotfiles 管理分は
+`scripts/sync-agent-skills.sh` が `config/.claude/skills/` の同じ実体へ symlink し、
+旧Codex専用スキルディレクトリは使用しない。Codex Cloud で公開するサブセットは
+`config/codex-cloud/skills.txt` を正とする。

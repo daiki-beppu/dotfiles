@@ -1,0 +1,3 @@
+# Codex Cloud の user scope に公開する dotfiles 管理スキル。
+issue-direct
+gh-stack

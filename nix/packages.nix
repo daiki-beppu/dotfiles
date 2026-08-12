@@ -229,6 +229,12 @@ in
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
     link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
 
+    # Agent skills
+    # Claude / Codex 共通の正本は config/.claude/skills。Codex の公式 user scope
+    # ~/.agents/skills には共通同期スクリプトで個別 symlink を作り、他 installer が
+    # 管理する skill を保護したまま dotfiles 管理分だけを同期する。
+    bash "${dotfilesDir}/../scripts/sync-agent-skills.sh"
+
     # Codex
     # グローバル規約の実体は config/.claude/CLAUDE.md 1 枚。
     # Codex はそれを ~/.codex/AGENTS.md という名前で読むだけなので、
