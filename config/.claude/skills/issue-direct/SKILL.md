@@ -289,13 +289,24 @@ PR 本文は変更の実質だけを書く。テンプレートの空セクシ�
 
 CI を **待たずに** background へ投げる。段番号と PR 番号を控えて次の段へ進む。
 
-- **Claude Code**: `Bash` の `run_in_background: true` で `gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green)
+CI 監視には同梱の `references/watch-pr-actions.sh` を使う。このスクリプトは PR の head SHA に紐づく `pull_request` の GitHub Actions run を `gh run list` で監視し、Checks API を呼ばない。そのため、リポジトリ限定の fine-grained PAT では `Actions: read`、PR・push 操作には `Contents: write` と `Pull requests: write` があればよい。`gh pr checks` / `gh run watch` は fine-grained PAT で利用できないため使わない。
+
+実行前にクライアント別のスキル配置から監視スクリプトを解決する。
+
+```bash
+CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
+[ -x "$CI_WATCH" ] || CI_WATCH="$HOME/.claude/skills/issue-direct/references/watch-pr-actions.sh"
+```
+
+- **Claude Code**: `Bash` の `run_in_background: true` で `"$CI_WATCH" "${PR_NUM}" 30 2400 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green、1=red、8=timeout / run 未検出)
 - **Codex / その他 CLI**: 自動再呼び出しが無いため、段ループ中は投げるだけにして、Step 3 でまとめて待つ:
 
   ```bash
-  nohup gh pr checks ${PR_NUM} --watch --interval 30 > /tmp/ci_pr${PR_NUM}.log 2>&1 &
+  nohup "$CI_WATCH" "${PR_NUM}" 30 2400 > /tmp/ci_pr${PR_NUM}.log 2>&1 &
   echo $! > /tmp/ci_pr${PR_NUM}.pid
   ```
+
+この監視で判定できるのは GitHub Actions の run だけである。外部 CI の required check を使うリポジトリでは fine-grained PAT だけで完全な green 判定はできないため、classic PAT / OAuth 認証へ切り替えるか、外部 CI の専用 API で補完できるまで完了扱いにしない。
 
 #### 2-4. 下段の red を検出したら次段へ進まない
 
@@ -339,7 +350,10 @@ gh pr view ${PR_NUM} --json mergeable,mergeStateStatus -q '"mergeable=\(.mergeab
 
 ```bash
 gh stack checkout "<red の段のブランチ>"     # または gh stack down で降りる
-gh pr checks ${PR_NUM}                        # 失敗した check を特定
+HEAD_SHA=$(gh pr view "${PR_NUM}" --json headRefOid --jq '.headRefOid')
+gh run list --commit "$HEAD_SHA" --event pull_request \
+  --json databaseId,workflowName,status,conclusion,url \
+  --jq '.[] | select(.conclusion != null and (.conclusion | IN("success", "neutral", "skipped") | not))'
 gh run view <run-id> --log-failed             # 失敗ログを取得
 ```
 
@@ -425,5 +439,5 @@ worktree はスタックごと残す(PR が未 merge であることに加え、
 - スタックの追随・コンフリクト解消は `gh stack sync` / `gh stack rebase` / `gh stack push` で行い、手で `git merge` / `git rebase` / `git push` しない。下段を直したら `gh stack rebase --upstack` で上段へ伝播させる
 - fix は下の段から順に行う。CI red は表面的な patch で揉み消さず根本原因から直す。fix ループは段ごとに最大 3 周、超過したら人手判断を仰ぐ
 - 段の実装が失敗したらそこで止める。上段は下段に依存するため、失敗した段を飛ばして先へ進まない。そこまでの段は submit 済みのまま残す
-- CI 監視は前景で `--watch` せず、poll もしない。ログは全文表示せず、要約と `--log-failed` の該当部分だけ読む
+- CI 監視は Checks API 非依存の `references/watch-pr-actions.sh` を background で実行する。親は poll せず、ログは全文表示せず、要約と `gh run view --log-failed` の該当部分だけ読む。外部 CI を使う場合は別の認証または専用 API が無い限り green と判定しない
 - 全段 CI green の確認と ready for review 化で完了とする。レビュー・マージ・worktree 削除は行わない
