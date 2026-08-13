@@ -2,3 +2,4 @@
 issue-direct
 gh-stack
 goal-setter
+issue
