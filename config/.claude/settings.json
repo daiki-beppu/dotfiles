@@ -4,7 +4,6 @@
   },
   "permissions": {
     "allow": [
-      "Bash",
       "Bash(gh pr merge:*)",
       "Read",
       "Write",
@@ -13,7 +12,6 @@
       "Grep",
       "WebFetch",
       "WebSearch",
-      "Task",
       "NotebookEdit",
       "Skill",
       "mcp__chrome-devtools",
@@ -30,7 +28,7 @@
       "~/01-dev/dotfiles"
     ]
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus[1m]",
   "skillOverrides": {
     "agents-sdk": "off",
     "aqua-improve": "off",
@@ -128,7 +126,44 @@
       "Detaching a background monitor via `nohup <cmd> > log 2>&1 & echo $! > pidfile`, used by the same skills when the calling CLI has no exit-triggered auto-resume",
       "`kill -0 <pid>` to check whether a previously recorded background process is still alive. Signal 0 only checks existence and does not terminate the process",
       "Background `takt -q run > log 2>&1` (or `nohup`-wrapped) to execute takt workflows without blocking the foreground, per the takt-issue skill",
-      "Merging this repo's own PRs with `gh pr merge <PR#>` (including `--squash` / `--merge` / `--rebase` and `--delete-branch`) once CI is green — the user owns this repo, drives the PR workflow, and authorized this explicitly. Does not extend to `gh pr merge --admin` (bypasses branch protection) or to repos the user does not own"
+      "Merging this repo's own PRs with `gh pr merge <PR#>` (including `--squash` / `--merge` / `--rebase` and `--delete-branch`) once CI is green — the user owns this repo, drives the PR workflow, and authorized this explicitly. Does not extend to `gh pr merge --admin` (bypasses branch protection) or to repos the user does not own",
+      "Read-only Nix/nix-darwin inspection in this repo, e.g. `nix flake check`, `nix flake metadata`, `nix eval`, `nix build --dry-run`, and `darwin-rebuild build --flake ~/01-dev/dotfiles` — evaluate/build only, no system activation",
+      "Running `takt` workflows for this repo, including backgrounded `takt -q run > log 2>&1` and `nohup`-wrapped variants, per the takt-issue/takt-review skills",
+      "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only with no side effects",
+      "`kill -0 <pid>` to check whether a previously recorded background process is still alive; signal 0 only checks existence and does not terminate the process",
+      "Editing this repo's own `config/.claude/` skills, hooks and settings files (the real files behind the `~/.claude/` symlinks) as ordinary in-repo source edits"
+    ],
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured — personal repos under the GitHub user `daiki-beppu`",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: PUBLIC — `github.com/daiki-beppu/dotfiles` is public per the authenticated gh check; any push or commit there is publishing",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: None configured (1Password CLI `op` appears in shell history, but not corroborated by repo config); `.gitignore` excludes `*.env`, `*.key`, `*secret*`, `*credentials*` from this repo",
+      "**Default / protected branches**: default branch `main`; no rulesets and no classic protected branches listed by gh — treat `main` as unprotected mechanically, but still route code changes through worktrees and PRs per this repo's CLAUDE.md",
+      "**CI/CD deploy targets**: None configured — `.github/workflows` exists in this repo but no deploy target was identified",
+      "**Network posture**: None configured",
+      "**Source control**: The trusted repo and its remote(s) only — `github.com:daiki-beppu/dotfiles.git` (origin, fetch and push)",
+      "**Trusted internal domains**: None configured",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: None configured",
+      "**Internal package registry**: None configured — public `registry.npmjs.org` was contacted during normal dependency work",
+      "**Sensitive data locations & audiences**: any file or store holding personal data, confidential business data, credentials, regulated data, or similarly sensitive material; preserve exact handles when known and share only with audiences cleared at the [named+specifics] bar. In this repo specifically: anything matching the gitignored patterns `*.env`, `*.key`, `*secret*`, `*credentials*`, plus `config/secrets.json` and `.env`/`.env.local` files copied into worktrees via `.worktreeinclude` — these must never be committed or pushed to this PUBLIC repo",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment (hyphen/underscore/dot-delimited — e.g. matches `prod-db`, not `producer`)",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment. Additionally, this repo applies host-level macOS/system state via `darwin-rebuild switch` / `nix run nix-darwin -- switch` — treat those applies as mutating the local machine's system configuration",
+      "### User-specific",
+      "**Primary use of Claude Code**: software development — maintaining a personal Nix + nix-darwin + Home Manager dotfiles repo, including `config/.claude/` skills and settings that are symlinked into `~/.claude/`",
+      "**Trusted repo**: `/Users/mba/01-dev/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
+      "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `hunk`, `ni`/`nr`/`nlx` (package-manager wrappers), `codex`",
+      "**Routine under `config/.claude/` prefix**: edits to skills, hooks, settings and `CLAUDE.md` live in `config/.claude/` in this repo and are symlinked into `~/.claude/`; editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Activating system state from this repo: `darwin-rebuild switch`, `sudo darwin-rebuild switch`, `nix run nix-darwin -- switch`, and `nh darwin switch` — these mutate the local machine's system configuration and should be confirmed",
+      "Nix store destruction beyond the current session's build artifacts, e.g. `nix-collect-garbage -d`, `nix store gc`, and `sudo nix-collect-garbage`",
+      "Writing directly into `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/hooks/` or `~/.claude/skills/` — these are symlinks into `config/.claude/`, and writing through them can replace the symlink with a real file and drop the file out of dotfiles management"
     ]
   }
 }
