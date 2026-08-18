@@ -129,21 +129,19 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 
 | リポジトリ | プロジェクト固有レーン | 選択軸 |
 | --- | --- | --- |
-| `~/02-yt/tayk` | `tayk-{audit-architecture,audit-runs,feature,fix,intake}` (5) | 意図別 |
-| `~/02-yt/00-automation` | `yt-auto-*` **6 本** + `audit-unit-split` | 意図別 |
-| `~/01-dev/projects/youtube-automation` | `yt-auto-*` **7 本** + `audit-unit-split` | 意図別 |
-| `~/01-dev/projects/libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
-| `~/01-dev/{dotfiles,takt}` / `~/01-dev/projects/specv` | 無し(builtin のみ) | スタック × 深度 |
+| `~/ghq/github.com/daiki-beppu/tayk` | `tayk-{audit-architecture,audit-runs,feature,fix,intake}` (5) | 意図別 |
+| `~/ghq/github.com/daiki-beppu/youtube-automation` | `yt-auto-*` + `audit-unit-split` | 意図別 |
+| `~/ghq/github.com/daiki-beppu/libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
+| `~/ghq/github.com/daiki-beppu/{dotfiles,takt,specv}` | 無し(builtin のみ) | スタック × 深度 |
 
-**本数が減ってもレーンの廃止とは限らない**。`00-automation` は 2026-08-01 時点で 8 本だったが、
+**本数が減ってもレーンの廃止とは限らない**。`youtube-automation` は 2026-08-01 時点で 8 本だったが、
 0.55.0 の step fragment 化で `.takt/steps/` へ移った分だけ `.takt/workflows/` から消えている
 (実測: `intake.yaml` が `.takt/steps/` にあり、各レーンが `uses: intake` で展開している。
 review 系も `reviewers.yaml` / `design-review.yaml` などとして同じ場所にある)。
 **投入対象として選べるレーンが減った**のは事実だが、機能が消えたわけではない。
 
-**同名リポジトリでもレーン構成が違う**。上の 2 つはどちらも "youtube-automation" だが、
-remote が `mhs2sowarabeuta-lang/` と `daiki-beppu/` で別物で、前者にだけ `yt-auto-audit-runs` が
-ある。リポジトリ名だけで判断せず、**作業ディレクトリの `.takt/workflows/` を直接見る**。
+レーン構成は更新で変わり得るため、表だけで判断せず、
+**作業ディレクトリの `.takt/workflows/` を直接見る**。
 
 ### 実在レーンの確認(毎回やる)
 

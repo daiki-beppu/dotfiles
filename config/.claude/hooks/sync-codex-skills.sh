@@ -16,6 +16,6 @@ case "$FILE_PATH" in
   *) exit 0 ;;
 esac
 
-SYNC_SCRIPT="$HOME/01-dev/dotfiles/scripts/sync-agent-skills.sh"
+SYNC_SCRIPT="$HOME/ghq/github.com/daiki-beppu/dotfiles/scripts/sync-agent-skills.sh"
 [ -x "$SYNC_SCRIPT" ] || exit 0
 exec "$SYNC_SCRIPT"

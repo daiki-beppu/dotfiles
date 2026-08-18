@@ -9,7 +9,7 @@
 }:
 
 let
-  dotfilesDir = "${config.home.homeDirectory}/01-dev/dotfiles/config";
+  dotfilesDir = "${config.home.homeDirectory}/ghq/github.com/daiki-beppu/dotfiles/config";
 
   # gh-stack: GitHub Stacked PRs（public preview）の CLI 拡張。
   # nixpkgs は 0.0.4（2026-05）で止まっており、preview 公開の目玉である
@@ -43,6 +43,7 @@ in
     # ld がクラッシュ）なため、whisper フィルタを無効化（上流修正後に外す）
     (ffmpeg-full.override { withWhisper = false; })
     gh
+    ghq
     google-cloud-sdk
     gzip
     herdr
@@ -106,7 +107,7 @@ in
   # 積まれ、ユーザー権限の `nh clean user` では削除できないため。
   programs.nh = {
     enable = true;
-    flake = "${config.home.homeDirectory}/01-dev/dotfiles";
+    flake = "${config.home.homeDirectory}/ghq/github.com/daiki-beppu/dotfiles";
   };
 
   # ── git 設定 ──
@@ -117,6 +118,8 @@ in
       user.name = "daiki-beppu";
       user.email = hostConfig.gitEmail;
       init.defaultBranch = "main";
+      ghq.root = "${config.home.homeDirectory}/ghq";
+      ghq.user = "daiki-beppu";
 
       # gh stack はスタック全体を繰り返し cascade rebase するので、同じ衝突に
       # 何度も遭遇する。rerere があれば解決内容が再利用される。

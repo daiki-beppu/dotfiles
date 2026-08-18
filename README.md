@@ -15,17 +15,17 @@ curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix 
 # 2. シェル再起動
 exec $SHELL
 
-# 3. リポジトリをクローン
-git clone https://github.com/daiki-beppu/dotfiles.git ~/01-dev/dotfiles
-ln -sf ~/01-dev/dotfiles ~/.dotfiles
+# 3. ghq の標準配置へリポジトリをクローン
+nix run nixpkgs#ghq -- get https://github.com/daiki-beppu/dotfiles.git
+ln -sf ~/ghq/github.com/daiki-beppu/dotfiles ~/.dotfiles
 
 # 4. 初回ビルド（nix-darwin + Home Manager + Homebrew cask 全て）
-cd ~/01-dev/dotfiles
+cd ~/ghq/github.com/daiki-beppu/dotfiles
 sudo nix run nix-darwin -- switch --flake .
 # ホスト名が一致しない場合は .#mba / .#MacBook-Pro-3 を明示する
 
 # 5. 2回目以降
-sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
+sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 ```
 
 ## 管理構成
@@ -79,9 +79,9 @@ dotfiles/
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
 | nixpkgs にないツール追加 | upstream が flake を提供するなら `flake.nix` の `inputs` に、なければ `brews` に追加 |
 | takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch |
-| 変更を適用 | `sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` |
+| 変更を適用 | `sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
-| 全依存を最新化 | `nix flake update --flake ~/01-dev/dotfiles` |
+| 全依存を最新化 | `nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
 | ロールバック | `sudo darwin-rebuild switch --rollback` |
 
 ## Codex Cloud

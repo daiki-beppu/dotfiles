@@ -31,7 +31,7 @@ claude mcp remove chrome-devtools -s user
 claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --autoConnect
 ```
 
-Also confirm there is **no duplicate** `chrome-devtools` MCP — in particular, the official marketplace plugin `plugin:chrome-devtools-mcp:chrome-devtools` competes for the same debugging port. If `claude mcp list` shows both, disable the plugin in `~/.claude/settings.json` (= `~/01-dev/dotfiles/config/.claude/settings.json` via symlink):
+Also confirm there is **no duplicate** `chrome-devtools` MCP — in particular, the official marketplace plugin `plugin:chrome-devtools-mcp:chrome-devtools` competes for the same debugging port. If `claude mcp list` shows both, disable the plugin in `~/.claude/settings.json` (= `~/ghq/github.com/daiki-beppu/dotfiles/config/.claude/settings.json` via symlink):
 
 ```jsonc
 "enabledPlugins": {

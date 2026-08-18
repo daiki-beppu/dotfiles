@@ -78,7 +78,7 @@ brews = [
 パッケージの追加・削除・変更後は以下を実行して反映する:
 
 ```bash
-sudo darwin-rebuild switch --flake ~/01-dev/dotfiles
+sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 ```
 
 **注意:** `sudo` が必要（nix-darwin はシステム設定を変更するため）。sudo は
@@ -94,7 +94,7 @@ Touch ID 認証（`sudo_local.touchIdAuth`）なので、Claude が直接実行�
 `nix` コマンドが `sudo` 環境で見つからない場合はフルパスを使う:
 
 ```bash
-sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/01-dev/dotfiles
+sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 ```
 
 初回のみ `nix run nix-darwin --` 経由で実行する。2回目以降は `darwin-rebuild` が PATH に入る。
@@ -106,7 +106,7 @@ sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/01
 nixpkgs や home-manager を最新に更新する:
 
 ```bash
-nix flake update --flake ~/01-dev/dotfiles
+nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles
 ```
 
 更新後は `darwin-rebuild switch` で適用する。
@@ -156,7 +156,7 @@ sudo nh clean all --keep 1 --keep-since 30d --optimise
 gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--keep <N>`）。
 
 `programs.nh.flake` で `NH_FLAKE` が設定済みのため、`nh darwin switch` だけで
-`sudo darwin-rebuild switch --flake ~/01-dev/dotfiles` 相当の rebuild ができる。
+`sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` 相当の rebuild ができる。
 
 ## Rules
 

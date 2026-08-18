@@ -53,7 +53,7 @@ ls /Volumes                  # 外部ドライブの有無（Step 7 の退避提
 
 ```bash
 # ビルド成果物（-prune で発見ディレクトリ以下へ潜らない = 入れ子の二重計上を防ぐ）
-find ~/01-dev -maxdepth 5 -type d \
+find ~/ghq -maxdepth 6 -type d \
   \( -name node_modules -o -name .next -o -name dist -o -name .turbo -o -name target \) \
   -prune -print0 2>/dev/null | xargs -0 du -sh 2>/dev/null | sort -hr | head -30
 
@@ -64,7 +64,8 @@ du -sh "$(pnpm store path)" ~/.npm ~/.bun/install/cache "$(uv cache dir)" "$(bre
 du -sh ~/.claude/projects ~/.claude/plugins ~/.claude/backups ~/.claude/shell-snapshots 2>/dev/null
 
 # worktree 残骸（大きければ Step 6 で /clean-branch を提案）
-du -sh ~/01-dev/*/.claude/worktrees 2>/dev/null | sort -hr
+find ~/ghq -maxdepth 6 -type d -path '*/.claude/worktrees' -prune -print0 2>/dev/null \
+  | xargs -0 du -sh 2>/dev/null | sort -hr
 
 # メディア・大物（報告のみ）
 du -sh ~/Movies ~/Music ~/Downloads ~/Library/Developer 2>/dev/null

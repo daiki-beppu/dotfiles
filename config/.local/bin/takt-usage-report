@@ -8,7 +8,7 @@ startTime)と logs/*-usage-events.phase.jsonl(phase 粒度 usage イベント)�
 usage:
   takt-usage-report [ROOT ...] [--days N] [--top N] [--json]
 
-ROOT を省略すると ~/01-dev と ~/02-yt を走査する。
+ROOT を省略すると ghq の管理ルート ~/ghq を走査する。
 phase jsonl が無い run(observability 無効期間の run)は「計測なし」として
 件数のみ報告する。
 """
@@ -20,7 +20,7 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-DEFAULT_ROOTS = ["~/01-dev", "~/02-yt"]
+DEFAULT_ROOTS = ["~/ghq"]
 
 # 走査から除外するディレクトリ(.takt を含み得ないか、巨大なもの)
 PRUNE_DIRS = {

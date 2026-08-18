@@ -25,7 +25,7 @@
     "defaultMode": "auto",
     "additionalDirectories": [
       "~/.claude",
-      "~/01-dev/dotfiles"
+      "~/ghq/github.com/daiki-beppu/dotfiles"
     ]
   },
   "model": "opus[1m]",
@@ -127,7 +127,7 @@
       "`kill -0 <pid>` to check whether a previously recorded background process is still alive. Signal 0 only checks existence and does not terminate the process",
       "Background `takt -q run > log 2>&1` (or `nohup`-wrapped) to execute takt workflows without blocking the foreground, per the takt-issue skill",
       "Merging this repo's own PRs with `gh pr merge <PR#>` (including `--squash` / `--merge` / `--rebase` and `--delete-branch`) once CI is green — the user owns this repo, drives the PR workflow, and authorized this explicitly. Does not extend to `gh pr merge --admin` (bypasses branch protection) or to repos the user does not own",
-      "Read-only Nix/nix-darwin inspection in this repo, e.g. `nix flake check`, `nix flake metadata`, `nix eval`, `nix build --dry-run`, and `darwin-rebuild build --flake ~/01-dev/dotfiles` — evaluate/build only, no system activation",
+      "Read-only Nix/nix-darwin inspection in this repo, e.g. `nix flake check`, `nix flake metadata`, `nix eval`, `nix build --dry-run`, and `darwin-rebuild build --flake ~/ghq/github.com/daiki-beppu/dotfiles` — evaluate/build only, no system activation",
       "Running `takt` workflows for this repo, including backgrounded `takt -q run > log 2>&1` and `nohup`-wrapped variants, per the takt-issue/takt-review skills",
       "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only with no side effects",
       "`kill -0 <pid>` to check whether a previously recorded background process is still alive; signal 0 only checks existence and does not terminate the process",
@@ -155,7 +155,7 @@
       "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment. Additionally, this repo applies host-level macOS/system state via `darwin-rebuild switch` / `nix run nix-darwin -- switch` — treat those applies as mutating the local machine's system configuration",
       "### User-specific",
       "**Primary use of Claude Code**: software development — maintaining a personal Nix + nix-darwin + Home Manager dotfiles repo, including `config/.claude/` skills and settings that are symlinked into `~/.claude/`",
-      "**Trusted repo**: `/Users/mba/01-dev/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
+      "**Trusted repo**: `/Users/mba/ghq/github.com/daiki-beppu/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
       "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `hunk`, `ni`/`nr`/`nlx` (package-manager wrappers), `codex`",
       "**Routine under `config/.claude/` prefix**: edits to skills, hooks, settings and `CLAUDE.md` live in `config/.claude/` in this repo and are symlinked into `~/.claude/`; editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
     ],
