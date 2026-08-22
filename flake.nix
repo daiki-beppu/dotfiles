@@ -14,12 +14,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # hunk: レビュー特化のターミナル diff ビューアー（https://www.hunk.dev/）
-    # nixpkgs 未収録のため upstream flake から直接取得。
-    # nixpkgs.follows は付けない: こちらの nixpkgs-unstable (x86_64-darwin 廃止済み)
-    # を強制すると hunk の flake-parts が x86_64-darwin の評価で落ちるため
-    hunk.url = "github:modem-dev/hunk";
-
     # takt: AI コーディングエージェント向けの workflow 制御 CLI
     # nixpkgs 未収録のため upstream flake から直接取得。
     # リリースタグに固定する: main は未リリースコミットが積まれており、
@@ -35,7 +29,6 @@
       nixpkgs,
       nix-darwin,
       home-manager,
-      hunk,
       takt,
       ...
     }:
@@ -214,7 +207,6 @@
               home-manager.backupFileExtension = "backup";
               home-manager.extraSpecialArgs = {
                 inherit hostConfig;
-                hunkPkg = hunk.packages.${system}.default;
                 taktPkg = takt.packages.${system}.default;
               };
               home-manager.users.${username} = import ./nix/packages.nix;

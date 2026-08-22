@@ -33,7 +33,7 @@ sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 | 管理方式 | 対象 |
 |---------|------|
 | **Nix (nixpkgs)** | CLI ツール (git, gh, ffmpeg, uv 等) |
-| **Nix (flake input)** | nixpkgs 未収録で upstream が flake を提供するツール (hunk, takt) |
+| **Nix (flake input)** | nixpkgs 未収録で upstream が flake を提供するツール (takt) |
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .local/bin/*, .config/zsh-abbr/*, .claude/*) |

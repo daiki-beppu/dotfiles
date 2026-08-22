@@ -3,7 +3,6 @@
   lib,
   config,
   hostConfig,
-  hunkPkg,
   taktPkg,
   ...
 }:
@@ -80,7 +79,6 @@ in
   ]
   ++ [
     # flake input 由来（nixpkgs 未収録）
-    hunkPkg # レビュー特化のターミナル diff ビューアー
     taktPkg # AI コーディングエージェント向けの workflow 制御 CLI
   ]
   ++ (hostConfig.extraPackages pkgs);
