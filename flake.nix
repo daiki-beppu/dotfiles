@@ -27,7 +27,7 @@
     # 更新手順は README「よくある操作」を参照。
     # nixpkgs.follows は付けない: upstream が flake.lock で検証済みの
     # nixpkgs / nodejs の組み合わせをそのまま使う
-    takt.url = "github:nrslib/takt/v0.55.1";
+    takt.url = "github:nrslib/takt/v0.60.0";
   };
 
   outputs =
