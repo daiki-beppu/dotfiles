@@ -96,7 +96,8 @@
     "commit-commands@claude-plugins-official": true,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "frontend-design@claude-plugins-official": false,
-    "mattpocock-skills@claude-plugins-official": true
+    "mattpocock-skills@claude-plugins-official": true,
+    "eli5@claude-community": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {
@@ -105,6 +106,12 @@
         "repo": "ChromeDevTools/chrome-devtools-mcp"
       },
       "autoUpdate": true
+    },
+    "claude-community": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/claude-plugins-community"
+      }
     }
   },
   "language": "Japanese",
@@ -133,6 +140,12 @@
       "`kill -0 <pid>` to check whether a previously recorded background process is still alive; signal 0 only checks existence and does not terminate the process",
       "Editing this repo's own `config/.claude/` skills, hooks and settings files (the real files behind the `~/.claude/` symlinks) as ordinary in-repo source edits"
     ],
+    "soft_deny": [
+      "$defaults",
+      "Activating system state from this repo: `darwin-rebuild switch`, `sudo darwin-rebuild switch`, `nix run nix-darwin -- switch`, and `nh darwin switch` — these mutate the local machine's system configuration and should be confirmed",
+      "Nix store destruction beyond the current session's build artifacts, e.g. `nix-collect-garbage -d`, `nix store gc`, and `sudo nix-collect-garbage`",
+      "Writing directly into `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/hooks/` or `~/.claude/skills/` — these are symlinks into `config/.claude/`, and writing through them can replace the symlink with a real file and drop the file out of dotfiles management"
+    ],
     "environment": [
       "### Org-wide",
       "**Organization**: None configured — personal repos under the GitHub user `daiki-beppu`",
@@ -158,12 +171,6 @@
       "**Trusted repo**: `/Users/mba/ghq/github.com/daiki-beppu/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
       "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `hunk`, `ni`/`nr`/`nlx` (package-manager wrappers), `codex`",
       "**Routine under `config/.claude/` prefix**: edits to skills, hooks, settings and `CLAUDE.md` live in `config/.claude/` in this repo and are symlinked into `~/.claude/`; editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
-    ],
-    "soft_deny": [
-      "$defaults",
-      "Activating system state from this repo: `darwin-rebuild switch`, `sudo darwin-rebuild switch`, `nix run nix-darwin -- switch`, and `nh darwin switch` — these mutate the local machine's system configuration and should be confirmed",
-      "Nix store destruction beyond the current session's build artifacts, e.g. `nix-collect-garbage -d`, `nix store gc`, and `sudo nix-collect-garbage`",
-      "Writing directly into `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/hooks/` or `~/.claude/skills/` — these are symlinks into `config/.claude/`, and writing through them can replace the symlink with a real file and drop the file out of dotfiles management"
     ]
   }
 }
