@@ -31,10 +31,8 @@
   },
   "model": "opus[1m]",
   "skillOverrides": {
-    "aqua-improve": "off",
     "empirical-prompt-tuning": "off",
-    "evidence-record": "off",
-    "release-tweet": "off"
+    "evidence-record": "off"
   },
   "hooks": {
     "SessionStart": [

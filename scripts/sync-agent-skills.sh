@@ -7,13 +7,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_DIR="${DOTFILES_SKILLS_DIR:-$REPO_ROOT/config/.claude/skills}"
 DEST_DIR="${AGENT_SKILLS_DIR:-$HOME/.agents/skills}"
 LEGACY_DIR="${LEGACY_AGENT_SKILLS_DIR:-${CODEX_HOME:-$HOME/.codex}/skills}"
+SETTINGS_FILE="${DOTFILES_SETTINGS_FILE:-$REPO_ROOT/config/.claude/settings.json}"
 MANIFEST=""
 
 usage() {
   cat <<'EOF'
 Usage: sync-agent-skills.sh [--manifest <path>]
 
-Without --manifest, links every non-symlink skill managed by dotfiles.
+Without --manifest, links every non-symlink skill managed by dotfiles, except skills set to "off" in skillOverrides.
 With --manifest, links only the listed skill names.
 EOF
 }
@@ -72,11 +73,20 @@ if [ -n "$MANIFEST" ]; then
     add_skill "$line"
   done < "$MANIFEST"
 else
+  disabled=""
+  if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+    disabled="$(jq -r '.skillOverrides // {} | to_entries[] | select(.value == "off") | .key' "$SETTINGS_FILE")"
+  fi
   for source in "$SOURCE_DIR"/*; do
     [ -d "$source" ] || continue
     [ -L "$source" ] && continue
     [ -f "$source/SKILL.md" ] || continue
-    add_skill "$(basename "$source")"
+    name="$(basename "$source")"
+    if printf '%s\n' "$disabled" | grep -Fxq "$name"; then
+      echo "[sync-agent-skills] skipped (off in skillOverrides): $name" >&2
+      continue
+    fi
+    add_skill "$name"
   done
 fi
 
