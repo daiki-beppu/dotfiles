@@ -32,11 +32,6 @@
   "model": "opus[1m]",
   "skillOverrides": {
     "aqua-improve": "off",
-    "cmux-browser": "off",
-    "cmux-customization": "off",
-    "cmux-diagnostics": "off",
-    "cmux-markdown": "off",
-    "cmux-settings": "off",
     "empirical-prompt-tuning": "off",
     "evidence-record": "off",
     "release-tweet": "off"
