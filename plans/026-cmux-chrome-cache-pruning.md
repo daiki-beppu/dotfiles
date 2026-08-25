@@ -196,7 +196,11 @@ Stop and report back (do not improvise) if:
 - 行数目標に 2 回の調整で収まらない
 
 ## Maintenance notes
-
+- **019 のレビューで見つかった刈り取り候補**: `cmux/SKILL.md` 末尾に 019 が足した
+  CLI ポインタ 1 行（`cmux docs <topic>` …）は、同ファイル上部の "Settings and Docs"
+  セクションと `cmux docs settings` / `cmux settings path` の案内が重複している。
+  019 の意図（削除したスキルへのリンク切れを塞ぐ）は果たしたので、本プランで
+  「上部セクションに 1 文まとめる or 末尾行を削る」のどちらかに寄せてよい。
 - **この 3 ファイルに今後コマンド例を足すときの規準**: `--help` で引ける引数説明は書かない。
   書いてよいのは house rule（focus を奪わない等）・papercut・分担の知識だけ
 - nix の「よくある操作の早見表」（`nix/SKILL.md:170-182`）も本文と重複するキャッシュだが、

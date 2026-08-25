@@ -190,11 +190,23 @@ git rm -r -q config/.claude/skills/aqua-improve config/.claude/skills/release-tw
 
 ### Step 4: 実同期して結果を確認する
 
-```bash
-bash scripts/sync-agent-skills.sh
-```
+> **worktree 内で `bash scripts/sync-agent-skills.sh` を素で実行してはならない。**
+> `SOURCE_DIR` はスクリプト自身の位置から解決されるため、worktree で走らせると
+> `~/.agents/skills/` の symlink が全部 worktree を指すよう張り替えられ、
+> worktree 削除と同時にリンク切れになる（2026-08-26 に Plan 019 で回避した事故）。
+> worktree では **`DEST_DIR` を一時ディレクトリに逃がして**挙動だけ確認する:
+>
+> ```bash
+> tmp=$(mktemp -d)
+> AGENT_SKILLS_DIR="$tmp" LEGACY_AGENT_SKILLS_DIR="$tmp/no-legacy" \
+>   bash scripts/sync-agent-skills.sh
+> ```
+>
+> 実 `~/.agents/skills` への同期は、**main にマージした後メインチェックアウトで**
+> 1 回走らせる（executor の担当外・レビュアーまたはユーザーが実施）。
 
-**Verify**: stderr に `skipped (off in skillOverrides): empirical-prompt-tuning` と
+
+**Verify**（上記の一時 `AGENT_SKILLS_DIR` 実行の stderr を見る）: `skipped (off in skillOverrides): empirical-prompt-tuning` と
 `skipped (off in skillOverrides): evidence-record`、および
 `removed stale:` に `aqua-improve` / `release-tweet` / `empirical-prompt-tuning` /
 `evidence-record` が出る（既存リンクの回収）。
@@ -238,7 +250,19 @@ Stop and report back (do not improvise) if:
 - shellcheck が新コードを error 判定し、2 回の修正で解消しない
 
 ## Maintenance notes
-
+- **2026-08-26 の実地で見つかった穴（このプランで直す価値あり）**: `sync-agent-skills.sh` の
+  掃除ループは `case "$resolved" in "$SOURCE_DIR"/*)` の**文字列前方一致**で
+  「dotfiles 管理のリンクか」を判定する。`~/01-dev/dotfiles` は ghq のリポジトリへの
+  symlink エイリアスで、そちら経由で sync が走ると（bash の `cd a/..` は論理パスを保つため
+  `pwd` が `/Users/mba/01-dev/dotfiles` を返す）リンクが別表記で作られ、以後
+  ghq パスから走らせても掃除対象と認識されない。018 / 019 のマージ後に実際に
+  リンク切れ 14 本が取り残され、手動削除が必要だった。
+  修正案: `resolved` と `SOURCE_DIR` の双方を `cd -P` 相当で正規化してから比較する
+  （`realpath` は macOS の coreutils 非依存で使えないことがあるので
+  `cd -P "$(dirname "$x")" && pwd -P` を使う）。ただし**リンク切れは
+  `cd` できない**ので、比較は「リンク先の親ディレクトリを正規化」で行うこと。
+  安全ガード（他 installer のリンクに触らない）は維持したまま、同一実体の別表記だけを
+  拾えるようにするのが要件。
 - これ以降、`skillOverrides: "off"` は Claude Code と Codex の**両方**に効く。
   スキルを Codex だけで使いたいケースが将来出たら、その時に per-agent の仕組みを
   設計する（現状はニーズ無し）

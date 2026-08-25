@@ -73,7 +73,7 @@ vendored な生成物（`cmux-settings/references/all-keys.md` = スキーマか
 | 対象チェック | `bash scripts/check.sh shellcheck links agent-skills` | exit 0 |
 | 全チェック | `bash scripts/check.sh` | exit 0, "all checks passed" |
 | settings 構文 | `jq . config/.claude/settings.json > /dev/null` | exit 0 |
-| Codex 側同期 | `bash scripts/sync-agent-skills.sh` | `removed stale:` 5 件、exit 0 |
+| Codex 側同期 | worktree 内では**実行しない**（下記 Step 6 参照）。マージ後にメインチェックアウトで `bash scripts/sync-agent-skills.sh` | `removed stale:` 5 件、exit 0 |
 
 ## Scope
 
@@ -94,6 +94,10 @@ vendored な生成物（`cmux-settings/references/all-keys.md` = スキーマか
 
 ## Git workflow
 
+- **分岐元**: `chore/remove-cloudflare-vendor-skills`（Plan 018 の未マージブランチ）。
+  main ではない。2026-08-26 時点で 018 は index 上 DONE だが main に未マージで、
+  main の `skillOverrides` は 18 キーのまま。main から切ると Step 5 の前提が崩れる。
+  018 → 019 の順にマージする stack になる（ユーザー決定）。
 - Branch: `chore/remove-cmux-vendor-skills`（worktree: `$REPO_ROOT/.claude/worktrees/remove-cmux-vendor-skills/`）
 - コミット 1 個。message 例: `chore(claude): 無効化済み cmux 系 5 スキルを削除し参照を掃除`
 
@@ -133,8 +137,12 @@ git rm -r -q \
 テーブル直後に次の 1 行を追加する:
 
 ```markdown
-For settings, browser automation, markdown viewer, and diagnostics details, run `cmux docs <topic>` — the CLI serves the current documentation for the installed version.
+For details this skill does not cover, ask the installed CLI instead of a vendored copy: `cmux docs <topic>` (`settings`, `shortcuts`, `api`, `browser`, `agents`, `dock`), `cmux settings` for cmux.json paths and editing, `cmux config doctor` for diagnostics, and `cmux markdown <path>` for the markdown viewer panel.
 ```
+
+（`cmux docs` のトピックは上記 6 つのみ。`markdown` / `diagnostics` というトピックは
+存在しないので、そこだけ別コマンド名で書くこと。文言を変える場合も
+「存在しない `cmux docs` トピック名を書かない」ことだけは守る。）
 
 **Verify**: `grep -c 'cmux-\(browser\|settings\|markdown\)' config/.claude/skills/cmux/SKILL.md` → `0`
 
@@ -160,16 +168,21 @@ For settings, browser automation, markdown viewer, and diagnostics details, run 
 **Verify**: `jq -r '.skillOverrides | keys | join(",")' config/.claude/settings.json` →
 `aqua-improve,empirical-prompt-tuning,evidence-record,release-tweet`
 
-### Step 6: 同期とチェック
+### Step 6: チェック
 
 ```bash
-bash scripts/sync-agent-skills.sh
 bash scripts/check.sh
 ```
 
-**Verify**: sync が `removed stale:` を 5 件出して exit 0。check.sh が
-`all checks passed`。`ls ~/.agents/skills/ | grep -c 'cmux-'` → `0`
-（`cmux` と `cmux-workspace` は `cmux-` にマッチしないので残っていてよい）。
+**Verify**: exit 0 で `all checks passed`。
+
+**`scripts/sync-agent-skills.sh` は worktree 内で実行してはならない。**
+このスクリプトは `SOURCE_DIR` を自分の位置（`$REPO_ROOT/config/.claude/skills`）から
+解決するため、worktree で走らせると `~/.agents/skills/` の symlink が全部 worktree を
+指すよう張り替えられ、worktree 削除と同時にリンク切れになる。実 sync は
+**main にマージした後、メインチェックアウトで 1 回**走らせる（Plan 018 と同じ運用）。
+worktree 内での掃除ロジックの検証は `check.sh` の `agent-skills` チェックが担う
+（`AGENT_SKILLS_DIR` を一時ディレクトリに向けて同じ syncer を実走させる）。
 
 ## Test plan
 
@@ -179,12 +192,18 @@ bash scripts/check.sh
 
 ## Done criteria
 
-- [ ] `bash scripts/check.sh` exit 0
-- [ ] `git ls-files | grep -c 'skills/cmux-'` → `0`
-- [ ] `grep -rn 'cmux-\(browser\|customization\|diagnostics\|markdown\|settings\)' config/ scripts/` → ヒット 0 件
-- [ ] `jq . config/.claude/settings.json` exit 0、skillOverrides 残 4 キー
-- [ ] In scope 外の変更なし（`git status`）
-- [ ] `plans/README.md` の status 行を更新済み
+- [x] `bash scripts/check.sh` exit 0（reviewer が worktree で再実行、`all checks passed`）
+- [x] `git ls-files | grep 'skills/cmux-'` → `cmux-workspace/` 配下の 3 ファイルのみ
+      （**訂正**: 当初は `grep -c ... → 0` と書いていたが、`cmux-` は保持対象の
+      `cmux-workspace` にもマッチするため成立しない基準だった。executor が指摘）
+- [x] `grep -rn 'cmux-\(browser\|customization\|diagnostics\|markdown\|settings\)' config/ scripts/` → ヒット 0 件
+- [x] `jq . config/.claude/settings.json` exit 0、skillOverrides 残 4 キー
+- [x] In scope 外の変更なし（commit `0f6bdcf` の 29 ファイルすべて in scope、working tree clean）
+- [x] `plans/README.md` の status 行を更新済み（reviewer 側で実施）
+
+マージ後のフォローアップ（executor の担当外）: メインチェックアウトで
+`bash scripts/sync-agent-skills.sh` を 1 回実行し、`~/.agents/skills/` の
+stale symlink（cmux 系 5 本）を回収する。
 
 ## STOP conditions
 

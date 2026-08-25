@@ -29,7 +29,7 @@ STOP conditions を尊重し、完了時に自分の行の Status を更新す�
 | [016](016-per-host-config.md) | hosts にホスト差分の注入点を作る（spike） | P3 | M | 014 | DONE（PR #80 でマージ済み。両ホスト eval pass、一時差分テストで機構実証済み） |
 | [017](017-skill-workflow-contract-check.md) | skill ↔ workflow の契約整合チェックを CI 化 | P3 | M | 011, 012, (015) | DONE→撤去（`24c4240` でマージ後、`dd218c5`「カスタム workflow 資産をグローバル管理から撤去」で contracts チェックと allowlist ごと意図的に削除済み。2026-08-26 再確認） |
 | [018](018-cloudflare-plugin-migration.md) | Cloudflare 系 9 スキルを公式プラグインへ移行しローカル削除 | P1 | S | — | DONE（executor commit `5916261`、branch `chore/remove-cloudflare-vendor-skills`、worktree `agent-a5ae63b0dcf9531df`。レビュー済み・done criteria 再実行 pass。マージ後に main checkout で `sync-agent-skills.sh` 再実行 → `~/.agents/skills/` の stale symlink 9 本を掃除すること。次セッションで cloudflare スキルのロード確認） |
-| [019](019-cmux-vendor-cleanup.md) | 無効化済み cmux-* 5 スキルを削除し参照を掃除 | P1 | S | 018 | TODO |
+| [019](019-cmux-vendor-cleanup.md) | 無効化済み cmux-* 5 スキルを削除し参照を掃除 | P1 | S | 018 | DONE（executor commit `0f6bdcf`、branch `chore/remove-cmux-vendor-skills`、worktree `.claude/worktrees/remove-cmux-vendor-skills`。**018 の未マージブランチに stack** — 018 → 019 の順にマージすること。レビュー済み・done criteria 再実行 pass。実行前にプラン 2 箇所を修正: Step 6 の `sync-agent-skills.sh` を worktree で走らせる指示を削除（`~/.agents/skills` が worktree を指す事故になる）、Step 3 の文言を実在する CLI 面に訂正（`cmux docs` に `markdown` / `diagnostics` トピックは無い）。done criterion の `git ls-files | grep -c 'skills/cmux-' → 0` も誤り（保持する `cmux-workspace` にマッチ）だったため訂正済み） |
 | [020](020-sync-overrides-and-prune-user-skills.md) | sync が skillOverrides を尊重 + 自作 2 スキル削除 | P1 | S | 018, 019 | TODO |
 | [021](021-takt-062-realignment.md) | takt スキルを 0.62.0 に再整合し references/ へ分割（改訂: 実名・本数列挙は削除しレシピを正とする） | P1 | M | — | TODO |
 | [022](022-addblockedby-parallel-first.md) | addBlockedBy の既定を並列優先で統一 | P2 | S | — | TODO |
@@ -53,7 +53,12 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 
 - **019 ← 018、020 ← 018+019、024 ← 018+019**: いずれも `config/.claude/settings.json` の
   同じブロック（skillOverrides / enabledPlugins / autoMode）を編集するためのコンフリクト
-  回避順。020 は内容上も「off スキルが 2 個に減ってから除外ロジックを入れる」方が検証が単純。
+  回避順。
+  **2026-08-26 時点の実態**: 018 も 019 も main に未マージで、019 は 018 のブランチに
+  stack されている（`main` → `chore/remove-cloudflare-vendor-skills`(018) →
+  `chore/remove-cmux-vendor-skills`(019)）。020 / 024 を実行するときも main ではなく
+  019 のブランチから分岐すること（main の `skillOverrides` は 18 キーのままなので、
+  main から切ると両プランの前提が崩れて即 STOP になる）。020 は内容上も「off スキルが 2 個に減ってから除外ロジックを入れる」方が検証が単純。
 - **025 ← 022, 023**: 025 は issue / issue-direct の本文を references/ へ**逐語移動**する。
   022（依存姿勢の書き換え）と 023（frontmatter）が先に確定していないと、移動後に同じ内容を
   二度直すことになる。
