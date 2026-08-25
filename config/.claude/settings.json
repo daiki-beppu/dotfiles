@@ -5,6 +5,7 @@
   "permissions": {
     "allow": [
       "Bash(gh pr merge:*)",
+      "Bash(sudo darwin-rebuild switch:*)",
       "Read",
       "Write",
       "Edit",
