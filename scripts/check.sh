@@ -221,7 +221,7 @@ check_agent_skills() {
   mkdir -p "$tmp_dir/src/keep-me" "$tmp_dir/src/off-me" "$tmp_dir/dest2"
   printf -- '---\nname: keep-me\ndescription: t\n---\n' > "$tmp_dir/src/keep-me/SKILL.md"
   printf -- '---\nname: off-me\ndescription: t\n---\n' > "$tmp_dir/src/off-me/SKILL.md"
-  printf '{"skillOverrides":{"off-me":"off"}}\n' > "$tmp_dir/settings.json"
+  printf '{"skillOverrides":{"off-me":"off","keep-me-extra":"off"}}\n' > "$tmp_dir/settings.json"
   ln -s "$tmp_dir/src/off-me" "$tmp_dir/dest2/off-me"   # 既存リンクが掃除されることも見る
 
   DOTFILES_SKILLS_DIR="$tmp_dir/src" \
@@ -231,7 +231,7 @@ check_agent_skills() {
     bash scripts/sync-agent-skills.sh
 
   [ -L "$tmp_dir/dest2/keep-me" ] || {
-    echo "MISSING: no-manifest sync did not link an enabled skill" >&2
+    echo "MISSING: no-manifest sync did not link an enabled skill (exact-match regression? see keep-me-extra)" >&2
     return 1
   }
   [ ! -e "$tmp_dir/dest2/off-me" ] || {
