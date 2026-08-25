@@ -208,7 +208,7 @@ cmux ping
 ## References
 
 - [references/commands.md](references/commands.md) enumerates workspace, pane, surface, notification, and utility commands.
-- [../cmux-browser/SKILL.md](../cmux-browser/SKILL.md) covers browser surfaces with the same current-workspace rule.
+- Browser surfaces follow the same current-workspace rule; run `cmux docs browser` for the current browser-automation reference.
 
 ## Rules
 

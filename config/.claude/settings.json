@@ -31,24 +31,10 @@
   },
   "model": "opus[1m]",
   "skillOverrides": {
-    "agents-sdk": "off",
     "aqua-improve": "off",
-    "cloudflare": "off",
-    "cloudflare-email-service": "off",
-    "cmux-browser": "off",
-    "cmux-customization": "off",
-    "cmux-diagnostics": "off",
-    "cmux-markdown": "off",
-    "cmux-settings": "off",
-    "durable-objects": "off",
     "empirical-prompt-tuning": "off",
     "evidence-record": "off",
-    "release-tweet": "off",
-    "sandbox-sdk": "off",
-    "turnstile-spin": "off",
-    "web-perf": "off",
-    "workers-best-practices": "off",
-    "wrangler": "off"
+    "release-tweet": "off"
   },
   "hooks": {
     "SessionStart": [
@@ -98,7 +84,8 @@
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "frontend-design@claude-plugins-official": false,
     "mattpocock-skills@claude-plugins-official": true,
-    "eli5@claude-community": true
+    "eli5@claude-community": true,
+    "cloudflare@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "chrome-devtools-plugins": {

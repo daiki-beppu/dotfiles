@@ -79,6 +79,5 @@ cmux settings shortcuts
 | [references/panes-surfaces.md](references/panes-surfaces.md) | Splits, surfaces, move/reorder, focus routing |
 | [references/trigger-flash-and-health.md](references/trigger-flash-and-health.md) | Flash cue and surface health checks |
 | [../cmux-workspace/SKILL.md](../cmux-workspace/SKILL.md) | Current caller workspace rules and non-disruptive automation |
-| [../cmux-settings/SKILL.md](../cmux-settings/SKILL.md) | Safe cmux.json settings edits and validation |
-| [../cmux-browser/SKILL.md](../cmux-browser/SKILL.md) | Browser automation on surface-backed webviews |
-| [../cmux-markdown/SKILL.md](../cmux-markdown/SKILL.md) | Markdown viewer panel with live file watching |
+
+For details this skill does not cover, ask the installed CLI instead of a vendored copy: `cmux docs <topic>` (`settings`, `shortcuts`, `api`, `browser`, `agents`, `dock`), `cmux settings` for cmux.json paths and editing, `cmux config doctor` for diagnostics, and `cmux markdown <path>` for the markdown viewer panel.
