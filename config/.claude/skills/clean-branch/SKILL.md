@@ -63,9 +63,12 @@ gh pr list --state all --limit 800 --json number,state,headRefName,mergedAt > /t
 
 ### 2. NO_PR / CLOSED は中身を確認する
 
-`--merged` で「未マージ」に見えても実体はマージ済みのことが多い。NO_PR・CLOSED は誤削除を避けるため個別に確認（`DEFAULT_BRANCH` は Step 1 と同じ解決を再実行してから使う。変数は呼び出し間で持ち越されない）:
+`--merged` で「未マージ」に見えても実体はマージ済みのことが多い。NO_PR・CLOSED は誤削除を避けるため個別に確認:
 
 ```bash
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
 # デフォルトブランチより先行しているユニークコミットと最終更新日
 git log --oneline "${DEFAULT_BRANCH}..<branch>"
 git log -1 --format='%ci %s' <branch>
@@ -92,6 +95,9 @@ git worktree prune -v             # 実体ディレクトリが消えた登録�
 各 worktree が安全に消せるかは 3 点で判定する。すべて空なら失われる作業は無い:
 
 ```bash
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
 git worktree list --porcelain | rg '^worktree ' | sed 's/^worktree //' | rg '\.claude/worktrees/' \
 | while read -r w; do
     echo "===== $w"
