@@ -23,13 +23,6 @@ If `list_pages` returns an empty list, or `new_page`/`navigate_page` fails with 
 
 ## Workflow Patterns
 
-### Before interacting with a page
-
-1. Navigate: `navigate_page` or `new_page`
-2. Wait: `wait_for` to ensure content is loaded if you know what to look for
-3. Snapshot: `take_snapshot` to understand page structure
-4. Interact: Use element `uid`s from the snapshot for `click`, `fill`, etc.
-
 ### Efficient data retrieval
 
 - Use `filePath` parameter for large outputs (screenshots, snapshots, traces)
@@ -41,10 +34,6 @@ If `list_pages` returns an empty list, or `new_page`/`navigate_page` fails with 
 - **Automation/interaction**: `take_snapshot` (text-based, faster, better for automation)
 - **Visual inspection**: `take_screenshot` (when the user needs to see visual state)
 - **Additional details**: `evaluate_script` for data not in the accessibility tree
-
-### Parallel execution
-
-You can send multiple tool calls in parallel, but maintain the correct order: navigate → wait → snapshot → interact.
 
 ### autoConnect-specific safety
 
