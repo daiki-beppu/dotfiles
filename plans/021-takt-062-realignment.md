@@ -237,7 +237,13 @@ for f in $(grep -o 'references/[a-z-]*\.md' config/.claude/skills/takt/SKILL.md 
 done
 ```
 
-→ SKILL.md が **400 行以下**、references 3 ファイルが存在、`MISSING` 0 件。
+→ SKILL.md が **450 行以下**、references 3 ファイルが存在、`MISSING` 0 件。
+
+> **行数ゲートの校正（2026-08-26、実行時に改訂）**: 初版は 400 行としていたが、これは
+> 見積もりであって検証された数字ではなかった。下の「本文に必ず残すもの」を全部残すと
+> 441 行になる（実測）— つまり 400 と must-stay リストは両立しない。移動対象 3 種が
+> 本文から出ていることが本来の合格条件であり、それは Step 4 の欠落チェックが担う。
+> 参考: 同リポジトリの `issue/SKILL.md` 443 行・`issue-direct/SKILL.md` 442 行。
 
 ### Step 4: 内容の欠落が無いことを確認する
 
@@ -269,7 +275,7 @@ CI にスキル文書の整合テストは無い（かつての contracts チェ
 ## Done criteria
 
 - [ ] Step 2 の 4 grep がすべて期待値どおり
-- [ ] `wc -l config/.claude/skills/takt/SKILL.md` ≤ 400
+- [ ] `wc -l config/.claude/skills/takt/SKILL.md` ≤ 450（初版 400 は校正済み — Step 3 の注記参照）
 - [ ] `ls config/.claude/skills/takt/references/` → `fallbacks.md gotchas.md workflow-catalog.md`
 - [ ] 本文からの references リンク切れ 0 件（Step 3 の for ループ）
 - [ ] `bash scripts/check.sh` exit 0
@@ -286,7 +292,7 @@ Stop and report back (do not improvise) if:
   現実になっている。本文の該当記述の書き換え方針ごと報告する）
 - builtin 総数・callable 数が本プラン記載（72 / 18）と 3 以上ずれる（takt が更新された。
   数字は実測に従い、その旨を README の status に書く）
-- 分割後の SKILL.md が 400 行に収まらない（残すべき本文の判断がプランと食い違っている —
+- 分割後の SKILL.md が 450 行に収まらない（残すべき本文の判断がプランと食い違っている —
   何をどちらに置いたかの一覧を添えて報告）
 
 ## Maintenance notes
