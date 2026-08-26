@@ -76,23 +76,14 @@
     "qodo-skills@claude-plugins-official": false,
     "skill-creator@claude-plugins-official": true,
     "notion@claude-plugins-official": false,
-    "chrome-devtools-mcp@claude-plugins-official": false,
     "claude-code-setup@claude-plugins-official": false,
     "commit-commands@claude-plugins-official": true,
-    "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "frontend-design@claude-plugins-official": false,
     "mattpocock-skills@claude-plugins-official": true,
     "eli5@claude-community": true,
     "cloudflare@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
-    "chrome-devtools-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "ChromeDevTools/chrome-devtools-mcp"
-      },
-      "autoUpdate": true
-    },
     "claude-community": {
       "source": {
         "source": "github",
