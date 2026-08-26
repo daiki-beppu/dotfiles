@@ -1,9 +1,9 @@
 ---
 name: issue-organize
 description: |
-  open な GitHub issue を sub-issue 階層 + 依存チェーンに整理するスキル。カテゴリ分類 → 親 issue 作成 → GraphQL addSubIssue 接続 → addBlockedBy で実装順を接続 → [category] プレフィックス付与 → 重複 close → 検証を一気通貫で実行する。
-  「issue 整理」「issue を整理して」「sub-issue でまとめて」「sub-issue 化」「issue をカテゴリ分け」「orphan issue を整理」「プレフィックス付けて」で発動。
-  既存 issue の閲覧・再構造化専用。新規 issue 作成は /issue、plan 分割は /to-issues を使う。
+  open な GitHub issue 群を sub-issue 階層 + addBlockedBy 依存チェーン + [category] プレフィックスに整理する。
+  「issue 整理」「sub-issue 化」「プレフィックス付けて」で発動。
+  既存 issue の再構造化専用 — 新規作成・分割起票は /issue(分割は --split)を使う。
 ---
 
 # issue-organize

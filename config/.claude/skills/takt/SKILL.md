@@ -1,16 +1,11 @@
 ---
 name: takt
 description: >-
-  起票済みの GitHub issue を takt のタスクキューへ積み、cmux の別 pane で workflow を回して
-  完了まで見守る(workflow 判定 → 非対話で投入 → 検証 → pane で takt run → 完了検知)。
-  「takt に積んで」「takt task 追加」「#N を takt で回して」「タスクだけ積んでおいて」
-  「PR に積み増して」「takt 回して」など、takt へのタスク投入・実行を頼まれたときに使用すること。
-  投入は takt の内部 API を直呼びして対話ゼロで済ませ(branch / base / draft まで指定できる)、
-  stdout が数十万 token になる takt run だけを cmux の別 pane に逃がす。
-  PR のマージは対象外。issue が未起票なら issue スキルへ
-  委譲して起票してから積む(issue 無しで積む経路は用意しない)。
-  --run で run と完了検知まで、--dry-run で実行予定の提示まで、
-  --workflow / --branch / --base / --draft / --pr で選択を明示できる。
+  起票済みの GitHub issue を takt のタスクキューへ積み、cmux の別 pane で takt run を回して
+  完了検知まで見守る。「#N を takt で回して」(投入+実行)、「タスクだけ積んでおいて」(投入のみ)、
+  「PR に積み増して」(既存ブランチへ追加)で発動。
+  自セッションで直接実装するのは issue-direct スキル。issue 未起票なら先に issue スキルで
+  起票してから積む。PR のマージは対象外。--dry-run で投入直前の計画提示まで。
 ---
 
 # takt タスク投入・実行

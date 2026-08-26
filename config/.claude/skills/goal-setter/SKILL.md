@@ -1,6 +1,6 @@
 ---
 name: goal-setter
-description: Draft, audit, or activate a compact /goal when the user asks for a persistent objective or wants Codex to work until a verifiable outcome is true. Defines Done, evidence, constraints, stop conditions, optional one-question-at-a-time clarification, and only necessary worker use. Not for ordinary implementation, Q&A, one-off edits, loose brainstorming, or subjective work with no rubric.
+description: Draft, audit, or activate a compact /goal when the user asks for a persistent objective or wants the agent to work until a verifiable outcome is true. Not for ordinary implementation, Q&A, one-off edits, loose brainstorming, or subjective work with no rubric.
 ---
 
 # Goal Setter

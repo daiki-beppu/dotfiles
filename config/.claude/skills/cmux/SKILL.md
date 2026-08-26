@@ -1,6 +1,6 @@
 ---
 name: cmux
-description: End-user control of cmux topology and routing (windows, workspaces, panes/surfaces, focus, moves, reorder, identify, trigger flash). Use when automation needs deterministic placement and navigation in a multi-pane cmux layout.
+description: Cross-workspace cmux control — windows, workspaces, panes/surfaces, moves, reorder, identify, flash. Use when rearranging or navigating cmux beyond the current workspace; for work scoped to the workspace that invoked the agent, use cmux-workspace.
 ---
 
 # cmux Core Control
