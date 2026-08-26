@@ -17,25 +17,10 @@ Use this skill to control non-browser cmux topology and routing.
 ## Fast Start
 
 ```bash
-# identify current caller context
 cmux identify --json
-
-# list topology
-cmux list-windows
-cmux list-workspaces
-cmux list-panes
-cmux list-pane-surfaces --pane pane:1
-
-# create/focus/move
-cmux new-workspace
-cmux new-split right --panel pane:1
-cmux move-surface --surface surface:7 --pane pane:2 --focus true
-cmux split-off --surface surface:7 right
-cmux reorder-surface --surface surface:7 --before surface:3
-
-# attention cue
-cmux trigger-flash --surface surface:7
 ```
+
+For the full command list, see `cmux --help` and Deep-Dive References below.
 
 ## Settings and Docs
 
@@ -55,14 +40,6 @@ cmux reload-config
 `cmux reload-config` reloads BOTH `cmux.json` and Ghostty config (`~/.config/ghostty/config`) and refreshes terminals in place. No app restart needed.
 
 Use cmux settings for app behavior, sidebar, notifications, browser behavior, automation, workspace colors, and cmux-owned shortcuts. Terminal rendering settings such as font, cursor style, theme, scrollback, background transparency (`background-opacity`), and blur (`background-blur`) belong in Ghostty config at `~/.config/ghostty/config`.
-
-Open the UI when useful:
-
-```bash
-cmux settings
-cmux settings cmux-json
-cmux settings shortcuts
-```
 
 ## Handle Model
 
