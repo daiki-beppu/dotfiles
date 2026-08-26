@@ -34,9 +34,9 @@ STOP conditions を尊重し、完了時に自分の行の Status を更新す�
 | [021](021-takt-062-realignment.md) | takt スキルを 0.62.0 に再整合し references/ へ分割（改訂: 実名・本数列挙は削除しレシピを正とする） | P1 | M | — | DONE（executor commits `5e333e0`（事実の再整合）/ `32775ea`（references/ 分割）、worktree `.claude/worktrees/agent-a703e195ce12ad001`、branch `worktree-agent-a703e195ce12ad001`。main `032028a` から分岐。レビュー済み・`bash scripts/check.sh` exit 0（nix-eval / shellcheck / links / hooks / agent-skills）、done criteria 再実行 pass。SKILL.md 589→441 行、references/ 3 ファイル計 188 行。**REVISE 1 回はプラン側の欠陥**: ≤400 行ゲートはプラン自身の「本文に必ず残すもの」リストと両立せず（残った全セクションが must-stay に載っていた）、レビュアーが ≤450 に校正（同リポジトリの issue 443 行 / issue-direct 442 行と同水準）。executor が即興せず STOP したのは正しい振る舞い。executor の判断 3 件を merit で承認: 落とし穴の `development-core` 実例を「callable な部品名」へ一般化、gotchas ポインタから腐った件数「17 項目」を削除（実際は 21）、`../../cmux-workspace/SKILL.md` へのパス修正。レビュアー検証: gotchas.md は原文と 1 行（上記の一般化）を除き byte 一致、落とし穴 21 項目すべて保持、手作業で再構成したコミット分割も commit1 = 589 行・移動ゼロ・19+/19- の純粋な事実修正であることを確認。cmux 非搭載 fallback の変数展開バグ（呼び出しをまたぐと `$LOG`/`$DONE` が空展開 → sentinel 未作成 → 検知ループが永久待ち）も修正済み。origin へは未 push・main へは未マージ） |
 | [022](022-addblockedby-parallel-first.md) | addBlockedBy の既定を並列優先で統一 | P2 | S | — | DONE（executor commit `871a739`、worktree `.claude/worktrees/agent-a581c204b08364ff2`、branch `worktree-agent-a581c204b08364ff2`。main `52e8c98` から分岐。レビュー済み・`bash scripts/check.sh` exit 0、done criteria 再実行 pass（2 ファイル 8+/8-、スコープ逸脱なし）。**実行前レビューでプランを 2 度改訂**: (1) Step 3 の棚卸しが誤り — issue-organize の node ID 取得は addBlockedBy の 2 箇所ではなく addSubIssue を含む 6 箇所で、旧 Step 3 の Verify `grep -c 'node_id' → 0` は達成不能かつ STOP 条件が即発火した。2 行だけ直すとファイル内で 2 流儀に割れるため 6 箇所すべてを `gh issue view --json id` へ統一。(2) Step 3 の3 本目の Verify 期待値 `3` がレビュアーの数え違い（実測 4）— `:33` のテンプレート用リテラル `repository(owner: "OWNER")` は変数ではないため、`grep -n '$OWNER'` へ校正済み。executor はこの不一致を STOP 条件でないと正しく判定し、調査結果を NOTES で報告した。Step 1 の node ID 等価はissue #150 で実測一致（`I_kwDOQRkZBs8AAAABONZ3JQ`）。origin へは未 push・main へは未マージ） |
 | [023](023-description-surgery.md) | description を context pointer 規範で書き直す（改訂: eli5 基準・1 分岐 1 トリガー） | P2 | S | — | DONE（executor commit `ab6bdaf`、worktree `.claude/worktrees/agent-ae22c956ffbbce88f`、branch `worktree-agent-ae22c956ffbbce88f`。main `ca2ac0b` から分岐。レビュー済み・`bash scripts/check.sh` exit 0、done criteria 再実行 pass（10 ファイル 27+/34−、diff は全件 frontmatter の `description:` 値に閉じておりスコープ逸脱なし。YAML スタイル `>-` / `|` / `"` も全件保持）。description 合計 3,219 → **2,209 字（−31%）** でゲート ≤2,300 を満たす。**実行前レビューで 2 点補正**: (1) drift check は 5 ファイルにヒットするが全て本文の差分（021 等の成果）で、frontmatter は 10 件とも「Current state」と位置・内容が一致 → STOP させず続行を指示。(2) Step 8 の `wc -m` は環境の `LANG`/`LC_ALL` が空だとバイト計数になり CJK が 3 倍に膨れて 5,499 と出る（≤2,300 が達成不能）→ `LC_ALL=en_US.UTF-8` 付きで計測するよう指示。なおプラン記載の「現状 3,074 字」は `name:` 行を除いた値で、Step 8 のコマンドが実際に出す baseline は 3,219 だった。**レビュアーによる本文突き合わせ**: issue-direct の新文言「CI green + ready for review で完了」は本文（`:13` / `:19` / `:46` / `:410`）と一致し、旧文言「CI green で完了」より正確になっている。**残る観察点 2 件**（いずれもプラン設計の帰結であり executor の逸脱ではない）: takt の description は 「#N を takt で回して」を「投入+実行」と宣言する一方、本文 `:21` は「回すのは `--run` を明示されたときだけ」と限定しており、会話文トリガーだけでフェーズ 5 に入らないか実運用で観察する。cmux の "Cross-workspace cmux control" は、本文が扱う同一ワークスペース内の split / move を含む一般的な topology 制御より狭く名乗っている（後段の境界節が routing を担うため実害は出にくい見込み）。main へ `--no-ff` マージ済み（merge `8da8f73`）。マージ後にメインチェックアウトで再検証: `bash scripts/check.sh` exit 0、`~/.claude/skills` は dotfiles への symlink のため即時反映され、稼働セッションのスキル一覧が新 description に差し替わることを実地確認（`to-issues` 参照は 0 件）。origin へは未 push） |
-| [024](024-skill-correctness-fixes.md) | 有効スキルの correctness 修正束 | P2 | S | 018, 019 | TODO |
+| [024](024-skill-correctness-fixes.md) | 有効スキルの correctness 修正束（Fix A〜G） | P2 | S | 018, 019 | TODO（**2026-08-26 reconcile で refresh 済み・即実行可**。`Planned at` を `e08bf89` に更新。座標ずれを実測で訂正: Fix D の takt 参照 `:392`→`:342`（021 の references 分割）、Fix E の issue-direct `:293-306`→`:252-265`（025 で 441→362 行）、Fix F の settings.json `131-144`→`106-120` と問題 6 行 133/134/136/140/141/142→109/110/112/116/117/118。Fix A/B/C の座標は f9948f8 のまま有効であることを実測確認（clean-branch `:44`/`:66`/`:95`/`:125`、goal-setter `:65`、cmux-workspace `:193-199` いずれも一致）。**Fix G を追加**: `e08bf89` で chrome-devtools-mcp のプラグイン登録とマーケットプレイスを削除したため、`troubleshooting/SKILL.md:33-42` が実在しない `enabledPlugins` キーの設定を指示し続けている — MCP 接続不良の最中に読まれるスキルなので誤誘導のコストが高い） |
 | [025](025-issue-skills-progressive-disclosure.md) | issue / issue-direct を刈ってから開示（改訂: 逐語移動 → prune-then-disclose） | P3 | M | 022, 023 | DONE（executor commits `377cdfe`（issue-direct 削除）/ `138ff12`（issue-direct 開示）/ `9f90b82`（issue 開示）/ `5d0b91a`（宙吊りポインタ解消）、worktree `.claude/worktrees/agent-ac84fb404987ca3a2`、branch `worktree-agent-ac84fb404987ca3a2`。main `63ed431` から分岐。レビュー済み・`bash scripts/check.sh` exit 0、done criteria 再実行 pass。SKILL.md は issue 439→**220 行**、issue-direct 441→**362 行**。新規 references 3 本（body-contract.md 128 / splitting.md 111 / subagent-prompts.md 78）。スコープ逸脱なし（in-scope 5 ファイルのみ、`plans/README.md` は executor 未変更）。**逐語性をレビュアーが機械照合**: 原文 440 行のうち 439 行が移動先または本文に byte 一致で存在し、唯一の不一致は Step 3 が指定した見出し改名（`## フェーズ 4: 本文を生成する（出力契約）` → `## フェーズ 4: 本文を生成する`）のみ。issue-direct 側の消失 14 行も全て削除対象そのもの（When to Use 3 / baseRef 説明 1 / テンプレ導入文 1 / Rules 9）。**実行前レビューでプランを 2 点校正**: (1) 行数ゲート `issue-direct ≤ 300` は達成不能だった — 441 行から移動 2 テンプレート（35+32）・削除（When to Use 5 / Rules 9）・ポインタ +4 を引くと着地は約 362 行で、プラン自身の「残す」リストと両立しない（021 と同型の欠陥）。≤370 に校正し、実測 362 で着地。(2) Rules 保持リストの「frontier からの着手順」はファイル内に `frontier` の語が存在せず、実体はトポロジカルソートの bullet。保持 6 件を逐語列挙して渡したため STOP は発火しなかった。**レビュアーによる本文突き合わせ**: 削除した Rules 9 件のうち 8 件は本文に再掲を確認（`:39`/`:111` の 1スタック=1worktree、`:24` の「親による再読ではない」、1-c の policy 解決、`submit --auto` 2 箇所、`gh stack sync` 4 箇所、ready for review 4 箇所）。baseRef はプラン指定どおり説明のみポインタ化し `git log --oneline main..HEAD` / `git merge main` の実行手順は保持（`:166`）。**レビューで検出し解消した欠陥 1 件**: 初回 executor は最終報告後に 2 行を修正したが commit も報告もしておらず、コミット記録上は欠陥が残っていた — 2-2 の `(進め方は上記「## 進め方」と同じ)` と 3-1 の `(進め方は同じ)`。`## 進め方` が references/ へ移った結果これらの「上記」が宙吊りになり、**段が 1 つの run では tdd ルールへの到達経路が本文から消えていた**（Rules から `tdd` bullet を削除したのは、テンプレート内に同じ規定があることを前提とした判定だったため）。修正は references への明示ポインタ化 + 「親が自分で実装するときも必ず開く — tdd スキルの駆動と seam の決定はそこにある」の明記。初回 executor は resume 不能（transcript 消失）だったため別 executor に commit のみ委任し `5d0b91a` で解消、レビュアーが最終状態で全 done criteria を再実行して pass を確認（作業ツリー clean、`grep -c "進め方は上記\|進め方は同じ"` → 0）。origin へは未 push・main へは未マージ) |
-| [026](026-cmux-chrome-cache-pruning.md) | cmux / cmux-workspace / chrome-devtools から環境の再掲を刈る | P3 | S | 019, 024 | TODO |
+| [026](026-cmux-chrome-cache-pruning.md) | cmux / cmux-workspace / chrome-devtools から環境の再掲を刈る | P3 | S | 019, 024 | TODO（**2026-08-26 reconcile で refresh 済み**。`Planned at` を `e08bf89` に更新。内容ドリフトなし — 3 ファイルの見出しは全て「Current state」と一致。座標補正は cmux/SKILL.md が 84→83 行（023 の description 書き換え）の 1 点のみ） |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -54,11 +54,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **019 ← 018、020 ← 018+019、024 ← 018+019**: いずれも `config/.claude/settings.json` の
   同じブロック（skillOverrides / enabledPlugins / autoMode）を編集するためのコンフリクト
   回避順。
-  **2026-08-26 時点の実態**: 018 も 019 も main に未マージで、019 は 018 のブランチに
-  stack されている（`main` → `chore/remove-cloudflare-vendor-skills`(018) →
-  `chore/remove-cmux-vendor-skills`(019)）。020 / 024 を実行するときも main ではなく
-  019 のブランチから分岐すること（main の `skillOverrides` は 18 キーのままなので、
-  main から切ると両プランの前提が崩れて即 STOP になる）。020 は内容上も「off スキルが 2 個に減ってから除外ロジックを入れる」方が検証が単純。
+  **2026-08-26 reconcile 時点の実態**: 018 / 019 / 020 はいずれも main にマージ済みで、
+  `skillOverrides` は **2 キー**（`empirical-prompt-tuning` / `evidence-record`）に落ちている。
+  024 は **main から直接分岐してよい**（旧注記にあった「019 のブランチから分岐せよ」は解消済み）。
 - **025 ← 022, 023**: 025 は issue / issue-direct の本文を**刈ってから** references/ へ開示する（移す素材は逐語）。
   022（依存姿勢の書き換え）と 023（frontmatter）が先に確定していないと、移動後に同じ内容を
   二度直すことになる。
@@ -79,6 +77,24 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
     重複・環境（`--help` / 設定ファイル）の再掲は移動でなく削除。数と実名の列挙はレシピの
     キャッシュなので書かない。description は「先頭に主語 + 1 分岐 1 トリガー + 否定境界」。
     021 / 023 / 025 はこの規準で改訂済み、026 はこの規準による追加プラン。
+
+## Reconcile 記録
+
+### 2026-08-26（commit `e08bf89` 時点）
+
+- **DONE の再検証（第 3 期、現 HEAD で実測）**: 018 `git ls-files | grep -c skills/cloudflare` → 0 /
+  019 残存 cmux 系 2 本（`cmux` / `cmux-workspace` のみ）/ 020 `skillOverrides` 2 キー /
+  021 takt 436 行（≤450）/ 022 issue-organize の `node_id` 0 件 / 023 description 計 2,198 字（≤2,300）/
+  025 issue 220 行・issue-direct 362 行。**いずれも現 HEAD で成立を維持**。
+  `bash scripts/check.sh` exit 0（nix-eval / shellcheck / links / hooks / agent-skills）。
+- **TODO の refresh**: 024・026 とも drift check がヒットしたが、いずれも**内容ドリフトではなく座標ずれ**。
+  finding 自体は現物に残存することを 1 件ずつ実測確認し、`Planned at` を `e08bf89` に更新した。
+  REJECTED（他所で解消済み）に落ちた finding は無い。
+- **新規 finding 1 件を 024 に統合**: `e08bf89` の chrome-devtools-mcp プラグイン登録削除に
+  `troubleshooting/SKILL.md:33-42` が追随しておらず、実在しない `enabledPlugins` キーの設定を
+  指示している。新プランを起こさず 024 の **Fix G** として追加（024 は同じ settings.json を
+  触る correctness 修正束で、削除の当事者でもあるため）。
+- **いま実行可能**: 024（依存 018/019 は解消済み・main から直接分岐可）→ その後 026。
 
 ## Findings considered and rejected
 
@@ -107,7 +123,7 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **worktree 新規スキルの codex 同期タイミング問題**: matcher 修正（Plan 010）では解決しない構造的事項。対策候補は activation での同期実行。詳細は Plan 010 の Maintenance notes。
 - **shellcheck warning 級の指摘**: error 級ゲート運用は維持（Plan 012 でも変えない）。warning 対応は CI 強化の次段。
 - **takt builtin allowlist の鮮度**: `scripts/takt-builtin-workflows.txt` が takt 0.49.0 時点の生成で、現在の takt builtins と差分あり（`*-for-local-llm` 系 7 件削除、`*-with-fc` 系 2 件追加）。`check.sh contracts` は warning 表示のみで exit 0 だが、次回 takt バージョンアップ時に再生成が必要。S 工数。
-- **worktree 規約の三重記述**（config/.claude/CLAUDE.md ↔ issue-direct/SKILL.md:172 ↔ clean-branch/SKILL.md:86、2026-08-26 監査）: issue-direct 側は **Plan 025（改訂版）がポインタ化を実施**。残るのは clean-branch:86 の 1 箇所のみ（3 行・無害・ドリフト無し）— 次に clean-branch を編集するついでにポインタ化すれば足りる。
+- **worktree 規約の三重記述**（config/.claude/CLAUDE.md ↔ issue-direct/SKILL.md ↔ clean-branch/SKILL.md:86、2026-08-26 監査）: issue-direct 側は **Plan 025 でポインタ化済み**（`:166`。説明のみ CLAUDE.md 参照に置換し `git log --oneline main..HEAD` / `git merge main` の手順は保持）。残るのは clean-branch:86 の 1 箇所のみ（3 行・無害・ドリフト無し）— 次に clean-branch を編集するついでにポインタ化すれば足りる。
 - **`troubleshooting` スキルの汎用名**（2026-08-26 監査）: 実体は chrome-devtools MCP 専用。description が十分限定的で誤発動の実害が無いため改名は見送り。改名するなら `chrome-devtools-troubleshooting` + `chrome-devtools/SKILL.md:18,84` の 2 参照更新（Plan 023 の Maintenance notes にも記載）。
 - **argument-hint の導入**（2026-08-26 監査）: フラグ提示の本命だが SKILL.md frontmatter でのサポート未確認。1 スキルで実地確認してから nix / clean-branch / free-disk-space / issue / takt へ展開（Plan 023 の Maintenance notes 参照）。
 - **aqua-improve の再起動スパイク**（2026-08-26 監査、direction finding）: ユーザー決定で削除（Plan 020）となったため消滅。実行時データ `~/.claude/aqua-improve/` は残置。

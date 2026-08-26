@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat f9948f8..HEAD -- config/.claude/skills/clean-branch/SKILL.md config/.claude/skills/goal-setter/SKILL.md config/.claude/skills/cmux-workspace/SKILL.md config/.claude/skills/cmux/references/panes-surfaces.md config/.claude/skills/issue-direct/SKILL.md config/.claude/settings.json`
+> **Drift check (run first)**: `git diff --stat e08bf89..HEAD -- config/.claude/skills/clean-branch/SKILL.md config/.claude/skills/goal-setter/SKILL.md config/.claude/skills/cmux-workspace/SKILL.md config/.claude/skills/cmux/references/panes-surfaces.md config/.claude/skills/issue-direct/SKILL.md config/.claude/skills/troubleshooting/SKILL.md config/.claude/settings.json`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -21,7 +21,7 @@
   （settings.json を触るためコンフリクト回避の順序依存。内容依存は Fix E のみ —
   019 が cmux-workspace の References を先に整えている前提）
 - **Category**: bug
-- **Planned at**: commit `f9948f8`, 2026-08-26
+- **Planned at**: commit `f9948f8`, 2026-08-26（**2026-08-26 reconcile で `e08bf89` に refresh**: 018/019/020/025 のマージと chrome-devtools プラグイン登録削除により行番号がずれたため、Fix D/E/F の座標を実測値に更新し、プラグイン削除の追随として **Fix G を追加**した。Fix A/B/C の座標は f9948f8 時点のまま有効）
 
 ## Why this matters
 
@@ -41,7 +41,7 @@
   この fallback を export すると、以降の全 cmux コマンドが確実に失敗する恒久化装置になる
 - **D. `--focus` 既定の矛盾**: `cmux/references/panes-surfaces.md:37` は
   「layout コマンドは既定で focus-neutral」、`cmux-workspace/SKILL.md:48` と
-  `takt/SKILL.md:392` は「作成系には `--focus false` を渡せ」— どちらを先に読んだかで
+  `takt/SKILL.md:342` は「作成系には `--focus false` を渡せ」— どちらを先に読んだかで
   ユーザーの view を奪うかが変わる
 - **E. issue-direct の CI 監視が変数の呼び出し間持ち越しに依存**: `CI_WATCH` の解決と起動が
   別のコードブロックで、Claude Code の Bash ツールはシェル状態を持ち越さない。別呼び出しに
@@ -50,6 +50,13 @@
   スキルを引用し、現行スキルが明示的に禁止する `gh pr checks --watch`（issue-direct:291 —
   fine-grained PAT で使えないため watch-pr-actions.sh を同梱）と `takt -q run`
   （takt:415 — pane での `-q` を禁止）を許可根拠として記載。おまけに 2 エントリが重複
+
+- **G. troubleshooting が実在しない settings.json キーを指示**: `chrome-devtools-mcp` の
+  プラグイン登録とマーケットプレイスは `e08bf89` で削除済みだが、スキルは重複 MCP の対処として
+  「`enabledPlugins` に `"chrome-devtools-mcp@chrome-devtools-plugins": false` を置け」と
+  指示し続けている。読んだエージェントは実在しないキーを探し、「無効化されているはず」の
+  前提が崩れたまま診断を続ける。しかもこれは **MCP が繋がらない最中に読まれるスキル**で、
+  誤誘導が最も高くつく経路
 
 ## Current state
 
@@ -114,7 +121,7 @@ Surface identity is stable across move/reorder/split-off operations. Layout comm
 
 対立側: `cmux-workspace/SKILL.md:48` "Pass `--focus false` whenever the verb supports it."
 
-### E. issue-direct（`config/.claude/skills/issue-direct/SKILL.md:293-306`）
+### E. issue-direct（`config/.claude/skills/issue-direct/SKILL.md:252-265`）
 
 ```markdown
 実行前にクライアント別のスキル配置から監視スクリプトを解決する。
@@ -133,13 +140,35 @@ CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
   ```
 ```
 
-### F. settings.json（`config/.claude/settings.json` の `autoMode.allow`、131-144 行）
+### F. settings.json（`config/.claude/settings.json` の `autoMode.allow`、106-120 行）
 
-12 エントリ。問題箇所: 133 行（`used by the takt-issue/takt-review/issue-direct skills` +
-`gh pr checks <PR#> --watch` を根拠に記載）、134 行（`used by the same skills`）、
-136 行（`Background \`takt -q run > log 2>&1\` ... per the takt-issue skill`）、
-140 行（`per the takt-issue/takt-review skills`）、141 行（133 行のほぼ重複）、
-142 行（135 行の重複）。
+12 エントリ（`:108` の `$defaults` を含む）。問題箇所: **109 行**（`used by the takt-issue/takt-review/issue-direct skills` +
+`gh pr checks <PR#> --watch` を根拠に記載）、**110 行**（`used by the same skills`）、
+**112 行**（`Background \`takt -q run > log 2>&1\` ... per the takt-issue skill`）、
+**116 行**（`per the takt-issue/takt-review skills`）、**117 行**（109 行のほぼ重複）、
+**118 行**（111 行の重複）。
+
+### G. troubleshooting（`config/.claude/skills/troubleshooting/SKILL.md:33-42`）
+
+```markdown
+Also confirm there is **no duplicate** `chrome-devtools` MCP — in particular, the official marketplace plugin `plugin:chrome-devtools-mcp:chrome-devtools` competes for the same debugging port. If `claude mcp list` shows both, disable the plugin in `~/.claude/settings.json` (= `~/ghq/github.com/daiki-beppu/dotfiles/config/.claude/settings.json` via symlink):
+
+```jsonc
+"enabledPlugins": {
+  "chrome-devtools-mcp@chrome-devtools-plugins": false
+}
+```
+
+The official plugin's `plugin.json` hard-codes `args: ["chrome-devtools-mcp@<ver>"]` with no way to inject `--autoConnect`, so it must stay disabled for this setup.
+```
+
+実測（`e08bf89` 以降）: `config/.claude/settings.json` に `chrome-devtools-mcp@chrome-devtools-plugins`
+も `chrome-devtools-mcp@claude-plugins-official` も `chrome-devtools-plugins` マーケットプレイスも
+**存在しない**。無効化ではなく**登録ごと削除**が現状。
+
+```bash
+grep -c 'chrome-devtools' config/.claude/settings.json   # → 0
+```
 
 ## Commands you will need
 
@@ -159,8 +188,9 @@ CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
 - `config/.claude/skills/goal-setter/SKILL.md` — Fix B（`:65` の 1 文のみ）
 - `config/.claude/skills/cmux-workspace/SKILL.md` — Fix C（Socket セクションのみ）
 - `config/.claude/skills/cmux/references/panes-surfaces.md` — Fix D（1 文のみ）
-- `config/.claude/skills/issue-direct/SKILL.md` — Fix E（`:293-306` のみ）
+- `config/.claude/skills/issue-direct/SKILL.md` — Fix E（`:252-265` のみ。Plan 025 で 441→362 行になった後の座標）
 - `config/.claude/settings.json` — Fix F（`autoMode.allow` 配列のみ）
+- `config/.claude/skills/troubleshooting/SKILL.md` — Fix G（重複 MCP の段落のみ）
 - `plans/README.md` — 自分の status 行
 
 **Out of scope**:
@@ -285,14 +315,14 @@ Pass `--focus false` on move and creation verbs unless the user asked for the su
 
 `config/.claude/settings.json` の `autoMode.allow` を次のとおり編集する:
 
-1. 133 行のエントリを次で置き換える:
+1. **109 行**のエントリを次で置き換える:
    `"Background GitHub Actions status polling for this repo's own PRs via the issue-direct skill's references/watch-pr-actions.sh (wraps `gh run list` / `gh run view`), plus `gh run view <run-id> --log-failed` and manual `gh pr checks <PR#>` — read-only checks with no side effects"`
-2. 134 行の `used by the same skills` を `used by the takt / issue-direct skills` に変更
-3. 136 行（`Background \`takt -q run > log 2>&1\` ... per the takt-issue skill`）を**削除**
-   （140 行のエントリが takt 実行を包括する）
-4. 140 行を次で置き換える:
+2. **110 行**の `used by the same skills` を `used by the takt / issue-direct skills` に変更
+3. **112 行**（`Background \`takt -q run > log 2>&1\` ... per the takt-issue skill`）を**削除**
+   （116 行のエントリが takt 実行を包括する）
+4. **116 行**を次で置き換える:
    `"Running `takt` workflows for this repo, including the takt skill's cmux-less fallback of backgrounded / nohup-wrapped `takt run > log 2>&1`"`
-5. 141 行（133 行の重複）と 142 行（135 行の重複）を**削除**
+5. **117 行**（109 行の重複）と **118 行**（111 行の重複）を**削除**
 6. JSON 内でバッククォートはそのまま文字として書けるが、`"` はエスケープが要る —
    上記の文字列を JSON 値として成立する形で書くこと
 
@@ -300,7 +330,29 @@ Pass `--focus false` on move and creation verbs unless the user asked for the su
 `jq '.autoMode.allow | length' config/.claude/settings.json` → `9`（12 − 削除 3）、
 `jq -r '.autoMode.allow[]' config/.claude/settings.json | sort | uniq -d` → 出力なし（重複ゼロ）
 
-### Step 7: 全チェック
+### Step 7: Fix G — troubleshooting の重複 MCP 対処を現状に合わせる
+
+`config/.claude/skills/troubleshooting/SKILL.md:33-42` の段落を、「無効化せよ」から
+「登録は削除済み。再出現したらマーケットプレイスが再追加された合図」へ書き替える。
+`enabledPlugins` の jsonc スニペットは**削除**する（実在しないキーを提示しないため）。
+
+置き換え後の主旨（文面は英語のまま、周囲のトーンに合わせる）:
+
+- 重複 `chrome-devtools` MCP が無いことを `claude mcp list` で確認する、は**残す**
+  （実行可能な確認手順）
+- 公式マーケットプレイスのプラグイン版は同じデバッグポートを奪い合う、も**残す**（実測知）
+- 公式プラグインの `plugin.json` が `args` を固定していて `--autoConnect` を注入できない、
+  も**残す**（このリポジトリが user scope の `claude mcp add` を使う理由そのもの）
+- 変えるのは対処だけ: 「`enabledPlugins` で false にする」→
+  「`config/.claude/settings.json` からは登録もマーケットプレイスも削除済み。
+  `claude mcp list` にプラグイン版が現れたらマーケットプレイスが再追加された合図なので、
+  `enabledPlugins` / `extraKnownMarketplaces` から再度取り除く」
+
+**Verify**: `grep -c 'chrome-devtools-mcp@chrome-devtools-plugins' config/.claude/skills/troubleshooting/SKILL.md` → `0`、
+`grep -c 'autoConnect' config/.claude/skills/troubleshooting/SKILL.md` → 変更前と同じ値（実測知を消していない確認）、
+`grep -c 'claude mcp list' config/.claude/skills/troubleshooting/SKILL.md` → `1` 以上
+
+### Step 8: 全チェック
 
 ```bash
 bash scripts/check.sh
@@ -318,7 +370,8 @@ bash scripts/check.sh
 
 ## Done criteria
 
-- [ ] Step 1〜6 の Verify がすべて期待値どおり
+- [ ] Step 1〜7 の Verify がすべて期待値どおり
+- [ ] `grep -rn 'chrome-devtools-mcp@chrome-devtools-plugins' config/` → ヒット 0（Fix G の残骸なし）
 - [ ] `jq . config/.claude/settings.json` exit 0
 - [ ] `bash scripts/check.sh` exit 0
 - [ ] In scope 外の変更なし（`git status`）

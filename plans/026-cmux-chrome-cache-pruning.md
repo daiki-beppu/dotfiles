@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat f9948f8..HEAD -- config/.claude/skills/cmux config/.claude/skills/cmux-workspace config/.claude/skills/chrome-devtools`
+> **Drift check (run first)**: `git diff --stat e08bf89..HEAD -- config/.claude/skills/cmux config/.claude/skills/cmux-workspace config/.claude/skills/chrome-devtools`
 > Plan 019（参照掃除）と 024（socket / --focus 修正）の**後**に実行する。それらの差分は
 > 想定内 — 「Current state」の見出しが現物にあれば続行してよい。
 
@@ -18,7 +18,7 @@
 - **Risk**: LOW（刈るのは自己文書化された CLI / MCP の再掲のみ。house rule と実測知は残す）
 - **Depends on**: plans/019-cmux-vendor-cleanup.md, plans/024-skill-correctness-fixes.md
 - **Category**: dx
-- **Planned at**: commit `f9948f8`, 2026-08-26（eli5 / writing-for-agents 基準の新規プラン）
+- **Planned at**: commit `f9948f8`, 2026-08-26（eli5 / writing-for-agents 基準の新規プラン。**2026-08-26 reconcile で `e08bf89` に refresh**: 023 の description 書き換えで cmux/SKILL.md が 84→83 行に。見出し位置は全て一致しており、内容ドリフトなし）
 
 ## Why this matters
 
@@ -41,7 +41,7 @@ house rule、`drag-surface-to-split` の papercut（issue #1901）、cmux.json �
 
 3 ファイルとも f9948f8 時点 + Plan 019/024 適用後の姿を前提とする。
 
-### cmux（`config/.claude/skills/cmux/SKILL.md`、84 行）
+### cmux（`config/.claude/skills/cmux/SKILL.md`、83 行）
 
 | セクション | 判定 |
 |---|---|
@@ -49,7 +49,7 @@ house rule、`drag-surface-to-split` の papercut（issue #1901）、cmux.json �
 | `## Fast Start`（`:17-38`、コマンド列挙 ~20 行） | **削除** — `cmux --help` のキャッシュ。`cmux identify --json` で自コンテキストを掴む 1 行だけ残す |
 | `## Settings and Docs`（`:40-65`） | 残す — cmux.json と Ghostty config の**分担**、`.bak` 規約、`reload-config` が両方を再読することは環境が白状しない知識。ただし `:59-65` の「Open the UI」コマンド 3 行は削除（help のキャッシュ） |
 | `## Handle Model`（`:67-71`） | 残す（規約） |
-| `## Deep-Dive References`（`:73-85`、019 適用後の姿） | 残す |
+| `## Deep-Dive References`（`:73-83`、019 適用後の姿） | 残す |
 
 ### cmux-workspace（`config/.claude/skills/cmux-workspace/SKILL.md`、225 行）
 
