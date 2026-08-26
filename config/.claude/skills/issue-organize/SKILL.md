@@ -77,9 +77,9 @@ sub-issue の親子は**階層**であって依存関係ではない。実装順
 `gh issue edit --add-sub-issue` は未サポート。GraphQL `addSubIssue` mutation を使う。
 
 ```bash
-# node_id 取得
-PARENT_ID=$(gh api repos/$OWNER/$REPO/issues/$PARENT --jq '.node_id')
-CHILD_ID=$(gh api repos/$OWNER/$REPO/issues/$CHILD --jq '.node_id')
+# node ID 取得(gh issue view の id がそのまま GraphQL node ID)
+PARENT_ID=$(gh issue view "$PARENT" --json id --jq .id)
+CHILD_ID=$(gh issue view "$CHILD" --json id --jq .id)
 
 # sub-issue 追加
 gh api graphql -f query="mutation {
@@ -94,8 +94,8 @@ gh api graphql -f query="mutation {
 ```bash
 add_sub_issue() {
   local parent=$1 child=$2
-  local parent_id=$(gh api repos/$OWNER/$REPO/issues/$parent --jq '.node_id')
-  local child_id=$(gh api repos/$OWNER/$REPO/issues/$child --jq '.node_id')
+  local parent_id=$(gh issue view "$parent" --json id --jq .id)
+  local child_id=$(gh issue view "$child" --json id --jq .id)
   local result=$(gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$parent_id\", subIssueId: \"$child_id\" }) { issue { number } subIssue { number } } }" 2>&1)
   if echo "$result" | rg -q '"number"'; then
     echo "OK: #$child → #$parent"
@@ -114,8 +114,8 @@ add_sub_issue() {
 ```bash
 add_blocked_by() {
   local blocked=$1 blocker=$2   # blocked を blocker が塞ぐ(blocker を先に実装する)
-  local blocked_id=$(gh api repos/$OWNER/$REPO/issues/$blocked --jq '.node_id')
-  local blocker_id=$(gh api repos/$OWNER/$REPO/issues/$blocker --jq '.node_id')
+  local blocked_id=$(gh issue view "$blocked" --json id --jq .id)
+  local blocker_id=$(gh issue view "$blocker" --json id --jq .id)
   local result=$(gh api graphql -f query='
     mutation($issueId:ID!,$blockingIssueId:ID!){
       addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){
