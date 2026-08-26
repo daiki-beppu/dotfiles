@@ -4,7 +4,7 @@
 骨格を共有する。`<...>` は呼び出し時に実際の値で埋める。フォーマットを崩すと親が STATUS 行を
 機械的に読めなくなる。
 
-## 実装用(Step 2-2)
+## 実装用
 
 ```text
 git worktree `<worktree の絶対パス>` で GitHub issue #<Ni> を実装してください。
@@ -42,7 +42,7 @@ COMMIT: <コミットの subject>
 NOTES: <スコープ外で気づいたこと。無ければ none>
 ```
 
-## CI-fix 用(Step 3-1)
+## CI-fix 用
 
 ```text
 git worktree `<worktree の絶対パス>` で、PR #<PR_NUM>(issue #<Ni>)の CI 失敗を修正してください。

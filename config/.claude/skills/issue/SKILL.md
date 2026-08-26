@@ -27,7 +27,7 @@ description: >-
 - **1 issue = 1 振る舞い = 1 PR = スタック1段**。分割したら `addBlockedBy` で依存を張り、
   その依存チェーンがそのままスタックの積み順になる
 - **起票以外の GitHub 操作へ広げない**。既存 issue の編集・クローズ・ラベル整理はしない
-  (整理は issue-organize、実装は issue-direct / takt の責務)
+  (整理は issue-organize、実装は issue-implement / takt の責務)
 
 ## 実行スタイル
 
