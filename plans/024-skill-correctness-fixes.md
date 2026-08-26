@@ -7,7 +7,7 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat e08bf89..HEAD -- config/.claude/skills/clean-branch/SKILL.md config/.claude/skills/goal-setter/SKILL.md config/.claude/skills/cmux-workspace/SKILL.md config/.claude/skills/cmux/references/panes-surfaces.md config/.claude/skills/issue-direct/SKILL.md config/.claude/skills/troubleshooting/SKILL.md config/.claude/settings.json`
+> **Drift check (run first)**: `git diff --stat 1a587d7..HEAD -- config/.claude/skills/clean-branch/SKILL.md config/.claude/skills/goal-setter/SKILL.md config/.claude/skills/cmux-workspace/SKILL.md config/.claude/skills/cmux/references/panes-surfaces.md config/.claude/skills/issue-direct/SKILL.md config/.claude/skills/troubleshooting/SKILL.md config/.claude/settings.json`
 > If any in-scope file changed since this plan was written, compare the
 > "Current state" excerpts against the live code before proceeding; on a
 > mismatch, treat it as a STOP condition.
@@ -21,7 +21,14 @@
   （settings.json を触るためコンフリクト回避の順序依存。内容依存は Fix E のみ —
   019 が cmux-workspace の References を先に整えている前提）
 - **Category**: bug
-- **Planned at**: commit `f9948f8`, 2026-08-26（**2026-08-26 reconcile で `e08bf89` に refresh**: 018/019/020/025 のマージと chrome-devtools プラグイン登録削除により行番号がずれたため、Fix D/E/F の座標を実測値に更新し、プラグイン削除の追随として **Fix G を追加**した。Fix A/B/C の座標は f9948f8 時点のまま有効）
+- **Planned at**: commit `f9948f8`, 2026-08-26（**2026-08-26 reconcile で `e08bf89` に refresh**: 018/019/020/025 のマージと chrome-devtools プラグイン登録削除により行番号がずれたため、Fix D/E/F の座標を実測値に更新し、プラグイン削除の追随として **Fix G を追加**した。Fix A/B/C の座標は f9948f8 時点のまま有効）。
+  **2026-08-26 execute 直前にレビュアーが `1a587d7` で全 7 Fix の座標と抜粋を再実測し、
+  ドリフト無しを確認**（A `:41-48`/`:66`/`:95`/`:125`、B `:65`、C `:193-199`、D `:37`、
+  E `:252-265`、F `autoMode.allow` 12 件 `:107-119`、G `:33-42` すべて一致）。
+  同時にプラン側の欠陥 3 件を校正: Fix G の grep 主張（素の `chrome-devtools` は
+  `permissions.allow:18` の `mcp__chrome-devtools` に 1 件ヒットする）、Step 5 の
+  置換範囲 `:293-306`→`:252-265`、Step 5 の Verify ゲートが BSD grep の `$` アンカー扱いで
+  変更前から `0` を返す無意味ゲートだった点（`grep -cF` へ）
 
 ## Why this matters
 
@@ -47,9 +54,9 @@
   別のコードブロックで、Claude Code の Bash ツールはシェル状態を持ち越さない。別呼び出しに
   すると `"" "" 30 2400` で監視が始まらず、log は空 = 「未提出」と区別がつかない
 - **F. settings.json の autoMode 根拠文の腐敗**: 存在しない `takt-issue` / `takt-review`
-  スキルを引用し、現行スキルが明示的に禁止する `gh pr checks --watch`（issue-direct:291 —
+  スキルを引用し、現行スキルが明示的に禁止する `gh pr checks --watch`（issue-direct:250 —
   fine-grained PAT で使えないため watch-pr-actions.sh を同梱）と `takt -q run`
-  （takt:415 — pane での `-q` を禁止）を許可根拠として記載。おまけに 2 エントリが重複
+  （takt:365 — pane での `-q` を禁止）を許可根拠として記載。おまけに 2 エントリが重複
 
 - **G. troubleshooting が実在しない settings.json キーを指示**: `chrome-devtools-mcp` の
   プラグイン登録とマーケットプレイスは `e08bf89` で削除済みだが、スキルは重複 MCP の対処として
@@ -167,8 +174,13 @@ The official plugin's `plugin.json` hard-codes `args: ["chrome-devtools-mcp@<ver
 **存在しない**。無効化ではなく**登録ごと削除**が現状。
 
 ```bash
-grep -c 'chrome-devtools' config/.claude/settings.json   # → 0
+grep -cE 'chrome-devtools-mcp@|chrome-devtools-plugins' config/.claude/settings.json   # → 0
 ```
+
+**注意**: 素の `grep -c 'chrome-devtools' config/.claude/settings.json` は **`1` を返す**。
+唯一のヒットは `permissions.allow` の `"mcp__chrome-devtools"`（`:18` — user scope で
+`claude mcp add` した MCP の許可）で、プラグイン登録とは無関係。これを不一致と誤読して
+STOP しないこと。
 
 ## Commands you will need
 
@@ -283,7 +295,7 @@ Pass `--focus false` on move and creation verbs unless the user asked for the su
 
 ### Step 5: Fix E — issue-direct の CI 監視を 1 呼び出しに統合する
 
-`:293-306` を次で置き換える:
+`:252-265` を次で置き換える:
 
 ```markdown
 監視スクリプトの解決と起動は**1 回のシェル呼び出しに収める**(シェル変数は Bash ツールの呼び出し間で持ち越されない。`<PR番号>` は実際の番号をリテラルで埋める):
@@ -306,10 +318,15 @@ Pass `--focus false` on move and creation verbs unless the user asked for the su
   ```
 ```
 
-置き換え範囲の直前の段落（`:291` の watch-pr-actions.sh の説明と PAT 要件）は残す。
+置き換え範囲の直前の段落（`:250` の watch-pr-actions.sh の説明と PAT 要件）は残す。
 
-**Verify**: `grep -c '${PR_NUM}' config/.claude/skills/issue-direct/SKILL.md` → `0`、
-`grep -c '1 回のシェル呼び出しに収める' config/.claude/skills/issue-direct/SKILL.md` → `1`
+**Verify**: `grep -cF 'ci_pr${PR_NUM}' config/.claude/skills/issue-direct/SKILL.md` → `0`
+（実行前は `3`）、`grep -c '1 回のシェル呼び出しに収める' config/.claude/skills/issue-direct/SKILL.md` → `1`
+
+> **`-F` は必須**。BSD grep の BRE では `$` がアンカーとして扱われるため
+> `grep -c '${PR_NUM}' ...` は**変更前から `0` を返す**（実測）— 付け外しに関係なく通る
+> 無意味なゲートになる。また `${PR_NUM}` 自体は `:235` / `:281` / `:311` / `:340` の
+> スコープ外 4 箇所に残るのが正しい。消してはならない。
 
 ### Step 6: Fix F — autoMode.allow の根拠文を現行スキルに整合させる
 
@@ -349,7 +366,7 @@ Pass `--focus false` on move and creation verbs unless the user asked for the su
   `enabledPlugins` / `extraKnownMarketplaces` から再度取り除く」
 
 **Verify**: `grep -c 'chrome-devtools-mcp@chrome-devtools-plugins' config/.claude/skills/troubleshooting/SKILL.md` → `0`、
-`grep -c 'autoConnect' config/.claude/skills/troubleshooting/SKILL.md` → 変更前と同じ値（実測知を消していない確認）、
+`grep -c 'autoConnect' config/.claude/skills/troubleshooting/SKILL.md` → `19`（実行前と同値。実測知を消していない確認）、
 `grep -c 'claude mcp list' config/.claude/skills/troubleshooting/SKILL.md` → `1` 以上
 
 ### Step 8: 全チェック
