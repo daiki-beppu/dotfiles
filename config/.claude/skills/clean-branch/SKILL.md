@@ -40,12 +40,16 @@ description: >-
 
 ```bash
 git fetch --prune --tags
+# デフォルトブランチを解決（master / develop 等のリポジトリでも安全に動くように）
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
 # 全 PR を 1 回で取得（API 節約）
 gh pr list --state all --limit 800 --json number,state,headRefName,mergedAt > /tmp/all_prs.json
-# 対象ブランチ（local + remote, main/HEAD 除外）
+# 対象ブランチ（local + remote, デフォルトブランチ/HEAD 除外）
 { git branch --format='%(refname:short)'
   git branch -r --format='%(refname:short)' | sed 's#^origin/##'; } \
-  | grep -vE '^(origin/?|main|HEAD)$' | grep -v ' -> ' | sort -u > /tmp/branches.txt
+  | grep -vE "^(origin/?|${DEFAULT_BRANCH}|HEAD)$" | grep -v ' -> ' | sort -u > /tmp/branches.txt
 ```
 
 各ブランチを `headRefName` で PR に紐づけ、state で分類する（MERGED > OPEN > CLOSED の優先で代表 state を採用）:
@@ -59,11 +63,11 @@ gh pr list --state all --limit 800 --json number,state,headRefName,mergedAt > /t
 
 ### 2. NO_PR / CLOSED は中身を確認する
 
-`--merged` で「未マージ」に見えても実体はマージ済みのことが多い。NO_PR・CLOSED は誤削除を避けるため個別に確認:
+`--merged` で「未マージ」に見えても実体はマージ済みのことが多い。NO_PR・CLOSED は誤削除を避けるため個別に確認（`DEFAULT_BRANCH` は Step 1 と同じ解決を再実行してから使う。変数は呼び出し間で持ち越されない）:
 
 ```bash
-# main より先行しているユニークコミットと最終更新日
-git log --oneline main..<branch>
+# デフォルトブランチより先行しているユニークコミットと最終更新日
+git log --oneline "${DEFAULT_BRANCH}..<branch>"
 git log -1 --format='%ci %s' <branch>
 # 紐づく issue の open/closed
 gh issue view <N> --json state,title
@@ -92,7 +96,7 @@ git worktree list --porcelain | rg '^worktree ' | sed 's/^worktree //' | rg '\.c
 | while read -r w; do
     echo "===== $w"
     git -C "$w" status --porcelain --untracked-files=all   # 未コミット変更・未追跡ファイル
-    git -C "$w" log --oneline main..HEAD                    # main に無いコミット
+    git -C "$w" log --oneline "${DEFAULT_BRANCH}..HEAD"      # デフォルトブランチに無いコミット
   done
 ```
 
@@ -122,7 +126,7 @@ git push origin --delete <branch1> <branch2> <branch3> ...
 
 ## Rules
 
-- **main ブランチには絶対に触れない**
+- **デフォルトブランチ（main / master 等、origin/HEAD が指す先）には絶対に触れない**
 - **マージ判定は PR state を真実とする**（`git branch --merged` は squash マージを取りこぼすため補助的にしか使わない）
 - **OPEN PR のブランチは削除しない**
 - NO_PR のローカル専用ブランチはユニークコミットの有無を確認してから削除（復元は reflog のみ）。`--include-no-pr` を付けても Step 2 の確認は省略しない

@@ -34,4 +34,4 @@ cmux split-off --surface surface:7 right
 cmux reorder-surface --surface surface:7 --before surface:3
 ```
 
-Surface identity is stable across move/reorder/split-off operations. Layout commands are focus-neutral by default; pass `--focus true` only when you want the moved or created surface selected.
+Pass `--focus false` on move and creation verbs unless the user asked for the surface to be selected — follow the cmux-workspace skill's Non-Disruptive Automation rule. Surface identity is stable across move/reorder/split-off operations.
