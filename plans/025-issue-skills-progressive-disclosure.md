@@ -21,7 +21,7 @@
 - **Depends on**: plans/022-addblockedby-parallel-first.md, plans/023-description-surgery.md
 - **Category**: dx
 - **Planned at**: commit `f9948f8`, 2026-08-26（2026-08-26 改訂: eli5 / writing-for-agents 基準で
-  「逐語移動」から「刈ってから開示」へ転換）
+  「逐語移動」から「刈ってから開示」へ転換。2026-08-26 dispatch 前レビューで issue-direct の行数ゲートを ≤300 → ≤370 に校正 — 実測 441 行から、移動 2 テンプレート（35+32）・削除（When to Use 5 / Rules 9）・ポインタ追記 +4 を差し引くと着地は約 362 行で、≤300 は本プラン自身の「残す」リストと両立しない達成不能ゲートだった）
 
 ## Why this matters
 
@@ -64,7 +64,7 @@ writing-for-agents の規範に照らして方針を改める: **行が場所を
 |---|---|---|
 | `:22-25` | `## When to Use`（「issue #N を対応して」等 4 行） | description（023 適用後）の逐語重複。pointer が既に持つ identity |
 | `:172` の説明文 | `worktree.baseRef: "head"` の仕組み解説（「**main を checkout してから作る理由**」段落の前半） | `config/.claude/CLAUDE.md` が常時ロードで同じ説明を持つ三重記述の 1 つ。**1 行のポインタ**（「理由は CLAUDE.md の worktree 節。他リポジトリでも main から切る」）に置き換える。`git log --oneline main..HEAD` の確認コマンドと `git merge main` の追いつき手順は**残す**（実行可能な手順であり説明ではない） |
-| `:426-442` の `## Rules` のうち、Step 本文の逐語再掲になっている bullet | 例: subagent 設定（`run_in_background: false` / isolation 指定なし — `:212-216` と重複）、worktree 内で作業（`:150-172` と重複）、`gh stack submit --auto` で PR 作成（`:43` パラメータ表と重複）、policy を読ませる（`:174-188` と重複） | 同一ファイル内の重複。**本文に無い独自ルールだけ残す**: frontier からの着手順、集合外 blocker の扱い（`:432`）、下段 red で積み増し停止（`:437`）、fix は下段から / 3 周上限（`:439`）、失敗段で停止（`:440`）、外部 CI の green 判定制約（`:441`） |
+| `:426-442` の `## Rules` のうち、Step 本文の逐語再掲になっている bullet | 例: subagent 設定（`run_in_background: false` / isolation 指定なし — `:212-216` と重複）、worktree 内で作業（`:150-172` と重複）、`gh stack submit --auto` で PR 作成（`:43` パラメータ表と重複）、policy を読ませる（`:174-188` と重複） | 同一ファイル内の重複。**本文に無い独自ルールだけ残す**: 着手順（段の列をトポロジカルソートで確定・循環なら停止。現物の bullet 冒頭は「着手前に**段の列**を確定させる」— `frontier` という語はファイル内に存在しない）、集合外 blocker の扱い（`:432`）、下段 red で積み増し停止（`:437`）、fix は下段から / 3 周上限（`:439`）、失敗段で停止（`:440`）、外部 CI の green 判定制約（`:441`） |
 
 **開示対象**:
 
@@ -81,7 +81,7 @@ writing-for-agents の規範に照らして方針を改める: **行が場所を
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| 行数 | `wc -l config/.claude/skills/issue/SKILL.md config/.claude/skills/issue-direct/SKILL.md` | issue ≤ 250、issue-direct ≤ 300 |
+| 行数 | `wc -l config/.claude/skills/issue/SKILL.md config/.claude/skills/issue-direct/SKILL.md` | issue ≤ 250、issue-direct ≤ 370 |
 | リンク実在 | Step 5 の for ループ | MISSING 0 件 |
 | 全チェック | `bash scripts/check.sh` | exit 0 |
 
@@ -138,7 +138,7 @@ Rules セクションが 8 bullet 以下
 該当テンプレートを**逐語コピー**し、`<...>` を埋めて渡す。委任のたびに必ず開く(記憶で再構成しない)。
 ```
 
-**Verify**: `wc -l config/.claude/skills/issue-direct/SKILL.md` ≤ 300、
+**Verify**: `wc -l config/.claude/skills/issue-direct/SKILL.md` ≤ 370、
 `grep -c 'subagent-prompts.md' config/.claude/skills/issue-direct/SKILL.md` → `2`
 
 ### Step 3: issue — 開示パス（削除パスは無し）
@@ -204,7 +204,7 @@ STATUS 形式が守られるかを観察する。
 
 ## Done criteria
 
-- [ ] `wc -l`: issue ≤ 250、issue-direct ≤ 300
+- [ ] `wc -l`: issue ≤ 250、issue-direct ≤ 370
 - [ ] Step 1 / 4 / 5 の Verify がすべて期待値どおり
 - [ ] `bash scripts/check.sh` exit 0
 - [ ] frontmatter description に diff が無い
