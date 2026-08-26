@@ -4,7 +4,9 @@ description: >-
   GitHub issue を会話コンテキストから新規作成する。1問ずつのインタビューで内容を合意し、
   リポジトリ調査に基づく検証可能な要件・完了契約を持つ本文を作る(takt の order.md として
   そのまま使える書式)。「issue にして」「バグ報告して」など新規起票の依頼で発動。
-  --dry-run で作成の直前まで。閲覧・検索・クローズ・コメント追加には使わない。
+  --dry-run で作成の直前まで。--organize は既存 open issue 群の再構造化
+  (sub-issue 階層 + 依存チェーン + プレフィックス) — 「issue 整理」「sub-issue 化」で発動。
+  閲覧・検索・単発クローズ・コメント追加には使わない。
 ---
 
 # issue
@@ -26,8 +28,8 @@ description: >-
   何を誤実装として拒否するか」。実装者と reviewer が見るのは後者
 - **1 issue = 1 振る舞い = 1 PR = スタック1段**。分割したら `addBlockedBy` で依存を張り、
   その依存チェーンがそのままスタックの積み順になる
-- **起票以外の GitHub 操作へ広げない**。既存 issue の編集・クローズ・ラベル整理はしない
-  (整理は issue-organize、実装は issue-implement / takt の責務)
+- **起票と `--organize` 以外の GitHub 操作へ広げない**。単発の編集・クローズ・ラベル整理はしない
+  (実装は issue-implement / takt の責務)
 
 ## 実行スタイル
 
@@ -38,6 +40,8 @@ description: >-
 ## Invocation variants
 
 - Bare / 起票したい内容 → フェーズ 1〜6 を通す(インタビュー → 起票)。
+- `--organize` → 起票ではなく既存 open issue 群の再構造化。フェーズ 1〜6 は通らず、
+  [references/organize.md](references/organize.md) を読んでその手順だけに従う。
 - `--dry-run` → フェーズ 6 の直前で止め、リポジトリ・カテゴリ・タイトル・ラベル・本文を
   提示するだけで `gh issue create` を叩かない。フェーズ 1〜5 は通常どおり行う。
 - `--no-interview` → フェーズ 2 を省略し、会話コンテキストと調査結果だけで本文を作る。
@@ -217,4 +221,4 @@ gh api graphql -f query="mutation {
 - 品質ゲートを特定できない場合はコマンドを捏造せず、その旨を記載する
 - 本文に実行手順・判断基準の詳細・着手方式のルーティングを書かない(出力契約の責務外)
 - 本文は日本語で書き、コード・識別子・技術用語は原表記を保つ
-- 新規 issue 作成以外の GitHub 操作へ範囲を広げない。既存 issue の編集・クローズ・ラベル整理には踏み込まない
+- 新規 issue 作成以外の GitHub 操作へ範囲を広げない(既存 issue の再構造化は `--organize` の run が references/organize.md の範囲で行う)

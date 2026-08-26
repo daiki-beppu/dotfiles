@@ -31,7 +31,7 @@ query($owner:String!,$repo:String!,$num:Int!){
 ```
 
 - **親 issue**: CLOSED の子を除外し、子集合内の `blockedBy` だけを辺としてトポロジカルソートし 1 本に直列化する(blocker 無し同士は番号昇順)。循環は積まずに停止してユーザーへ。独立な段に順序を付けた場合は完了報告に 1 行添える。「#N だけやって」と明示されたらその 1 段のみ。
-- **単一 issue**: 1 振る舞い(完了時に利用者から見て何が 1 つ変わるかを 1 文で言い切れる)に収まるか判定する。収まらなければ(迷う場合も)分割案を AskUserQuestion で確認し、合意なら issue-organize の手順で子 issue を作成して親 issue のフローへ。
+- **単一 issue**: 1 振る舞い(完了時に利用者から見て何が 1 つ変わるかを 1 文で言い切れる)に収まるか判定する。収まらなければ(迷う場合も)分割案を AskUserQuestion で確認し、合意なら issue スキルの `references/organize.md` の手順で子 issue を作成して親 issue のフローへ。
 - **集合外の blocker**: state でなく **PR の有無**で判定する — `gh pr list --search "<B> in:body" --state open`。PR があれば(OPEN / MERGED とも)その上に積んで着手してよい。OPEN かつ PR 無しなら積む先が無いため着手せず、blocker 一覧を提示してユーザーに確認。
 
 ## 2. worktree を用意する(1 スタック = 1 worktree)
