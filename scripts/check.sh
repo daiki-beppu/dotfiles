@@ -177,14 +177,14 @@ check_agent_skills() {
     "$tmp_dir/external-source" \
     "$tmp_dir/legacy/external-real"
   ln -s "$tmp_dir/external-source" "$tmp_dir/destination/external-link"
-  ln -s "$REPO_ROOT/config/.claude/skills/issue-direct" "$tmp_dir/legacy/issue-direct"
+  ln -s "$REPO_ROOT/config/.claude/skills/issue-implement" "$tmp_dir/legacy/issue-implement"
 
   AGENT_SKILLS_DIR="$tmp_dir/destination" \
     LEGACY_AGENT_SKILLS_DIR="$tmp_dir/legacy" \
     bash scripts/sync-agent-skills.sh --manifest config/codex-cloud/skills.txt
 
   local skill
-  for skill in issue-direct gh-stack; do
+  for skill in issue-implement gh-stack; do
     [ -L "$tmp_dir/destination/$skill" ] || {
       echo "MISSING: Cloud skill link was not created: $skill" >&2
       return 1
@@ -203,7 +203,7 @@ check_agent_skills() {
     echo "REMOVED: sync replaced an externally managed skill symlink" >&2
     return 1
   }
-  [ ! -e "$tmp_dir/legacy/issue-direct" ] || {
+  [ ! -e "$tmp_dir/legacy/issue-implement" ] || {
     echo "STALE: legacy dotfiles-managed skill symlink was not removed" >&2
     return 1
   }

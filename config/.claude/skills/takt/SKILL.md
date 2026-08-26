@@ -4,7 +4,7 @@ description: >-
   起票済みの GitHub issue を takt のタスクキューへ積み、cmux の別 pane で takt run を回して
   完了検知まで見守る。「#N を takt で回して」(投入+実行)、「タスクだけ積んでおいて」(投入のみ)、
   「PR に積み増して」(既存ブランチへ追加)で発動。
-  自セッションで直接実装するのは issue-direct スキル。issue 未起票なら先に issue スキルで
+  自セッションで直接実装するのは issue-implement スキル。issue 未起票なら先に issue スキルで
   起票してから積む。PR のマージは対象外。--dry-run で投入直前の計画提示まで。
 ---
 
