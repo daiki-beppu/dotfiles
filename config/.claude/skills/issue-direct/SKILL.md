@@ -1,10 +1,9 @@
 ---
 name: issue-direct
 description: >-
-  GitHub issue を直接実装する(段の列を決める → worktree 作成 → 段ごとに実装 → gh-stack で PR 作成 → CI green まで監視 → fix ループ)。
-  「issue #N を対応して」「親 issue #N をまとめて対応して」「PR作成とCI greenまで」など、issue の実装から PR 準備までを一気通貫で依頼されたときに使う。
-  親 issue を渡すと子 issue を依存順に段として積み、スタック全体が CI green になるまで走り切る。
-  追加のコードレビューやマージは対象外(CI green で完了)。
+  GitHub issue を自セッションで直接実装し、gh-stack で PR 化して全段 CI green まで走り切る。
+  「issue #N を対応して」(単一 issue)、「親 issue #N をまとめて対応して」(子 issue を依存順の段として積む)で発動。
+  takt のキューに任せて別 pane で回すのは takt スキル。レビューとマージは対象外(CI green + ready for review で完了)。
 ---
 
 # issue-direct

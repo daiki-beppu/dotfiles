@@ -1,8 +1,9 @@
 ---
 name: nix
 description: >-
-  macOS (nix-darwin) dotfiles の Nix 環境管理(CLI ツール・GUI アプリ (cask) の追加削除、パッケージ検索、darwin-rebuild、flake update)。「パッケージ追加」「ツール入れたい」「アプリ追加」「brew install」「nix」「darwin-rebuild」の文脈で発動。
-  --search / --add / --remove / --rebuild / --update / --clean / --rollback で操作を明示でき、--dry-run で編集も switch もせず計画だけ出せる。
+  macOS (nix-darwin) dotfiles の Nix 環境管理 — CLI ツール・GUI アプリ(cask)の追加削除、
+  パッケージ検索、darwin-rebuild、flake update。「パッケージ追加」「ツール/アプリ入れたい」
+  「brew install」「darwin-rebuild」の文脈で発動。--dry-run で編集も switch もせず計画だけ提示。
 ---
 
 # Nix 環境管理

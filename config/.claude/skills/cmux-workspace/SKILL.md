@@ -1,6 +1,6 @@
 ---
 name: cmux-workspace
-description: "Work inside the current cmux workspace and terminal. Use for cmux workspace, current workspace, caller surface, panes, surfaces, socket targeting, and non-interfering cmux automation."
+description: "Act inside the caller cmux workspace only — the workspace that invoked this agent. Use for helper panes/surfaces next to the caller terminal (Right-Side Helper Pane), non-interfering automation, and socket targeting; for cross-workspace control, use cmux."
 ---
 
 # cmux Workspace

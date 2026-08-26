@@ -1,8 +1,8 @@
 ---
 name: clean-branch
 description: >-
-  Use when マージ済みの不要ブランチを一括削除したいとき。「ブランチ整理」「マージ済み削除」「branch 掃除」「ブランチ一覧きれいにして」など、ブランチの整理に関わる場面で使用すること。
-  --dry-run で一覧提示だけ、--local / --remote / --worktrees / --merged-only / --include-no-pr で対象を絞れる。
+  マージ済み・不要になったローカル/リモートブランチと worktree 残骸を一括削除する。
+  「ブランチ整理」「branch 掃除」で発動。--dry-run で分類一覧の提示のみ。
 ---
 
 ## Overview
