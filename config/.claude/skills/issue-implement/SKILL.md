@@ -39,7 +39,7 @@ query($owner:String!,$repo:String!,$num:Int!){
 段はブランチで表し、**段ごとに worktree を分けない**(`gh stack` のナビゲーションは同一チェックアウト前提)。subagent も同じ worktree で作業させる(`isolation: worktree` は使わない — 別チェックアウトになりスタックが壊れる)。
 
 - **既存スタックに積む**(blocker の PR がある場合): その PR のブランチを含む worktree を `git worktree list` で特定して使う。1 段目も `gh stack init` でなく `gh stack top` → `gh stack add`。blocker が複数で別スタックに割れる場合は最も密接な 1 本に積み、自明でなければユーザーに確認。
-- **既存 worktree の再利用**: 他クライアントが同じ issue の worktree を作っていることがあるため、新規作成前に `git worktree list` を確認する。あればそのまま使う(`git log --oneline main..HEAD` でベースの古さを見て、必要なら `git merge main`)。
+- **既存 worktree の再利用**: 他クライアントが同じ issue の worktree を作っていることがあるため、新規作成前に `git worktree list` を確認する。あればそのまま使う(`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、ベースが古ければ `git merge main` で追いつかせる)。
 - **新規**: worktree 名はスタック全体の slug、切るブランチは 1 段目の名前にする(後の `gh stack init` が既存ブランチとして adopt する):
 
   ```bash
