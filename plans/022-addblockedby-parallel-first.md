@@ -20,6 +20,9 @@
 - **Depends on**: none
 - **Category**: tech-debt
 - **Planned at**: commit `f9948f8`, 2026-08-26
+- **Revised at**: commit `52e8c98`, 2026-08-26（実行前レビューで Step 3 の棚卸しを
+  訂正: issue-organize の node ID 取得は 2 箇所ではなく 6 箇所。旧 Step 3 のまま
+  実行すると Verify が達成不能で、STOP 条件が即発火する）
 
 ## Why this matters
 
@@ -56,14 +59,19 @@ issue は「直列に置けるものは直列にする」、issue-organize は�
 - 誤って張った依存は `removeBlockedBy` を同じ引数で呼べば外せる
 ```
 
-- node ID 取得の 2 流儀:
-  - `config/.claude/skills/issue/SKILL.md:300-301`:
-    `BLOCKED_ID=$(gh issue view <塞がれる側の番号> --json id --jq .id)`
-  - `config/.claude/skills/issue-organize/SKILL.md:117-118`:
-    `local blocked_id=$(gh api repos/$OWNER/$REPO/issues/$blocked --jq '.node_id')`
-  - issue 側は根拠コメント付き（`:299` 「gh issue view の id がそのまま GraphQL node ID」）。
-    **issue 側の流儀（`gh issue view --json id`）に統一する**（1 コマンドで済み、
-    `$OWNER/$REPO` の解決が不要）
+- node ID 取得の 2 流儀（**2026-08-26 の実行前レビューで棚卸しを訂正**: issue-organize 側は
+  addBlockedBy の 2 行だけでなく、addSubIssue も含め **計 6 箇所すべて**が REST 流儀）:
+  - `config/.claude/skills/issue/SKILL.md:300-301` — `gh issue view <番号> --json id --jq .id`
+    （根拠コメント付き、`:299` 「gh issue view の id がそのまま GraphQL node ID」）
+  - `config/.claude/skills/issue-organize/SKILL.md` は 6 箇所すべてが
+    `gh api repos/$OWNER/$REPO/issues/<番号> --jq '.node_id'`:
+    `:81-82`（addSubIssue の単発例）/ `:97-98`（`add_sub_issue()` ヘルパー）/
+    `:117-118`（`add_blocked_by()` ヘルパー）。加えて `:80` にコメント行 `# node_id 取得`
+  - **issue 側の流儀（`gh issue view --json id`）に issue-organize の 6 箇所すべてを統一する**
+    （1 コマンドで済み、`$OWNER/$REPO` の解決が不要）。addBlockedBy の 2 行だけを直すと
+    issue-organize が**内部で** 2 流儀に割れ、直す前より読み手のノイズが増える
+  - `$OWNER` / `$REPO` の定義（`:24-25`）は**残す**。`:166` の GraphQL
+    `repository(owner:,name:)` が今も使っている
 - `addBlockedBy` mutation 本体は両ファイルでほぼ同一（`issue:304-309` / `issue-organize:119-124`）—
   これは**意図した重複として残す**（各スキルは単独で完結する必要がある。共有 references 化は
   却下: スキル間 `../` 参照は Plan 019 で掃除したばかりの壊れやすい結合）
@@ -83,7 +91,8 @@ issue は「直列に置けるものは直列にする」、issue-organize は�
 **In scope**:
 
 - `config/.claude/skills/issue/SKILL.md` — `:327-342` の姿勢書き換えのみ
-- `config/.claude/skills/issue-organize/SKILL.md` — `:115-124` の node ID 取得の統一のみ
+- `config/.claude/skills/issue-organize/SKILL.md` — `:78-124` の node ID 取得 6 箇所の
+  統一のみ（`:24-25` の `$OWNER`/`$REPO` 定義と `:166` の GraphQL 照会は触らない）
 - `plans/README.md` — 自分の status 行
 
 **Out of scope**:
@@ -123,28 +132,69 @@ Commands の 2 コマンドを実行して同値を確認する。open issue が
 **Verify**: `grep -c '直列に置けるものは直列にする' config/.claude/skills/issue/SKILL.md` → `0`、
 `grep -c '依存が無いものは並列にする' config/.claude/skills/issue/SKILL.md` → `1`
 
-### Step 3: issue-organize/SKILL.md の node ID 取得を統一する
+### Step 3: issue-organize/SKILL.md の node ID 取得 6 箇所を統一する
 
-`config/.claude/skills/issue-organize/SKILL.md:117-118` の
+issue スキル `:299-301` の流儀（`gh issue view --json id`）へ **3 ブロックすべて**を寄せる。
+addBlockedBy の 2 行だけを直すと issue-organize が内部で 2 流儀に割れるので、
+addSubIssue 側も同時に直すこと。
+
+**3-a.** `:80-82`（addSubIssue の単発例）:
+
+```bash
+# node_id 取得
+PARENT_ID=$(gh api repos/$OWNER/$REPO/issues/$PARENT --jq '.node_id')
+CHILD_ID=$(gh api repos/$OWNER/$REPO/issues/$CHILD --jq '.node_id')
+```
+
+を次で置き換える:
+
+```bash
+# node ID 取得(gh issue view の id がそのまま GraphQL node ID)
+PARENT_ID=$(gh issue view "$PARENT" --json id --jq .id)
+CHILD_ID=$(gh issue view "$CHILD" --json id --jq .id)
+```
+
+**3-b.** `:97-98`（`add_sub_issue()` ヘルパー内）:
+
+```bash
+  local parent_id=$(gh api repos/$OWNER/$REPO/issues/$parent --jq '.node_id')
+  local child_id=$(gh api repos/$OWNER/$REPO/issues/$child --jq '.node_id')
+```
+
+を次で置き換える:
+
+```bash
+  local parent_id=$(gh issue view "$parent" --json id --jq .id)
+  local child_id=$(gh issue view "$child" --json id --jq .id)
+```
+
+**3-c.** `:117-118`（`add_blocked_by()` ヘルパー内）:
 
 ```bash
   local blocked_id=$(gh api repos/$OWNER/$REPO/issues/$blocked --jq '.node_id')
   local blocker_id=$(gh api repos/$OWNER/$REPO/issues/$blocker --jq '.node_id')
 ```
 
-を次で置き換える（issue スキル `:299-301` と同じ流儀。コメントも揃える）:
+を次で置き換える:
 
 ```bash
-  # gh issue view の id がそのまま GraphQL node ID
   local blocked_id=$(gh issue view "$blocked" --json id --jq .id)
   local blocker_id=$(gh issue view "$blocker" --json id --jq .id)
 ```
 
-関数内でこれ以降 `$OWNER` / `$REPO` を使う箇所が残っていないかを確認し、残っていなければ
-それらの変数定義（関数の外にある場合は他の用途を確認してから）はそのまま触らない。
+根拠コメントは 3-a に 1 回だけ置く（ヘルパー 2 つには繰り返さない）。
+`$OWNER` / `$REPO` の定義（`:24-25`）は**削除しない** — `:166` の GraphQL
+`repository(owner:,name:)` が引き続き使う。
 
-**Verify**: `grep -c 'node_id' config/.claude/skills/issue-organize/SKILL.md` → `0`
-（他の箇所で `node_id` を使っていたら STOP — このプランの前提より使用箇所が多い）
+**Verify**（3 つとも）:
+
+- `grep -c 'node_id' config/.claude/skills/issue-organize/SKILL.md` → `0`
+- `grep -c 'gh issue view .* --json id --jq .id' config/.claude/skills/issue-organize/SKILL.md` → `6`
+- `grep -n '\$OWNER' config/.claude/skills/issue-organize/SKILL.md` → `:166` の 1 行のみ
+  （`repository(owner: \"$OWNER\", ...)`）。`:24-25` の `OWNER=` / `REPO=` 定義が残っていることも
+  併せて確認する。なお `:33` にはテンプレート用のリテラル `repository(owner: "OWNER", ...)` が
+  あるが変数ではないので対象外
+
 
 ### Step 4: 姿勢の矛盾が残っていないことを横断確認する
 
@@ -171,7 +221,7 @@ grep ゲートが検証を担う。
 
 ## Done criteria
 
-- [ ] Step 2 / Step 3 の grep がすべて期待値どおり
+- [ ] Step 2 の grep 2 本 / Step 3 の grep 3 本がすべて期待値どおり
 - [ ] Step 4 で逆方向の既定を述べる行が 0 件
 - [ ] `bash scripts/check.sh` exit 0
 - [ ] 変更が 2 ファイル + plans/README.md に限られる（`git status`）
@@ -182,7 +232,8 @@ grep ゲートが検証を担う。
 Stop and report back (do not improvise) if:
 
 - Step 1 で 2 流儀の値が一致しない（`gh` の挙動が変わっている — 統一先の選定根拠が崩れる）
-- Step 3 で `node_id` の使用箇所が issue-organize 内に 3 箇所以上ある
+- Step 3 の着手前に `grep -n 'node_id' config/.claude/skills/issue-organize/SKILL.md` が
+  `:80` `:81` `:82` `:97` `:98` `:117` `:118` の 7 行（コメント 1 + 取得 6）以外を返す
   （このプランの現状把握とドリフトしている）
 - 「Current state」の抜粋と実ファイルが一致しない
 
