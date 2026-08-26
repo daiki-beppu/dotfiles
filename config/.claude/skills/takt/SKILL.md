@@ -15,6 +15,8 @@ description: >-
 
 # takt タスク投入・実行
 
+> 最終検証: takt 0.62.0(2026-08-26)。バージョン付きの記述はその版での実測を示す。
+
 ## 概要
 
 起票済み issue を takt のキューへ積み、`--run` が渡されたときだけ続けて回す。
@@ -149,7 +151,7 @@ review 系も `reviewers.yaml` / `design-review.yaml` などとして同じ場�
 ls .takt/workflows/ 2>/dev/null    # プロジェクト固有レーン。無ければ builtin だけが対象
 ls .takt/steps/ 2>/dev/null        # step fragment。レーンではないので投入対象にはならない
 
-# builtin(0.55.1 で 66 本)。言語は .takt/config.yaml の language に対応
+# builtin の一覧(本数は実行結果が正)。言語は .takt/config.yaml の language に対応
 BUILTIN=$(dirname "$(dirname "$(realpath "$(which takt)")")")/lib/node_modules/takt/builtins/ja
 ls "$BUILTIN/workflows/" | sed 's/\.yaml$//'
 cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨順
@@ -177,10 +179,11 @@ gh issue view <N> --json labels --jq '.labels[].name'
 ```
 
 - **`takt:<name>` 形式は workflow の直接指定**。dotfiles は `takt:default-mini` / `takt:lite` /
-  `takt:docs` / `takt:manual` を運用している
+  `takt:docs` / `takt:manual` の 4 ラベルを運用している
 - **`takt:manual` は「takt に積まない・手動実装が妥当」の意思表示**。積む前にユーザーへ確認する
 - **ラベルが指すレーンが実在しないことがある**。workflow 資産を撤去してもラベルは GitHub 側に
-  残るため(実測: dotfiles の `takt:lite` / `takt:docs` が指す `lite` / `docs` は builtin に無い)。
+  残るため(実測: dotfiles では `takt:manual` を除く 3 ラベル ── `default-mini` / `lite` /
+  `docs` ── がいずれも builtin に実在しないレーンを指している)。
   実在一覧に無ければラベルを鵜呑みにせず、内容から選び直して理由を一言添える
 - 汎用ラベル(`bug` / `documentation` / `enhancement`)は役割のヒントに留める。ラベル体系も
   リポジトリごとに違うので `gh label list` で実在を確認してから対応付ける
@@ -209,7 +212,7 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 **builtin だけの場合、選択軸は意図ではなく「対象スタック × 深度」**になる:
 
 - スタック: `frontend` / `backend` / `dual`(両方) / `cli` / `terraform` / 無印(汎用)
-- 深度: `simple-*`(最小) → `*-mini`(軽量) → 無印 → `*-high`(厚い)
+- 深度: `simple-*`(最小) → `*-mini`(軽量) → 無印
 - 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
 - takt / tayk 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
 
@@ -218,17 +221,15 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 - **`simple` 系列が 🚀 Quick Start の先頭に来た**。モデルの判断を信じて orchestration を
   最小化する設計で、`simple` / `simple-mini` + スタック別 5 本
 - **`default-high` / `dual` は Team Leader 委譲をやめて直接実装するようになった**。
-  leader 経路が欲しいときは `takt-default-team-high` を明示する
+  leader 経路が欲しいときは `takt-default-team` を明示する
 - **QA reviewer は撤去された**(`qa-reviewer` persona / `qa` policy / `qa-review` output contract
   が削除され、観点は coding policy に統合)。これらを参照する自作 workflow が残っていれば
   投入先として選ぶ前に facet 参照を張り替える
 
-**callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。builtin にも
-0.55.1 時点で 12 本ある — `development-core` / `mini-core` / `simple-core` / `peer-review` /
-`peer-review-suite-{base,cqrs,frontend,frontend-cqrs}` /
-`merge-readiness-{,dual-,finding-contract-}final-gate` / `review-remediation`。
+**callable sub-workflow は直接投入しない**(他の workflow から呼ばれる部品)。
 `ls builtins/ja/workflows/` には**普通のレーンと並んで出てくる**ので名前だけでは区別できない。
-判別は `subworkflow.callable` を直接見る:
+本数・実名の一覧はここには書かない(takt の更新で黙って増減するため、レシピを毎回実行して
+確認する)。判別は `subworkflow.callable` を直接見る:
 
 ```sh
 cd "$BUILTIN/workflows" && grep -l "callable: true" *.yaml | sed 's/\.yaml$//'
@@ -239,9 +240,8 @@ cd "$BUILTIN/workflows" && grep -l "callable: true" *.yaml | sed 's/\.yaml$//'
 `Configuration error: callable workflow "<name>" must be started from a workflow_call` を投げる。
 つまり**存在しないレーン名と違って積んだ時点では気づけない**ので、ここで確認する。
 
-プロジェクト固有レーンでは `intake` / `impl-review` が該当する(`tayk-intake` /
-`yt-auto-intake` / `yt-auto-impl-review`。ただし `00-automation` では step fragment に移行済みで
-そもそも一覧に出ない)。
+プロジェクト固有レーンでは `intake` / `impl-review` が該当しがち(`00-automation` のように
+step fragment に移行済みのものはそもそも一覧に出ない)。
 
 判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
 混ざる等)は、積む前にどちらで回すか確認する。
@@ -302,7 +302,7 @@ EOF
 なる)。`<<'EOF'` のクォートも外さない。node は takt 同梱のものを使う — nix ラッパーの
 shebang から引くので、**store パスは直書きしない**。
 
-**0.55.1 で 3 つの import パスと引数の形はそのまま通る**(実測)。`SaveEnqueuedTaskFileOptions` は
+**0.62.0 で検証済み**: 3 つの import パスと引数の形はそのまま通る(実測)。`SaveEnqueuedTaskFileOptions` は
 `managedPr` / `shouldPublishBranchToOrigin` / `contextPrNumber` が増えたが、いずれも
 省略時は従来の挙動なので上のスクリプトは変えなくてよい。
 
@@ -459,13 +459,13 @@ shell 内で完結する 1 コマンドの待機はこれに該当しない。
 **この経路でだけ**、出力の行き先が無いのでリダイレクトし、検知は sentinel ファイルで行う。
 
 ```sh
-LOG=/tmp/takt_<slug>.log; DONE=/tmp/takt_<slug>.done; rm -f "$DONE"
+rm -f /tmp/takt_<slug>.done
 
-# Claude Code: run_in_background: true
-takt run > "$LOG" 2>&1; touch "$DONE"
+# Claude Code: run_in_background: true(1 回の Bash 呼び出しに収める。変数は呼び出し間で持ち越されない)
+takt run > /tmp/takt_<slug>.log 2>&1; touch /tmp/takt_<slug>.done
 
 # Codex
-nohup sh -c "takt run > \"$LOG\" 2>&1; touch \"$DONE\"" &
+nohup sh -c 'takt run > /tmp/takt_<slug>.log 2>&1; touch /tmp/takt_<slug>.done' &
 ```
 
 検知は sentinel の出現待ち(`cmux wait-for` は使えない):
@@ -548,7 +548,7 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 - **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
   `Workflow not found` で止まる(積まれない)。ただしフェーズ 2 の判定を省くと、**存在はするが
   意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物
-- **`determineWorkflow` は callable sub-workflow を弾かない**。`development-core` のような部品名を
+- **`determineWorkflow` は callable sub-workflow を弾かない**。callable な部品名を
   渡すと投入は成功し、`takt run` が拾った瞬間に
   `callable workflow "<name>" must be started from a workflow_call` で failed になる。
   実在確認だけでは防げないので、フェーズ 2 の `grep -l "callable: true"` を通す
