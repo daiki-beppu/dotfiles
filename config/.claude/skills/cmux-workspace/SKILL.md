@@ -88,7 +88,7 @@ This means repeated "open it" requests should normally create tabs inside the ex
 cmux identify --json
 ```
 
-Use `--id-format both` on any command when logs or handoffs need stable UUIDs plus human refs. For the rest of the context-inspection commands (`current-workspace`, `list-workspaces`, `list-panes`, `list-pane-surfaces`, `list-panels`), see [references/commands.md](references/commands.md).
+Pass `--id-format both` as a global option **before** the subcommand (`cmux --json --id-format both identify`) when logs or handoffs need stable UUIDs plus human refs. For the rest of the context-inspection commands (`current-workspace`, `list-workspaces`, `list-panes`, `list-pane-surfaces`, `list-panels`), see [references/commands.md](references/commands.md).
 
 ## Workspace-Scoped Actions
 
@@ -107,6 +107,10 @@ Do not send keystrokes, close surfaces, or change focus in other workspaces unle
 ## Moving Surfaces
 
 Pass `--focus false` on `move-surface`; build layouts additively rather than create-then-split. Known papercut: `drag-surface-to-split` resolves the workspace via UI focus and can fail with `ERROR: Surface not found` when the caller workspace is not visually focused (https://github.com/manaflow-ai/cmux/issues/1901, related #3189) — prefer `new-pane` / `new-surface`. Do not call `focus-pane` to recover from a failed move; report and stop. Command arguments: see [references/commands.md](references/commands.md).
+
+## Sidebar State
+
+Attach status, progress, and logs to the current workspace so the sidebar reflects this task. Command arguments: see [references/commands.md](references/commands.md).
 
 ## Contributor Reloads
 
