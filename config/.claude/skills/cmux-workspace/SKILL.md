@@ -86,95 +86,27 @@ This means repeated "open it" requests should normally create tabs inside the ex
 
 ```bash
 cmux identify --json
-cmux current-workspace --json
-cmux list-workspaces --json
-cmux list-panes --workspace "${CMUX_WORKSPACE_ID:-}" --json
-cmux list-pane-surfaces --workspace "${CMUX_WORKSPACE_ID:-}" --json
-cmux list-panels --workspace "${CMUX_WORKSPACE_ID:-}" --json
 ```
 
-Use `--id-format both` when logs or handoffs need stable UUIDs plus human refs:
-
-```bash
-cmux --json --id-format both identify
-```
+Use `--id-format both` on any command when logs or handoffs need stable UUIDs plus human refs. For the rest of the context-inspection commands (`current-workspace`, `list-workspaces`, `list-panes`, `list-pane-surfaces`, `list-panels`), see [references/commands.md](references/commands.md).
 
 ## Workspace-Scoped Actions
 
-Prefer explicit workspace flags even when env vars are set. It makes automation auditable and avoids affecting a focused workspace in another window.
-
-```bash
-# create a new workspace when the user asks for a new task area
-cmux new-workspace --name "debug auth" --cwd "$PWD"
-
-# rename / close (only when explicitly requested)
-cmux rename-workspace --workspace "${CMUX_WORKSPACE_ID:-}" -- "build fix"
-cmux close-workspace --workspace workspace:4
-cmux close-surface --workspace "${CMUX_WORKSPACE_ID:-}" --surface surface:3
-
-# additive layout (safe, no focus side effects beyond the command's own defaults)
-cmux new-pane --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal --direction right
-cmux new-surface --workspace "${CMUX_WORKSPACE_ID:-}" --type terminal
-
-# focus-changing (USER-AFFECTING, only on explicit ask, see Non-Disruptive Automation above)
-cmux select-workspace --workspace workspace:2
-cmux focus-pane --workspace "${CMUX_WORKSPACE_ID:-}" --pane pane:2
-cmux focus-panel --workspace "${CMUX_WORKSPACE_ID:-}" --panel surface:3
-```
+Prefer explicit `--workspace`/`--surface` flags even when env vars are set — it makes automation auditable and avoids affecting a focused workspace in another window. Additive layout verbs (`new-pane`, `new-surface`, `new-workspace`) are safe. Focus-changing verbs (`select-workspace`, `focus-pane`, `focus-panel`) are USER-AFFECTING — only on explicit ask, see Non-Disruptive Automation above. Command arguments: see [references/commands.md](references/commands.md).
 
 ## Caller Terminal
 
-The current terminal is the surface that invoked the agent. Treat it as the safest anchor for relative operations.
+The current terminal is the surface that invoked the agent. Treat it as the safest anchor for relative operations:
 
 ```bash
-# send to the focused terminal in the caller workspace
-cmux send "npm test\n"
-
-# send to the exact caller surface
 cmux send --surface "${CMUX_SURFACE_ID:-}" "git status\n"
-cmux send-key --surface "${CMUX_SURFACE_ID:-}" enter
 ```
 
 Do not send keystrokes, close surfaces, or change focus in other workspaces unless the user asked for that target.
 
 ## Moving Surfaces
 
-Reorder a surface within its pane:
-
-```bash
-cmux move-surface --surface "${CMUX_SURFACE_ID}" --before surface:3
-cmux move-surface --surface "${CMUX_SURFACE_ID}" --after surface:3
-cmux move-surface --surface "${CMUX_SURFACE_ID}" --index 0
-```
-
-Move a surface to another existing pane. Pass `--focus false` to keep the user's current attention put:
-
-```bash
-cmux move-surface --surface surface:240 --pane pane:172 --focus false
-```
-
-Split a surface off into a new pane:
-
-```bash
-cmux drag-surface-to-split --surface surface:240 down
-```
-
-Known papercut: `drag-surface-to-split` currently routes through V1 and resolves the workspace via UI focus, so it can fail with `ERROR: Surface not found` when the caller's workspace is not the visually focused one. Tracked at https://github.com/manaflow-ai/cmux/issues/1901, related to https://github.com/manaflow-ai/cmux/issues/3189. Until that lands, prefer building the layout additively (see Non-Disruptive Automation above) over create-then-split.
-
-Do not call `focus-pane` or `focus-panel` to recover from a failed move. Report the failure and stop.
-
-## Sidebar State
-
-Status, progress, and logs should usually be attached to the current workspace so the sidebar reflects this task.
-
-```bash
-cmux set-status build "running" --workspace "${CMUX_WORKSPACE_ID:-}" --color "#ff9500"
-cmux set-progress 0.4 --label "Building" --workspace "${CMUX_WORKSPACE_ID:-}"
-cmux log --workspace "${CMUX_WORKSPACE_ID:-}" --level info -- "Started build"
-cmux sidebar-state --workspace "${CMUX_WORKSPACE_ID:-}" --json
-cmux clear-status build --workspace "${CMUX_WORKSPACE_ID:-}"
-cmux clear-progress --workspace "${CMUX_WORKSPACE_ID:-}"
-```
+Pass `--focus false` on `move-surface`; build layouts additively rather than create-then-split. Known papercut: `drag-surface-to-split` resolves the workspace via UI focus and can fail with `ERROR: Surface not found` when the caller workspace is not visually focused (https://github.com/manaflow-ai/cmux/issues/1901, related #3189) — prefer `new-pane` / `new-surface`. Do not call `focus-pane` to recover from a failed move; report and stop. Command arguments: see [references/commands.md](references/commands.md).
 
 ## Contributor Reloads
 
