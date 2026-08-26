@@ -106,16 +106,13 @@
   "autoMode": {
     "allow": [
       "$defaults",
-      "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30 > log 2>&1`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only checks with no side effects, used by the takt-issue/takt-review/issue-direct skills",
-      "Detaching a background monitor via `nohup <cmd> > log 2>&1 & echo $! > pidfile`, used by the same skills when the calling CLI has no exit-triggered auto-resume",
+      "Background GitHub Actions status polling for this repo's own PRs via the issue-direct skill's references/watch-pr-actions.sh (wraps `gh run list` / `gh run view`), plus `gh run view <run-id> --log-failed` and manual `gh pr checks <PR#>` — read-only checks with no side effects",
+      "Detaching a background monitor via `nohup <cmd> > log 2>&1 & echo $! > pidfile`, used by the takt / issue-direct skills when the calling CLI has no exit-triggered auto-resume",
       "`kill -0 <pid>` to check whether a previously recorded background process is still alive. Signal 0 only checks existence and does not terminate the process",
-      "Background `takt -q run > log 2>&1` (or `nohup`-wrapped) to execute takt workflows without blocking the foreground, per the takt-issue skill",
       "Merging this repo's own PRs with `gh pr merge <PR#>` (including `--squash` / `--merge` / `--rebase` and `--delete-branch`) once CI is green — the user owns this repo, drives the PR workflow, and authorized this explicitly. Does not extend to `gh pr merge --admin` (bypasses branch protection) or to repos the user does not own",
       "Read-only Nix/nix-darwin inspection in this repo, e.g. `nix flake check`, `nix flake metadata`, `nix eval`, `nix build --dry-run`, and `darwin-rebuild build --flake ~/ghq/github.com/daiki-beppu/dotfiles` — evaluate/build only, no system activation",
       "Activating this repo's own flake with `sudo darwin-rebuild switch`, `nix run nix-darwin -- switch`, or `nh darwin switch`. sudo here is Touch ID (`sudo_local.touchIdAuth`), so the fingerprint prompt at execution time IS the user's per-run approval — a classifier confirmation on top of it adds nothing and only strands the nix skill mid-run. Reversible with `sudo darwin-rebuild switch --rollback`. Does not extend to flakes outside this repo",
-      "Running `takt` workflows for this repo, including backgrounded `takt -q run > log 2>&1` and `nohup`-wrapped variants, per the takt-issue/takt-review skills",
-      "Background GitHub Actions status polling for this repo's own PRs, e.g. `gh pr checks <PR#> --watch --interval 30`, `gh pr checks <PR#>`, and `gh run view <run-id> --log-failed` — read-only with no side effects",
-      "`kill -0 <pid>` to check whether a previously recorded background process is still alive; signal 0 only checks existence and does not terminate the process",
+      "Running `takt` workflows for this repo, including the takt skill's cmux-less fallback of backgrounded / nohup-wrapped `takt run > log 2>&1`",
       "Editing this repo's own `config/.claude/` skills, hooks and settings files (the real files behind the `~/.claude/` symlinks) as ordinary in-repo source edits"
     ],
     "soft_deny": [

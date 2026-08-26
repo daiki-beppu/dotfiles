@@ -40,12 +40,16 @@ description: >-
 
 ```bash
 git fetch --prune --tags
+# デフォルトブランチを解決（master / develop 等のリポジトリでも安全に動くように）
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
 # 全 PR を 1 回で取得（API 節約）
 gh pr list --state all --limit 800 --json number,state,headRefName,mergedAt > /tmp/all_prs.json
-# 対象ブランチ（local + remote, main/HEAD 除外）
+# 対象ブランチ（local + remote, デフォルトブランチ/HEAD 除外）
 { git branch --format='%(refname:short)'
   git branch -r --format='%(refname:short)' | sed 's#^origin/##'; } \
-  | grep -vE '^(origin/?|main|HEAD)$' | grep -v ' -> ' | sort -u > /tmp/branches.txt
+  | grep -vE "^(origin/?|${DEFAULT_BRANCH}|HEAD)$" | grep -v ' -> ' | sort -u > /tmp/branches.txt
 ```
 
 各ブランチを `headRefName` で PR に紐づけ、state で分類する（MERGED > OPEN > CLOSED の優先で代表 state を採用）:
@@ -62,8 +66,11 @@ gh pr list --state all --limit 800 --json number,state,headRefName,mergedAt > /t
 `--merged` で「未マージ」に見えても実体はマージ済みのことが多い。NO_PR・CLOSED は誤削除を避けるため個別に確認:
 
 ```bash
-# main より先行しているユニークコミットと最終更新日
-git log --oneline main..<branch>
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
+# デフォルトブランチより先行しているユニークコミットと最終更新日
+git log --oneline "${DEFAULT_BRANCH}..<branch>"
 git log -1 --format='%ci %s' <branch>
 # 紐づく issue の open/closed
 gh issue view <N> --json state,title
@@ -88,11 +95,14 @@ git worktree prune -v             # 実体ディレクトリが消えた登録�
 各 worktree が安全に消せるかは 3 点で判定する。すべて空なら失われる作業は無い:
 
 ```bash
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+DEFAULT_BRANCH=${DEFAULT_BRANCH#origin/}
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=main
 git worktree list --porcelain | rg '^worktree ' | sed 's/^worktree //' | rg '\.claude/worktrees/' \
 | while read -r w; do
     echo "===== $w"
     git -C "$w" status --porcelain --untracked-files=all   # 未コミット変更・未追跡ファイル
-    git -C "$w" log --oneline main..HEAD                    # main に無いコミット
+    git -C "$w" log --oneline "${DEFAULT_BRANCH}..HEAD"      # デフォルトブランチに無いコミット
   done
 ```
 
@@ -122,7 +132,7 @@ git push origin --delete <branch1> <branch2> <branch3> ...
 
 ## Rules
 
-- **main ブランチには絶対に触れない**
+- **デフォルトブランチ（main / master 等、origin/HEAD が指す先）には絶対に触れない**
 - **マージ判定は PR state を真実とする**（`git branch --merged` は squash マージを取りこぼすため補助的にしか使わない）
 - **OPEN PR のブランチは削除しない**
 - NO_PR のローカル専用ブランチはユニークコミットの有無を確認してから削除（復元は reflog のみ）。`--include-no-pr` を付けても Step 2 の確認は省略しない

@@ -249,19 +249,23 @@ CI を **待たずに** background へ投げる。段番号と PR 番号を控�
 
 CI 監視には同梱の `references/watch-pr-actions.sh` を使う。このスクリプトは PR の head SHA に紐づく `pull_request` の GitHub Actions run を `gh run list` で監視し、Checks API を呼ばない。そのため、リポジトリ限定の fine-grained PAT では `Actions: read`、PR・push 操作には `Contents: write` と `Pull requests: write` があればよい。`gh pr checks` / `gh run watch` は fine-grained PAT で利用できないため使わない。
 
-実行前にクライアント別のスキル配置から監視スクリプトを解決する。
+監視スクリプトの解決と起動は**1 回のシェル呼び出しに収める**(シェル変数は Bash ツールの呼び出し間で持ち越されない。`<PR番号>` は実際の番号をリテラルで埋める):
 
-```bash
-CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
-[ -x "$CI_WATCH" ] || CI_WATCH="$HOME/.claude/skills/issue-direct/references/watch-pr-actions.sh"
-```
+- **Claude Code**: 次を `run_in_background: true` の 1 回の `Bash` 呼び出しで投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green、1=red、8=timeout / run 未検出)
 
-- **Claude Code**: `Bash` の `run_in_background: true` で `"$CI_WATCH" "${PR_NUM}" 30 2400 > /tmp/ci_pr${PR_NUM}.log 2>&1` を投げる(timeout 目安 `2400000ms` = 40 分)。exit 時に自動再呼び出しされるので poll しない。exit code がそのまま合否(0=green、1=red、8=timeout / run 未検出)
+  ```bash
+  CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
+  [ -x "$CI_WATCH" ] || CI_WATCH="$HOME/.claude/skills/issue-direct/references/watch-pr-actions.sh"
+  "$CI_WATCH" "<PR番号>" 30 2400 > "/tmp/ci_pr<PR番号>.log" 2>&1
+  ```
+
 - **Codex / その他 CLI**: 自動再呼び出しが無いため、段ループ中は投げるだけにして、Step 3 でまとめて待つ:
 
   ```bash
-  nohup "$CI_WATCH" "${PR_NUM}" 30 2400 > /tmp/ci_pr${PR_NUM}.log 2>&1 &
-  echo $! > /tmp/ci_pr${PR_NUM}.pid
+  CI_WATCH="$HOME/.agents/skills/issue-direct/references/watch-pr-actions.sh"
+  [ -x "$CI_WATCH" ] || CI_WATCH="$HOME/.claude/skills/issue-direct/references/watch-pr-actions.sh"
+  nohup "$CI_WATCH" "<PR番号>" 30 2400 > "/tmp/ci_pr<PR番号>.log" 2>&1 &
+  echo $! > "/tmp/ci_pr<PR番号>.pid"
   ```
 
 この監視で判定できるのは GitHub Actions の run だけである。外部 CI の required check を使うリポジトリでは fine-grained PAT だけで完全な green 判定はできないため、classic PAT / OAuth 認証へ切り替えるか、外部 CI の専用 API で補完できるまで完了扱いにしない。

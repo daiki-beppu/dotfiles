@@ -192,11 +192,10 @@ CMUX_SOCKET_PATH=/tmp/cmux-debug-<short-tag>.sock cmux identify --json
 
 ## Socket and Access
 
-Use the socket path provided by cmux before falling back to defaults:
-
-```bash
-SOCK="${CMUX_SOCKET_PATH:-/tmp/cmux.sock}"
-```
+Use `CMUX_SOCKET_PATH` when cmux provides it. When it is unset, do NOT export a
+guessed path — the `cmux` CLI auto-discovers its socket (default
+`~/.local/state/cmux/cmux.sock`, plus tagged/debug sockets). A hardcoded wrong
+path turns a transient connection failure into a permanent one.
 
 Socket access can be off, restricted to cmux-spawned processes, or allow all local processes. If a command cannot connect, inspect capabilities before changing settings:
 
