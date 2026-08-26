@@ -18,11 +18,6 @@ GitHub issue を実装し PR 化するスキル。**最終状態は「gh-stack �
 
 **全段 CI green + ready for review 化した時点で完了**とし、追加のコードレビューやマージは行わない。
 
-## When to Use
-
-- 「issue #N を対応して」「issue #N を PR 作成と CI green まで」
-- 「親 issue #N をまとめて対応して」「#N の子 issue を全部やって」
-
 ## 実行スタイル
 
 - **段の実装は subagent に委任し、親は司令塔に徹する**: 段が2つ以上あるとき、実装・CI fix は必ず subagent に渡す。親が自分で書くのは**段が1つだけのとき**。親が握るのは gh-stack 操作 / submit / `gh pr edit` / CI 監視 / 段の進行判定に限る
@@ -168,7 +163,7 @@ fi
 
 `.gitignore` に `.claude/worktrees/` が無ければ main 側で追加してコミットする。
 
-**main を checkout してから作る理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "head"`(= セッションの cwd の HEAD)から分岐する。feature ブランチにいればそこから分岐してしまうため、どのブランチにいるかがそのままベースになる。`git worktree add` も同様にローカル HEAD 基準。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
+**main を checkout してから作る理由**: 理由は CLAUDE.md の worktree 節を参照(他リポジトリでも main から切る)。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
 
 #### 1-c. 実装 policy を解決する
 
@@ -214,47 +209,12 @@ gh stack add "${BRANCH}"
 - `run_in_background`: **`false`(必須)**。既定は background で、指定を忘れると実装完了前に次の段へ進んでスタックが壊れる
 - `isolation`: **指定しない**。worktree isolation は同一 worktree 共有の前提を壊す
 
-プロンプトは次の形にする(`<...>` を実際の値で埋める)。
-
-```text
-git worktree `<worktree の絶対パス>` で GitHub issue #<Ni> を実装してください。
-
-## 前提(厳守)
-- 最初に必ず `cd <worktree の絶対パス>` を実行し、以降のコマンドはすべてこのディレクトリで実行する
-- 正しいブランチ(`<BRANCH>`)は既に checkout 済み。`git checkout` / `git switch` / `git branch` / `gh stack` 系のコマンドは一切実行しない。ブランチを移動するとスタックが壊れる
-- `git push` / `gh pr` 系も実行しない。PR 作成は呼び出し元が行う
-- このスタックの下段には別 issue の変更が既に載っている。それらは前提として使ってよいが、変更してはならない
-
-## 実装対象
-issue #<Ni>: <タイトル>
-
-要件は `gh issue view <Ni> --json title,body,labels` で自分で取得してください。
-
-## 着手前に読むもの(コードを書き始める前に必ず読む)
-- <coding policy の絶対パス>
-- <testing policy の絶対パス>
-
-このリポジトリのコーディング規約であり、**issue の要件と同じ強制力を持つ**。自分の書き癖と食い違ったときは policy に従う。
-
-policy と issue の要件が噛み合わない場合(policy に従うと要件を満たせない / 要件を満たすと policy に反する)は、**どちらを優先するか自分で決めずに** 実装を止め、STATUS: blocked で噛み合わない箇所を具体的に返す。**判断に迷う場合も blocked に倒す**。ここは人間が裁定する領域で、勝手に折り合いを付けた実装を出す方が手戻りが大きい。
-
-## 進め方
-- テストで固定できる挙動は `tdd` スキルを駆動し、赤→緑で1枚ずつ進める。どこを TDD の対象にするか(seam)は実装開始前に決める。設定変更やドキュメント更新のようにテストで固定する対象が無い場合のみ TDD を省く
-- typecheck と、触っている範囲の単体テストはこまめに実行する。フルテストスイートと lint は commit 前に1回
-- issue #<Ni> の要件だけを実装する。気づいた別の改善には手を出さず、下の NOTES に1行書く
-- 完了したら `git add` して commit する(commit まで行う。push はしない)
-
-## 返す内容(この形式のみ。作業ログや差分は返さない)
-STATUS: done | blocked
-FILES: <変更したファイルのパス一覧>
-SUMMARY: <何を実装したか3行以内>
-COMMIT: <コミットの subject>
-NOTES: <スコープ外で気づいたこと。無ければ none>
-```
+プロンプトは [references/subagent-prompts.md](references/subagent-prompts.md) の
+該当テンプレートを**逐語コピー**し、`<...>` を埋めて渡す。委任のたびに必ず開く(記憶で再構成しない)。
 
 **issue 本文を親が読んで埋め込まない。** 番号だけ渡して subagent 側に `gh issue view` させる。親が本文を読むと段数分の要件テキストが親のコンテキストに積み上がり、委任の効果が半減する。policy も同じ理由で**中身ではなくパスだけ**を渡す(1-c で控えた絶対パスをそのまま貼る)。1-c で何も解決できなかった場合は「## 着手前に読むもの」の節ごと省く。
 
-**段が1つだけの場合**は委任せず親が自分で実装する(進め方は上記「## 進め方」と同じ)。往復のコストに見合わないため。この場合は**親自身が着手前に policy を読む**(段が1つなら CI 監視の負荷も軽く、41KB を抱えても司令塔の判断は鈍らない)。
+**段が1つだけの場合**は委任せず親が自分で実装する(進め方は [references/subagent-prompts.md](references/subagent-prompts.md) の実装テンプレート `## 進め方` に従う。**親が自分で実装するときも必ず開く** — tdd スキルの駆動と seam の決定はそこにある)。往復のコストに見合わないため。この場合は**親自身が着手前に policy を読む**(段が1つなら CI 監視の負荷も軽く、41KB を抱えても司令塔の判断は鈍らない)。
 
 subagent が `STATUS: blocked` を返した、あるいは commit が作られていない場合は、**そこで段ループを止める**。理由を添えてユーザーに報告し、そこまでの段は submit 済みのまま残す(上段は下段に依存するため、失敗した段を飛ばして先へ進むことはできない)。
 
@@ -357,40 +317,10 @@ gh run view <run-id> --log-failed             # 失敗ログを取得
 
 **段が2つ以上ある場合は fix も subagent に委任する。** `run_in_background: false`、`isolation` 指定なしは 2-2 と同じ。
 
-```text
-git worktree `<worktree の絶対パス>` で、PR #<PR_NUM>(issue #<Ni>)の CI 失敗を修正してください。
+プロンプトは [references/subagent-prompts.md](references/subagent-prompts.md) の
+該当テンプレートを**逐語コピー**し、`<...>` を埋めて渡す。委任のたびに必ず開く(記憶で再構成しない)。
 
-## 前提(厳守)
-- 最初に必ず `cd <worktree の絶対パス>` を実行し、以降のコマンドはすべてこのディレクトリで実行する
-- 対象ブランチ(`<BRANCH>`)は既に checkout 済み。`git checkout` / `git switch` / `gh stack` 系は一切実行しない
-- `git push` / `gh pr` 系も実行しない
-
-## 失敗している check
-<check 名と、gh run view --log-failed の該当部分>
-
-## 着手前に読むもの(修正を書き始める前に必ず読む)
-- <coding policy の絶対パス>
-- <testing policy の絶対パス>
-- <ai-antipattern policy の絶対パス>
-
-ai-antipattern は**修正を出す前の自己点検基準**として使う。「テストを弱めて通す」「指摘行だけ書き換える」「使われない互換コードを足す」はここで弾かれる。
-
-**CI を通す唯一の道が policy 違反になる場合は、policy を破って通さない。** STATUS: blocked で「何を通すために何を破る必要があるか」を返す(判断に迷う場合も blocked に倒す)。green を優先して規約を崩した修正は、CI が通っていても差し戻しになる。
-
-## 進め方
-- 指摘行だけを直さず「症状 → 根本原因 → 同型箇所 → 修正 → 検証」に分解してから直す
-- 表面的な patch で揉み消さない(テストの削除・スキップ・期待値の書き換えで通すのは不可)
-- 修正が issue #<Ni> のスコープ外(flaky test、既存の壊れ、インフラ起因)だと判断した場合は、直さず STATUS: out-of-scope で返す
-- ローカルで該当テスト・typecheck・lint を通してから commit する(push はしない)
-
-## 返す内容(この形式のみ)
-STATUS: fixed | out-of-scope | blocked
-CAUSE: <根本原因を1〜2行>
-FILES: <変更したファイルのパス一覧>
-COMMIT: <コミットの subject>
-```
-
-段が1つだけの場合は親が自分で直す(進め方は同じ)。
+段が1つだけの場合は親が自分で直す(進め方は [references/subagent-prompts.md](references/subagent-prompts.md) の CI-fix テンプレート `## 進め方` に従う。**親が自分で直すときも必ず開く**)。
 
 #### 3-2. 修正を上段へ伝播させる
 
@@ -425,17 +355,8 @@ worktree はスタックごと残す(PR が未 merge であることに加え、
 ## Rules
 
 - 着手前に**段の列**を確定させる。親 issue なら子 issue を `subIssues` + `blockedBy` の1クエリで取り、トポロジカルソートして線形化する。循環があれば積まずに停止する
-- 実装・修正は必ず worktree 内で行う。repo root で直接編集しない。1スタック = 1 worktree とし、段ごとに worktree を分けない
-- 段が2つ以上なら実装と CI fix を subagent に委任する。`run_in_background: false` を必ず指定し、`isolation: worktree` は使わない(同一 worktree を共有する)。委任先には `git checkout` / `gh stack` / `git push` を禁じる
-- subagent の返した実装を親が読み直して点検しない。品質の担保は各段の TDD と CI であって親の再読ではない
 - 集合外の blocker が `OPEN` でも **PR があればその上に積んで着手する**。PR が無い blocker が残っている場合だけ実装に入らずユーザーに確認する
-- 実装・fix の前に takt の policy を読ませる(実装 = `coding` + `testing`、fix = さらに `ai-antipattern`)。パスは worktree 内で `references/resolve-policy.sh` を1回実行して解決し、プロンプトには**中身ではなくパス**を埋める。親は開かない(段が1つで自分が実装するときだけ読む)。takt 未導入なら省略して進み、スキルは止めない
-- **policy と issue の要件が噛み合わない場合、委任先は独断で優先順位を決めず `blocked` で返す。親も自分で裁定せずユーザーに報告する**(迷う場合も止める側に倒す)。CI green のために policy を破ることは許さない
-- テストで固定できる挙動は `tdd` スキルを駆動する。seam は実装開始前に決める
-- PR は `gh stack submit --auto` で作る。`gh pr create` を直接使わない(段が1つで exit code 9 のときだけ例外)。既定の draft のまま出し、タイトルと本文(`Closes #<Ni>` を含む)は作成後に `gh pr edit` で設定する
 - 段の CI は待たずに background へ投げ、次の段へ進む。ただし**下段が red と分かった時点で段の積み増しを止め、先に fix する**
-- スタックの追随・コンフリクト解消は `gh stack sync` / `gh stack rebase` / `gh stack push` で行い、手で `git merge` / `git rebase` / `git push` しない。下段を直したら `gh stack rebase --upstack` で上段へ伝播させる
 - fix は下の段から順に行う。CI red は表面的な patch で揉み消さず根本原因から直す。fix ループは段ごとに最大 3 周、超過したら人手判断を仰ぐ
 - 段の実装が失敗したらそこで止める。上段は下段に依存するため、失敗した段を飛ばして先へ進まない。そこまでの段は submit 済みのまま残す
 - CI 監視は Checks API 非依存の `references/watch-pr-actions.sh` を background で実行する。親は poll せず、ログは全文表示せず、要約と `gh run view --log-failed` の該当部分だけ読む。外部 CI を使う場合は別の認証または専用 API が無い限り green と判定しない
-- 全段 CI green の確認と ready for review 化で完了とする。レビュー・マージ・worktree 削除は行わない
