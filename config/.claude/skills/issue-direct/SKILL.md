@@ -18,11 +18,6 @@ GitHub issue を実装し PR 化するスキル。**最終状態は「gh-stack �
 
 **全段 CI green + ready for review 化した時点で完了**とし、追加のコードレビューやマージは行わない。
 
-## When to Use
-
-- 「issue #N を対応して」「issue #N を PR 作成と CI green まで」
-- 「親 issue #N をまとめて対応して」「#N の子 issue を全部やって」
-
 ## 実行スタイル
 
 - **段の実装は subagent に委任し、親は司令塔に徹する**: 段が2つ以上あるとき、実装・CI fix は必ず subagent に渡す。親が自分で書くのは**段が1つだけのとき**。親が握るのは gh-stack 操作 / submit / `gh pr edit` / CI 監視 / 段の進行判定に限る
@@ -168,7 +163,7 @@ fi
 
 `.gitignore` に `.claude/worktrees/` が無ければ main 側で追加してコミットする。
 
-**main を checkout してから作る理由**: Claude Code の `--worktree` / EnterWorktree は `worktree.baseRef: "head"`(= セッションの cwd の HEAD)から分岐する。feature ブランチにいればそこから分岐してしまうため、どのブランチにいるかがそのままベースになる。`git worktree add` も同様にローカル HEAD 基準。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
+**main を checkout してから作る理由**: 理由は CLAUDE.md の worktree 節を参照(他リポジトリでも main から切る)。既存 worktree を再利用する場合はベースが古い可能性があるので、`git log --oneline main..HEAD` で想定外のコミットが載っていないか確認し、必要なら `git merge main` で追いつかせる。
 
 #### 1-c. 実装 policy を解決する
 
@@ -425,17 +420,8 @@ worktree はスタックごと残す(PR が未 merge であることに加え、
 ## Rules
 
 - 着手前に**段の列**を確定させる。親 issue なら子 issue を `subIssues` + `blockedBy` の1クエリで取り、トポロジカルソートして線形化する。循環があれば積まずに停止する
-- 実装・修正は必ず worktree 内で行う。repo root で直接編集しない。1スタック = 1 worktree とし、段ごとに worktree を分けない
-- 段が2つ以上なら実装と CI fix を subagent に委任する。`run_in_background: false` を必ず指定し、`isolation: worktree` は使わない(同一 worktree を共有する)。委任先には `git checkout` / `gh stack` / `git push` を禁じる
-- subagent の返した実装を親が読み直して点検しない。品質の担保は各段の TDD と CI であって親の再読ではない
 - 集合外の blocker が `OPEN` でも **PR があればその上に積んで着手する**。PR が無い blocker が残っている場合だけ実装に入らずユーザーに確認する
-- 実装・fix の前に takt の policy を読ませる(実装 = `coding` + `testing`、fix = さらに `ai-antipattern`)。パスは worktree 内で `references/resolve-policy.sh` を1回実行して解決し、プロンプトには**中身ではなくパス**を埋める。親は開かない(段が1つで自分が実装するときだけ読む)。takt 未導入なら省略して進み、スキルは止めない
-- **policy と issue の要件が噛み合わない場合、委任先は独断で優先順位を決めず `blocked` で返す。親も自分で裁定せずユーザーに報告する**(迷う場合も止める側に倒す)。CI green のために policy を破ることは許さない
-- テストで固定できる挙動は `tdd` スキルを駆動する。seam は実装開始前に決める
-- PR は `gh stack submit --auto` で作る。`gh pr create` を直接使わない(段が1つで exit code 9 のときだけ例外)。既定の draft のまま出し、タイトルと本文(`Closes #<Ni>` を含む)は作成後に `gh pr edit` で設定する
 - 段の CI は待たずに background へ投げ、次の段へ進む。ただし**下段が red と分かった時点で段の積み増しを止め、先に fix する**
-- スタックの追随・コンフリクト解消は `gh stack sync` / `gh stack rebase` / `gh stack push` で行い、手で `git merge` / `git rebase` / `git push` しない。下段を直したら `gh stack rebase --upstack` で上段へ伝播させる
 - fix は下の段から順に行う。CI red は表面的な patch で揉み消さず根本原因から直す。fix ループは段ごとに最大 3 周、超過したら人手判断を仰ぐ
 - 段の実装が失敗したらそこで止める。上段は下段に依存するため、失敗した段を飛ばして先へ進まない。そこまでの段は submit 済みのまま残す
 - CI 監視は Checks API 非依存の `references/watch-pr-actions.sh` を background で実行する。親は poll せず、ログは全文表示せず、要約と `gh run view --log-failed` の該当部分だけ読む。外部 CI を使う場合は別の認証または専用 API が無い限り green と判定しない
-- 全段 CI green の確認と ready for review 化で完了とする。レビュー・マージ・worktree 削除は行わない
