@@ -150,7 +150,3 @@ ln -s "/Volumes/<drive>/<dst>" "<src>"
 ## Gotchas
 
 - **ゴミ箱を空にしても df がすぐ減らない**ことがある: APFS の purgeable 領域とローカルスナップショットが原因。`tmutil listlocalsnapshots /` で確認し、スナップショットが残っていれば時間経過で解消される（急ぐ場合のみ `tmutil thinlocalsnapshots` を案内）
-- **`df /` は当てにならない**: APFS のルートは封印スナップショット。実容量は `/System/Volumes/Data` で測る
-- **pnpm store prune の順序**: node_modules 削除 → prune の順でないと store の孤立パッケージが増えない（Step 4 参照）
-- **`nh clean user` は効かない**: 世代が root 所有のため。`sudo nh clean all` が必要（Step 5 参照）
-- **du の入れ子二重計上**: node_modules 内の node_modules を別カウントすると合計が実態より膨らむ。find の `-prune` で防ぐ

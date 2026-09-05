@@ -71,17 +71,7 @@ git fetch origin
   (インタビューでの合意・検証可能な要件・影響範囲)は `issue` スキルに一元化されており、そこを
   迂回すると仕様の出所が消える。`issue` スキル自身が 1 問ずつのインタビューを挟むので、
   起票内容はそこでユーザーと合意される
-- **intake を持つレーンでは issue が実質必須**。takt 本体は issue 番号が無くても
-  `{ exists: false }` を返すだけでエラーにしない(`DefaultSystemStepServices` の `issue_context`)。
-  blocked にするのは workflow 側の規約で、yt-auto-* / tayk-* の intake は「issue 番号を確定
-  できない実行は blocked」を明示している。order.md だけ渡すと 3 回とも blocked →
-  auto_requeue 上限(2/2)で failed する(実装には一切入らない)。builtin の `simple-*` には
-  intake が無いのでこの制約もかからない
-- **intake の組み込み方は 2 通りある**。`kind: workflow_call` で別 workflow を呼ぶ形と、
-  0.55.0 で入った step fragment(`uses: intake` で `.takt/steps/intake.yaml` を展開)の形。
-  **後者は `.takt/workflows/` に出てこない**ので、レーン一覧に `*-intake` が無いことを
-  「intake 無し」と読み違えない(実測: `00-automation` は fragment 形式、
-  `youtube-automation` / `tayk` は workflow 形式)
+- intake は workflow_call または step fragment (`uses: intake`) で組み込まれる。fragment は `.takt/workflows/` に出ないので、一覧だけで intake 無しと判断しない。
 - 新規ブランチで走らせるなら投入前に main を `git pull --ff-only`。takt はクローン元のローカルブランチから
   複製するため、main が origin より遅れているとマージ済みの workflow 定義がクローンに入らず run が壊れる
   (既存ブランチへの積み増しはリモート優先なので影響しない)
@@ -122,24 +112,6 @@ grep -n "^    name: \|^    status: " .takt/tasks.yaml | tail -12
 ならないが、**存在はするが意図と違うレーン**と**存在はするが callable な部品**は黙って積まれる
 (後者は run まで発覚しない。下記)。
 
-実測(2026-08-04 時点):
-
-| リポジトリ | プロジェクト固有レーン | 選択軸 |
-| --- | --- | --- |
-| `~/ghq/github.com/daiki-beppu/tayk` | `tayk-{audit-architecture,audit-runs,feature,fix,intake}` (5) | 意図別 |
-| `~/ghq/github.com/daiki-beppu/youtube-automation` | `yt-auto-*` + `audit-unit-split` | 意図別 |
-| `~/ghq/github.com/daiki-beppu/libecity` | `article-rewrite` / `knowhow-article` | 成果物別 |
-| `~/ghq/github.com/daiki-beppu/{dotfiles,takt,specv}` | 無し(builtin のみ) | スタック × 深度 |
-
-**本数が減ってもレーンの廃止とは限らない**。`youtube-automation` は 2026-08-01 時点で 8 本だったが、
-0.55.0 の step fragment 化で `.takt/steps/` へ移った分だけ `.takt/workflows/` から消えている
-(実測: `intake.yaml` が `.takt/steps/` にあり、各レーンが `uses: intake` で展開している。
-review 系も `reviewers.yaml` / `design-review.yaml` などとして同じ場所にある)。
-**投入対象として選べるレーンが減った**のは事実だが、機能が消えたわけではない。
-
-レーン構成は更新で変わり得るため、表だけで判断せず、
-**作業ディレクトリの `.takt/workflows/` を直接見る**。
-
 ### 実在レーンの確認(毎回やる)
 
 ```sh
@@ -152,10 +124,7 @@ ls "$BUILTIN/workflows/" | sed 's/\.yaml$//'
 cat "$BUILTIN/workflow-categories.yaml"    # カテゴリ別の並びと推奨順
 ```
 
-`.takt/steps/` は 0.55.0 で入った再利用可能な単一ステップ部品(`uses: <name>` で展開される)。
-探索先は `.takt/steps/` / `~/.takt/steps/` / builtin `steps/` / repertoire パッケージの `steps/`
-の 4 か所で、**レーンとしては投入できない**。一覧に出てこない機能がレーンに埋まっていることの
-説明になるので、「思ったより本数が少ない」ときはここを見る。
+step fragment は再利用部品であり、レーンとして投入できない。一覧に無い機能を探す場合は `.takt/steps/` / `~/.takt/steps/` / builtin / repertoire の `steps/` を確認する。
 
 ### 判定順
 
@@ -204,13 +173,7 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 cd "$BUILTIN/workflows" && grep -l "callable: true" *.yaml | sed 's/\.yaml$//'
 ```
 
-**投入は素通りする。落ちるのは run のとき**。`determineWorkflow` は callable を弾かず
-そのまま tasks.yaml に積み(実測)、`WorkflowEngine` の構築時に初めて
-`Configuration error: callable workflow "<name>" must be started from a workflow_call` を投げる。
-つまり**存在しないレーン名と違って積んだ時点では気づけない**ので、ここで確認する。
-
-プロジェクト固有レーンでは `intake` / `impl-review` が該当しがち(`00-automation` のように
-step fragment に移行済みのものはそもそも一覧に出ない)。
+`determineWorkflow` は callable を弾かず、run 時に失敗するため、投入前に上の検査を通す。
 
 判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
 混ざる等)は、積む前にどちらで回すか確認する。
@@ -219,19 +182,6 @@ step fragment に移行済みのものはそもそも一覧に出ない)。
 
 **`takt add` は使わない**。ユーザーに 6 問のプロンプトを手入力させる代わりに、
 takt の内部 API を直呼びして対話ゼロで積む。pane も要らない。
-
-### なぜ CLI ではなく内部 API なのか
-
-`takt add` の対話は**グローバル option では 1 つも埋められない**。`addTask` が読むのは
-`opts.workflow` と `opts.prNumber` だけで、worktree 設定は必ず `promptWorktreeSettings(cwd)`
-から取るため、**`-b` / `--auto-pr` / `--draft` を渡しても捨てられる**。
-
-`TAKT_NO_TTY=1`(`shared/prompt/tty.js` の公式分岐)を立てれば `promptInput` は `null`、
-`confirm` は既定値かパイプ入力を返すので対話ゼロにはなる。だが **`promptInput` はパイプを
-読まないので `Branch name` だけが auto に固定される**(`confirm` にはパイプ経路があるのに
-`promptInput` には無い、takt 側の非対称)。`script(1)` で疑似 TTY を与える手は、入力が
-先読みされて EOF で落ちるため成立しない(実測)。gh-stack 前提で branch を指定する運用では
-どれも足りないので、`saveEnqueuedTaskFile` を直接呼ぶ。
 
 ### 投入
 
@@ -271,10 +221,6 @@ EOF
 なる)。`<<'EOF'` のクォートも外さない。node は takt 同梱のものを使う — nix ラッパーの
 shebang から引くので、**store パスは直書きしない**。
 
-**0.62.0 で検証済み**: 3 つの import パスと引数の形はそのまま通る(実測)。`SaveEnqueuedTaskFileOptions` は
-`managedPr` / `shouldPublishBranchToOrigin` / `contextPrNumber` が増えたが、いずれも
-省略時は従来の挙動なので上のスクリプトは変えなくてよい。
-
 ### この経路で落としてはいけないもの
 
 - **`determineWorkflow` を必ず通す**。`takt add -w` が持っていた実在確認がこれ。省いて
@@ -307,15 +253,8 @@ import が失敗したら**続行せず** [references/fallbacks.md](references/f
 gh pr view <番号> --json headRefName --jq .headRefName
 ```
 
-根拠は 3 点:
-
-- `clone.js::createSharedClone` の分岐順は **リモートに同名ブランチあり → clone して origin から
-  fetch → `checkout -B`** が最優先。メインチェックアウトの HEAD やローカルブランチに依存しないので、
-  メインが別ブランチにいても起点は push 済みの PR HEAD に確定する
-- `postExecution.js` は完了後に `findExistingPr(branch)` を引き、見つかれば新規作成せず
-  **push + PR へのコメント追記**で終わる(`gh pr create` の重複エラーにはならない)
-- `activeTaskTarget.js::findActiveTaskTargetConflict` の競合判定対象は **pending / running のみ**。
-  同じ branch の completed タスクが既にあっても積める
+既存ブランチは push 済みリモート HEAD が起点になる。ローカルの未 push 変更は入らない。
+完了後は既存 PR へ push とコメント追記を行う。同じ branch の pending / running は競合対象だが、completed タスクがあっても積める。
 
 ## フェーズ 4: 検証と申し送り
 
@@ -431,6 +370,8 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 集計してから必要行だけ読む。完了後の報告は status・PR URL・テスト結果・review verdict に絞る。
 
 ## 落とし穴
+
+仕様の根拠やバージョン差異を調べるときは [references/design-history.md](references/design-history.md) を読む。過去の実測であり、投入先の現状確認には使わない。
 
 初見の症状・エラーは対処の前に [references/gotchas.md](references/gotchas.md) を確認する
 (`--pipeline` の 3 段ずれ、report ディレクトリ改名、skills 無効化などが並ぶ)。

@@ -15,7 +15,7 @@ description: >-
 ## Invocation variants
 
 - Bare invocation → 依頼内容から操作を判別し、ファイル編集から `darwin-rebuild switch` まで通す。
-- `--search <キーワード>` → 読み取り専用。実在と正式名を確認して報告するだけで、ファイルは編集しない（「パッケージ検索」）。
+- `--search <キーワード>` → 読み取り専用。実在と正式名を確認して報告するだけで、ファイルは編集しない（「パッケージ追加・削除」）。
 - `--add <名前...>` / `--remove <名前...>` → 3 分類で追加先・削除元を判定して編集し、switch まで行う（「パッケージ追加・削除」）。
 - `--rebuild` → 編集はせず switch だけ実行する（「適用コマンド」）。
 - `--update [<input>]` → `nix flake update` してから switch で適用する（「依存の更新」）。
@@ -33,46 +33,13 @@ description: >-
 
 ## パッケージ追加・削除
 
-### CLI ツール（nixpkgs にあるもの）
+| 分類 | 編集先 | 追加設定 |
+|---|---|---|
+| nixpkgs にある CLI ツール | `nix/packages.nix` の `home.packages` | なし |
+| GUI アプリ | `flake.nix` の `homebrew.casks` | なし |
+| nixpkgs にない CLI ツール | `flake.nix` の `homebrew.brews` | 必要なら `homebrew.taps` に tap を追加 |
 
-`nix/packages.nix` の `home.packages` リストに追加・削除する。
-
-```nix
-home.packages = with pkgs; [
-  gh
-  git
-  ripgrep  # ← 追加
-];
-```
-
-パッケージ名は https://search.nixos.org/packages で検索できる。
-コマンドラインで検索する場合: `nix search nixpkgs <キーワード>`
-
-### GUI アプリ（Homebrew cask）
-
-`flake.nix` の `homebrew.casks` リストに追加・削除する。
-
-```nix
-casks = [
-  "1password"
-  "slack"  # ← 追加
-];
-```
-
-### nixpkgs にない CLI ツール
-
-`flake.nix` の `homebrew.brews` リストに追加する。
-必要なら `homebrew.taps` にも tap を追加する。
-
-```nix
-taps = [
-  "some-org/tap"  # ← tap が必要なら追加
-];
-brews = [
-  "ni"
-  "some-org/tap/some-tool"  # ← 追加
-];
-```
+追加前に `nix search nixpkgs <名前>` または https://search.nixos.org/packages で実在と正式名を確認する。
 
 ## 適用コマンド
 
@@ -111,19 +78,6 @@ nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles
 ```
 
 更新後は `darwin-rebuild switch` で適用する。
-
-## パッケージ検索
-
-```bash
-# nixpkgs からパッケージを検索
-nix search nixpkgs ripgrep
-
-# 結果例:
-# * legacyPackages.aarch64-darwin.ripgrep (14.1.1)
-#   A utility that combines the usability of The Silver Searcher ...
-```
-
-nixpkgs にない場合は `homebrew.brews` に追加する。
 
 ## パス優先順位
 
@@ -164,20 +118,5 @@ gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--
 - 依頼された追加・削除だけを行う(`--add a b c` のように複数指定されたならその分すべて、それ以上は触らない)。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
 - `sudo` を伴うコマンド（`darwin-rebuild switch` / `sudo nh clean`）は事前承認なしで直接実行してよい。sudo は Touch ID 認証で、実行時に出る指紋プロンプトへの応答がユーザーの承認そのもの。ユーザーが不在だと認証できないため、実行する旨を一言伝えてから実行する
 - `nix flake update`（引数なし・全依存更新）は実行前にユーザーの承認を得る（全依存のバージョンが動くため）。特定 input だけの `nix flake update <input>` は、その更新自体が依頼内容なら承認不要
-- パッケージ名を推測で書かない。`nix search nixpkgs <名前>` か search.nixos.org で実在を確認してから追加する
 - `flake.lock` は手動編集しない(`nix flake update` の生成物)
 - rebuild / clean の出力は全文貼らない。成否と、変わった世代・パッケージだけを報告する
-
-## よくある操作の早見表
-
-| やりたいこと | 操作 |
-|-------------|------|
-| CLI ツール追加 | `nix/packages.nix` に追加 → `darwin-rebuild switch` |
-| GUI アプリ追加 | `flake.nix` の `casks` に追加 → `darwin-rebuild switch` |
-| nixpkgs にないツール追加 | `flake.nix` の `brews` に追加 → `darwin-rebuild switch` |
-| パッケージ検索 | `nix search nixpkgs <キーワード>` |
-| 全依存を最新化 | `nix flake update` → `darwin-rebuild switch` |
-| 現在のパッケージ一覧 | `nix/packages.nix` を読む |
-| ロールバック | `sudo darwin-rebuild switch --rollback` |
-| ストア掃除（dry-run） | `nh clean all --dry --keep 1 --keep-since 30d` |
-| ストア掃除（実行） | `sudo nh clean all --keep 1 --keep-since 30d --optimise` |

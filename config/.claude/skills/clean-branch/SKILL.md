@@ -141,6 +141,4 @@ git push origin --delete <branch1> <branch2> <branch3> ...
 
 ## Gotchas
 
-- **`git branch -d` が拒否する**: squash マージ済みブランチは未マージ扱いなので `-d` が失敗する。PR state で MERGED 確認済みなら `-D` で削除してよい
 - **zsh の落とし穴**: `mapfile` は使えない（bash 専用）。配列は `arr=("${(@f)$(cmd)}")` で行分割、要素は `"${arr[@]}"` で展開。`for x in $var` は zsh では単語分割されない（`"${(@f)var}"` か配列を使う）
-- **リモートブランチ一括削除**: `git push origin --delete b1 b2 b3` と複数 ref をまとめて渡せる（push 回数を減らせる）
