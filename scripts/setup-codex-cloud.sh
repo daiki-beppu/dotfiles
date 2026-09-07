@@ -32,7 +32,7 @@ if ! gh pr edit --help 2>/dev/null | grep -q -- '--attach'; then
   "${privileged[@]}" install -m 755 "$download_dir/gh_${gh_version}_linux_${arch}/bin/gh" /usr/local/bin/gh
   # Cloud universal は mise 管理の旧 gh が /usr/local/bin より先にある。
   if command -v mise >/dev/null 2>&1; then
-    mise use --global gh@"$gh_version"
+    mise use --global gh@system
     eval "$(mise env --shell bash)"
   fi
   hash -r
