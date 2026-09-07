@@ -27,9 +27,12 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 `--keep-zshrc` 必須（インストーラに dotfiles 管理の .zshrc を上書きさせない）。
 
-## 4. Vite+ のインストール（任意）
+## 4. Vite+ の確認
 
-Nix 管理外。公式手順（https://viteplus.dev）でインストールすると `~/.vite-plus/env` が生成され、`.zshenv` がガード付きで自動的に読み込む。未インストールの状態でもシェルはエラーなく起動する。
+`darwin-rebuild switch` がグローバル CLI を自動導入する。新しいシェルで
+`command -v vp` と `vp --version` を確認する。Node.js shim は導入せず
+system-first に設定し、既存の Node.js／パッケージマネージャーを継続使用する。
+導入方法と更新手順は README の「PATH 優先順位」「よくある操作」を参照。
 
 ## 5. アプリの初期設定
 
