@@ -24,3 +24,21 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run shellcheck, link, hook and agent-skill checks
         run: bash scripts/check.sh shellcheck links hooks agent-skills
+
+  cloud-evidence:
+    name: Cloud evidence bootstrap and recording
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Bootstrap recording environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/setup-codex-cloud.sh
+      - name: Verify recording from a subsequent shell
+        run: bash scripts/check-codex-cloud-evidence.sh

@@ -12,15 +12,21 @@
 
 ## PR 添付
 
-使用する拡張は [sudosubin/gh-attach](https://github.com/sudosubin/gh-attach)。コマンド名は `gh attach` (`gh-attch` ではない)。`gh attach --help` で利用可能か確認し、未導入なら `gh extension install sudosubin/gh-attach` で導入する。GitHub にログイン済みのブラウザセッション等が必要なため、利用できない環境では原因と動画のローカルパスを報告して PR を draft に保つ。
+GitHub CLI **2.99.0 以上**の標準 `--attach` を使う。`gh --version` と `gh pr edit --help` で確認する。認証は対象リポジトリへの書き込み権限を持つ OAuth トークンまたは classic PAT が必要。fine-grained PAT の対応は公式発表で保証されていないため、添付成功を確認するまでは利用可能と判定しない。拡張やブラウザー Cookie は不要。
+
+既存本文を取得し、`## 動画エビデンス` 欄に確認した操作・期待結果・録画時の commit SHA と、独立した段落の `![](<動画の絶対パス>)` を置く。この欄だけを更新した一時ファイルを渡す:
 
 ```bash
-gh attach "<動画の絶対パス>" -R "<owner/repo>" --json href --jq '.[].href'
+gh pr edit <PR_NUM> -R <owner/repo> --body-file <本文ファイル> --attach "<動画の絶対パス>"
 ```
 
-アップロード成功時に返る URL を PR 本文の `## 動画エビデンス` に独立した行で置き、確認した操作・期待結果と録画時の commit SHA を添える。ローカルパスは添付 URL の代用にしない。既存本文を取得し、この欄だけを更新した一時ファイルを `gh pr edit <PR_NUM> --body-file <本文ファイル>` に渡す。`Closes`、変更説明、検証結果、スタック情報を保持し、再実行でも欄を重複させない。
+本文参照と `--attach` には同じパスを使う。gh が参照をアップロード済み URL に置換し、PR 上で動画プレイヤーとして表示する。`Closes`、変更説明、検証結果、スタック情報を保持し、再実行でも欄を重複させない。
 
-`gh pr view <PR_NUM> --json body,url` で URL が保存されたことを確認し、PR 上で動画が開けることまで確認する。アップロード済み URL は保持し、本文更新だけ失敗した場合は再アップロードせず再利用する。
+`gh pr view <PR_NUM> --json body,url` でローカルパスが添付 URL に置換されたことを確認し、PR 上で動画が開けることまで確認する。失敗時は本文を再取得して添付済みか確認し、既に保存された URL は再利用する。認証・サイズ・通信の問題で添付できない場合は原因と動画のローカルパスを報告して draft に保つ。動画の上限は Free 10 MB、有料プラン 100 MB。GitHub Enterprise Server は未対応。
+
+Cloud では `scripts/setup-codex-cloud.sh` で導入後、独立したエージェントシェルから `scripts/check-codex-cloud-evidence.sh` を実行する。同 bootstrap のブラウザー設定が `~/.config/dotfiles/evidence-browser.json` にあれば、録画時の `playwright-cli open` に `--config="$HOME/.config/dotfiles/evidence-browser.json"` を渡す。録画専用の headless Chromium 設定であり、他のブラウザー設定は変更しない。
+
+出典: [GitHub CLI のメディア添付](https://github.blog/changelog/2026-09-01-github-cli-media-in-issues-pull-requests-and-comments/)、[本文への動画埋め込み](https://docs.github.com/en/github-cli/github-cli/attaching-files-with-github-cli)。
 
 ## 修正後の鮮度
 

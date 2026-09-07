@@ -96,6 +96,25 @@ Cloud に公開するスキル一覧は `config/codex-cloud/skills.txt`、スキ
 `config/.claude/skills/` が正本。bootstrap は対象だけを公式 user scope の
 `~/.agents/skills/` へ symlink するため、Cloud 側にスキルを複製しない。
 
+bootstrap は Ubuntu Linux (amd64 / arm64)、Node.js 18 以上と npm、root または
+非対話 sudo を前提とする。標準 `--attach` 非対応の gh は公式 2.99.0 バイナリを
+checksum 照合して `/usr/local/bin` に導入する。Playwright CLI 0.1.19、対応する
+Chromium・Linux 依存、FFmpeg も導入し、短い WebM 録画と MP4 変換を検証する。
+セットアップとメンテナンスの両方で同じ bootstrap を呼べる。
+
+Cloud の独立したエージェントシェルでも `scripts/check-codex-cloud-evidence.sh` を
+実行し、PATH・ブラウザーキャッシュが後続フェーズで利用可能か確認する。
+録画時は `~/.config/dotfiles/evidence-browser.json` を `playwright-cli open --config=...`
+に指定する。この検証は GitHub にファイルをアップロードしない。
+
+PR 動画添付は gh 標準 `--attach` を使用する。対象リポジトリへの書き込み権限を持つ
+OAuth トークンまたは classic PAT をエージェント段階でも利用可能な `GH_TOKEN`
+環境変数として設定する。Cloud Secrets はセットアップ段階のみなので添付用には不適切。
+fine-grained PAT のメディア添付対応は未保証。ブラウザー Cookie・gh-attach 拡張は不要。
+通信許可には GitHub API とメディアアップロード先が必要で、実際の添付成功を確認するまで
+認証・通信は未検証として扱う。セットアップ成功は動画添付成功を意味しない。
+
+
 ## macOS 設定 (system.defaults)
 
 `flake.nix` で宣言的に管理:

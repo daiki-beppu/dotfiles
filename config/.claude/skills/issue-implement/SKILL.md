@@ -76,7 +76,7 @@ takt 未導入のリポジトリでは何も出力されない(exit 0)。policy 
    PR_NUM=$(gh stack view --json | jq -r '.branches[] | select(.isCurrent) | .pr.number')
    ```
 
-5. **動画エビデンス**: 次段へ移る前に、親が [references/evidence.md](references/evidence.md) に従い、その段の要件と差分から確認シナリオを選び、`evidence-record` で録画して `gh attach` でその段の PR 本文に添付する。ブラウザで確認できる変更が無い段は対象外の理由を本文に記す。
+5. **動画エビデンス**: 次段へ移る前に、親が [references/evidence.md](references/evidence.md) に従い、その段の要件と差分から確認シナリオを選び、`evidence-record` で録画して `gh pr edit --attach` でその段の PR 本文に添付する。ブラウザで確認できる変更が無い段は対象外の理由を本文に記す。
 6. **CI を background へ**: fine-grained PAT では `gh pr checks` / `gh run watch` が使えないため同梱スクリプトで監視する(exit 0=green / 1=red / 8=timeout)。解決と起動は 1 回のシェル呼び出しに収める(変数は呼び出し間で持ち越されない):
 
    ```bash
