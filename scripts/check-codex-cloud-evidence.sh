@@ -5,7 +5,8 @@ for tool in gh node playwright-cli ffmpeg ffprobe; do
   command -v "$tool" >/dev/null || { echo "ERROR: $tool is unavailable" >&2; exit 1; }
 done
 gh --version
-gh pr edit --help | grep -q -- '--attach'
+# 入力を最後まで読み、pipefail 下で gh の SIGPIPE (141) を防ぐ。
+gh pr edit --help | grep -- '--attach' >/dev/null
 playwright-cli --version
 record_dir="$(mktemp -d)"
 session="cloud-evidence-$$"

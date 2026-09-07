@@ -14,7 +14,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # 古い gh は --attach 非対応。公式バイナリを checksum 照合して導入する。
-if ! gh pr edit --help 2>/dev/null | grep -q -- '--attach'; then
+# 入力を最後まで読み、pipefail 下で gh の SIGPIPE (141) を防ぐ。
+if ! gh pr edit --help 2>/dev/null | grep -- '--attach' >/dev/null; then
   case "$(uname -m)" in
     x86_64) arch=amd64 ;;
     aarch64|arm64) arch=arm64 ;;
@@ -38,7 +39,7 @@ if ! gh pr edit --help 2>/dev/null | grep -q -- '--attach'; then
   hash -r
 fi
 # PATH に旧版が先行する場合も検出する。
-gh pr edit --help | grep -q -- '--attach'
+gh pr edit --help | grep -- '--attach' >/dev/null
 
 "${privileged[@]}" apt-get update
 "${privileged[@]}" apt-get install -y ffmpeg
