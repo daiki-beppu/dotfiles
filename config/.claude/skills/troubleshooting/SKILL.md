@@ -1,6 +1,6 @@
 ---
 name: troubleshooting
-description: Diagnoses connection issues for the `chrome-devtools` MCP server running in `--autoConnect` mode. Trigger when `list_pages`, `new_page`, or `navigate_page` fail, when MCP initialization fails, or when the MCP attaches to an unexpected (managed) Chrome instance instead of the user's running Chrome.
+description: Resolve chrome-devtools MCP connection failures only during detailed diagnostics that require that MCP. Applies to its initialization, page discovery/navigation, and wrong-browser attachment in --autoConnect mode. Browser / Computer Use failures do not trigger this skill.
 ---
 
 ## Troubleshooting Wizard (autoConnect mode)
