@@ -31,6 +31,8 @@ let
   });
 in
 {
+  imports = [ ./vite-plus.nix ];
+
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
