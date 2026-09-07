@@ -8,7 +8,7 @@ description: >-
 
 # issue-implement
 
-対象 issue を段(1 issue = 1 ブランチ = 1 PR)の列にし、gh-stack のスタックとして下から積み上げ、**全段 CI green + `gh pr ready` で完了**する。レビュー・マージ・worktree 削除はスコープ外。`gh stack` のコマンド作法・exit code・復旧手順は gh-stack スキルに従う。
+対象 issue を段(1 issue = 1 ブランチ = 1 PR)の列にし、gh-stack のスタックとして下から積み上げ、**全段 CI green + 録画対象の動画を PR に添付 + `gh pr ready` で完了**する。レビュー・マージ・worktree 削除はスコープ外。`gh stack` のコマンド作法・exit code・復旧手順は gh-stack スキルに従う。
 
 ## 1. 段の列を決める
 
@@ -68,15 +68,16 @@ takt 未導入のリポジトリでは何も出力されない(exit 0)。policy 
 各段 `i`(issue `<Ni>`)について:
 
 1. **ブランチ**: 新規スタックの 1 段目は `gh stack init "<BRANCH>"`。それ以外は `gh stack top` してから `gh stack add "<BRANCH>"`(add は topmost でのみ実行できる)。
-2. **実装**: 段が 2 つ以上なら subagent に委任する — `subagent_type: general-purpose`、**`run_in_background: false`(必須。既定の background だと実装完了前に次段へ進みスタックが壊れる)**、`isolation` 指定なし。プロンプトは [references/subagent-prompts.md](references/subagent-prompts.md) を委任のたびに開いて**逐語コピー**し `<...>` を埋める。issue 本文も policy 本文も親は読まず、**番号とパスだけ**渡す。段が 1 つだけなら親が自分で実装する(同ファイルの `## 進め方` に従う — tdd スキルの駆動と seam の決定はそこにある。この場合は policy も親が読む)。`STATUS: blocked` / commit 無しなら段ループを止め、理由を添えてユーザーへ(上段は下段に依存するため失敗段を飛ばして進めない)。
+2. **実装**: 段が 2 つ以上なら subagent に委任する — `subagent_type: general-purpose`、**`run_in_background: false`(必須。既定の background だと実装完了前に次段へ進みスタックが壊れる)**、`isolation` 指定なし。プロンプトは [references/subagent-prompts.md](references/subagent-prompts.md) を委任のたびに開いて**逐語コピー**し `<...>` を埋める。実装委任時は issue 本文も policy 本文も親は読まず、**番号とパスだけ**渡す(録画シナリオの選定時には親も issue 要件を読む)。段が 1 つだけなら親が自分で実装する(同ファイルの `## 進め方` に従う — tdd スキルの駆動と seam の決定はそこにある。この場合は policy も親が読む)。`STATUS: blocked` / commit 無しなら段ループを止め、理由を添えてユーザーへ(上段は下段に依存するため失敗段を飛ばして進めない)。
 3. **submit**: `gh stack submit --auto`(冪等 — 毎段呼んでよい。`gh pr create` はその段をスタック外に落とすため使わない)。PR は draft のまま置く。exit 9(stacked PR 無効)なら、段が 1 つのときだけ `gh pr create --draft` にフォールバックして完了報告に 1 行添え、複数段なら停止してユーザーへ。
-4. **タイトル・本文**: submit 直後に必ず `gh pr edit` で上書きする(`--auto` の自動生成はコミットが 2 個以上になるとブランチ名の humanize に劣化して body が落ちる)。本文は変更の実質のみ + `Closes #<Ni>`。
+4. **タイトル・本文**: submit 直後に必ず `gh pr edit` で上書きする(`--auto` の自動生成はコミットが 2 個以上になるとブランチ名の humanize に劣化して body が落ちる)。本文は変更の実質 + `Closes #<Ni>` + 動画エビデンス。再編集時は既存のエビデンス欄を保持する。
 
    ```bash
    PR_NUM=$(gh stack view --json | jq -r '.branches[] | select(.isCurrent) | .pr.number')
    ```
 
-5. **CI を background へ**: fine-grained PAT では `gh pr checks` / `gh run watch` が使えないため同梱スクリプトで監視する(exit 0=green / 1=red / 8=timeout)。解決と起動は 1 回のシェル呼び出しに収める(変数は呼び出し間で持ち越されない):
+5. **動画エビデンス**: 次段へ移る前に、親が [references/evidence.md](references/evidence.md) に従い、その段の要件と差分から確認シナリオを選び、`evidence-record` で録画して `gh attach` でその段の PR 本文に添付する。ブラウザで確認できる変更が無い段は対象外の理由を本文に記す。
+6. **CI を background へ**: fine-grained PAT では `gh pr checks` / `gh run watch` が使えないため同梱スクリプトで監視する(exit 0=green / 1=red / 8=timeout)。解決と起動は 1 回のシェル呼び出しに収める(変数は呼び出し間で持ち越されない):
 
    ```bash
    CI_WATCH="$HOME/.agents/skills/issue-implement/references/watch-pr-actions.sh"
@@ -85,7 +86,7 @@ takt 未導入のリポジトリでは何も出力されない(exit 0)。policy 
    ```
 
    Claude Code では `run_in_background: true` で投げれば exit 時に自動で再呼び出しされる(poll しない)。Codex 等の自動再呼び出しが無い CLI では `nohup ... & echo $! > /tmp/ci_pr<PR番号>.pid` で投げ、Step 4 でまとめて待つ。監視できるのは GitHub Actions の run のみ — 外部 CI の required check があるリポジトリでは green と判定しない。
-6. **下段の red を検知したら**次段の実装に進まず先に fix する(壊れた土台に積むと後続全段が巻き添えで切り分け不能になる)。
+7. **下段の red を検知したら**次段の実装に進まず先に fix する(壊れた土台に積むと後続全段が巻き添えで切り分け不能になる)。
 
 ## 4. CI 回収 → fix(段ごとに最大 3 周)
 
@@ -111,6 +112,6 @@ gh pr view <PR_NUM> --json mergeable,mergeStateStatus
 
 ## 5. 完了報告
 
-全段 green を確認したら**段ごとに** `gh pr ready <PR_NUM>`(`gh stack submit --open` はスタック全体を ready 化し green でない段まで巻き込むため使わない)。worktree は残す(上に積むとき再利用する。削除は merge 後に clean-branch へ委譲)。
+全段 green と、各段の最終変更に対応する動画添付(または録画対象外の理由)を確認したら**段ごとに** `gh pr ready <PR_NUM>`(`gh stack submit --open` はスタック全体を ready 化し green でない段まで巻き込むため使わない)。worktree は残す(上に積むとき再利用する。削除は merge 後に clean-branch へ委譲)。
 
-報告は結論から: 下段から順の PR 一覧(issue / PR URL / 1 行要約) → 段ごとの CI 結果と fix 周回数 → 直列化の注記 → subagent の NOTES。途中の実況はしない — 着手時に段の列を 1 回提示し、以降は方針が変わったとき(分割提示・blocker 検出・red 検出・fix 突入・停止)だけ短く報告する。subagent の出力は再点検せず、各段の品質担保は TDD と CI に置く。スコープは各 issue の要件のみ — 気づいた別の改善は実装せず報告に 1 行添える。
+報告は結論から: 下段から順の PR 一覧(issue / PR URL / 1 行要約) → 段ごとの動画 URL(または対象外の理由) → 段ごとの CI 結果と fix 周回数 → 直列化の注記 → subagent の NOTES。録画前のステップ提示は evidence-record に従う。それ以外の途中の実況はしない — 着手時に段の列を 1 回提示し、以降は方針が変わったとき(分割提示・blocker 検出・red 検出・fix 突入・停止)だけ短く報告する。subagent の出力は再点検せず、各段の品質担保は TDD と CI に置く。スコープは各 issue の要件のみ — 気づいた別の改善は実装せず報告に 1 行添える。
