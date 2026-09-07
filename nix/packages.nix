@@ -46,6 +46,7 @@ in
     google-cloud-sdk
     gzip
     herdr
+    rclone
     ripgrep
     terraform
     tmux
