@@ -2,7 +2,7 @@
 name: issue-implement
 description: >-
   GitHub issue を実装し、gh-stack で PR 化して CI green + ready for review まで進める。
-  単一 issue の対応、親 issue の子 issue を依存順に実装するときに使う。
+  単一 issue の対応、親 issue の未完了の子 issue 全件を依存順に実装するときに使う。
   takt への投入は takt スキル、マージは別の依頼で扱う。
 ---
 
@@ -12,8 +12,12 @@ GitHub issue の実装を Matt Pocock の `implement` に、ブランチと PR �
 
 ## スタックを用意する
 
-issue 本文、子 issue、GitHub の blocking 関係、既存 PR を確認し、対象を依存順に並べる。
-1 issue = 1 ブランチ = 1 PR とし、対象外の未解決 blocker があれば着手可能な範囲を確認する。
+親 issue が指定されたら、ページネーションを含めて子 issue を全件取得し、未完了の子を全て対象にする。
+明示された対象の限定があればそれに従う。各子の本文、GitHub の blocking 関係、既存 PR を確認し、
+対象一覧を依存順に並べる。1 子 issue = 1 ブランチ = 1 PR として積む。単一 issue は 1 段として扱う。
+
+blocker や循環で進めない子も対象一覧に残し、未対応の理由と依存先を明示する。
+着手可能な子は続け、既存 PR がある子はその作業を再利用して完了条件を確認する。
 
 `gh-stack` スキルを読み、リポジトリの worktree 規約に従って作業場所を用意する。
 既存スタックなら再利用し、新規なら `gh stack init`、上段の追加は `gh stack top` → `gh stack add` を使う。
@@ -45,7 +49,8 @@ conflict と同期の復旧は `gh-stack` に従う。変更された段は CI �
 
 ## 完了
 
-全段の最新 HEAD の CI 成功、conflict なし、動画添付（または対象外の理由）を確認し、
-各 PR を `gh pr ready` で ready にする。未解決の段は draft のまま理由を報告する。
+対象一覧の全件について、最新 HEAD の CI 成功、conflict なし、動画添付（または対象外の理由）を確認し、
+各 PR を `gh pr ready` で ready にするまで継続する。一部の PR が完了しても親 issue 全体の完了とはしない。
+未解決の段は draft に保ち、PR 未作成の子も含めて未対応の issue 番号・理由・blocker を報告する。
 issue / PR URL、検証結果、動画 URL または対象外の理由を報告し、worktree を残す。
 マージと worktree 削除は含めない。
