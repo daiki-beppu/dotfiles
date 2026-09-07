@@ -1,5 +1,6 @@
 # Codex Cloud の user scope に公開する dotfiles 管理スキル。
 issue-implement
+evidence-record
 gh-stack
 goal-setter
 issue
