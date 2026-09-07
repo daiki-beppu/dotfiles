@@ -14,11 +14,10 @@ description: >-
 
 ## 概要
 
-起票済み issue を takt のキューへ積み、`--run` が渡されたときだけ続けて回す。
-**投入は対話ゼロで行い、`takt run` だけを cmux の別 pane で実行する**。
+起票済み issue を takt のキューへ積み、実行依頼があれば完了まで回す。
+**投入は非対話で行い、`takt run` は cmux の別 pane で実行する**（利用できない環境は fallback）。
 
-**bare invocation では `takt run` を回さない**(いつ走らせるかは人間の判断であり、
-積んだ瞬間に走り出す構成もあるため)。回すのは `--run` を明示されたときだけ。
+自然文の「回して」「実行して」は `--run`、「積んでおいて」は投入のみとして扱う。引数も実行意図もない bare invocation は投入のみ。
 
 設計の骨子:
 
@@ -59,7 +58,7 @@ description: >-
 ## フェーズ 1: 前提確認
 
 ```sh
-ls .takt/workflows/                                  # レーン一覧。無ければこのリポジトリは takt 経路ではない
+ls .takt/workflows/ 2>/dev/null                      # 無ければ builtin を確認（フェーズ 2）
 gh issue view <N> --json number,title,body,state,labels
 git fetch origin
 ```
@@ -175,8 +174,7 @@ cd "$BUILTIN/workflows" && grep -l "callable: true" *.yaml | sed 's/\.yaml$//'
 
 `determineWorkflow` は callable を弾かず、run 時に失敗するため、投入前に上の検査を通す。
 
-判定できたら選んだレーンと理由を一言添えて進む。2 つのレーンに割れる issue(バグ修正と機能拡張が
-混ざる等)は、積む前にどちらで回すか確認する。
+判定できたら選んだレーンと理由を一言添えて進む。複数候補があっても仕様と運用文書で決まる場合は選択して進む。候補間で成果やレビュー範囲が変わり、依頼から決められない場合だけ確認する。
 
 ## フェーズ 3: 非対話で積む
 
@@ -272,7 +270,7 @@ running があれば即実行になる旨。
 ## フェーズ 5: cmux の別 pane で回す(`--run`)
 
 `takt run` を前景で回すとエージェントが stdout を読んでしまう。**pane に流して人間が視認し、
-エージェントはログを読まない**のが原則。`--run` が無ければこのフェーズには入らない。
+エージェントはログを読まない**のが原則。実行依頼が無ければこのフェーズには入らない。
 
 ### pane の確保
 
@@ -327,7 +325,7 @@ cmux wait-for takt-<slug> --timeout 7200
 
 - **Claude Code**: この 1 行を `Bash` の `run_in_background: true` で投げる。exit で harness が
   自動再呼び出しするので**こちらから poll しない**。timeout は `3600000ms` 程度
-- **Codex / その他 CLI**: 自動再呼び出しが無いので、同じ 1 行を前景で実行してブロックさせる
+- **Codex / その他 CLI**: ホストの継続可能な実行セッションで待ち、返されたセッション ID から結果を回収する。待機 timeout だけで takt を再起動しない
 
 `cmux wait-for` の性質(いずれも実測):
 
@@ -342,11 +340,11 @@ cmux wait-for takt-<slug> --timeout 7200
 `cmux read-screen` の繰り返し poll。いずれも token を無駄に食う。
 shell 内で完結する 1 コマンドの待機はこれに該当しない。
 
-### cmux 非搭載環境の fallback
+### cmux を利用できない環境の fallback
 
-`CMUX_WORKSPACE_ID` が空 / `cmux` が無いときは
+`CMUX_WORKSPACE_ID` が空、`cmux` が無い、または socket アクセスが拒否されたときは
 [references/fallbacks.md](references/fallbacks.md) の
-「cmux 非搭載環境」に従う(sentinel 検知の 1 コマンド版がある)。
+「cmux を利用できない環境」に従い、継続可能な実行セッションで起動・完了回収する。
 
 ### 完了時の確認
 
@@ -372,6 +370,8 @@ pane の出力を読みたいときは `cmux read-screen --surface <N> --lines 8
 ## 落とし穴
 
 仕様の根拠やバージョン差異を調べるときは [references/design-history.md](references/design-history.md) を読む。過去の実測であり、投入先の現状確認には使わない。
+
+停止や確認が必要な場合は、実際のエラーまたは判断に必要な未決事項と最小の次の行動を示す。スキルの規則が理由なら該当ファイルと規則を示し、明示的なユーザー指示・既存承認と照合する。
 
 初見の症状・エラーは対処の前に [references/gotchas.md](references/gotchas.md) を確認する
 (`--pipeline` の 3 段ずれ、report ディレクトリ改名、skills 無効化などが並ぶ)。

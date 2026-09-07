@@ -28,25 +28,15 @@ cmux send --surface surface:<N> "cd <repo_root> && takt -w <workflow> add \"#<N>
 
 fallback に落ちたことは報告に必ず含める(このスキル側の修正が要るサイン)。
 
-## cmux 非搭載環境
+## cmux を利用できない環境
 
-`CMUX_WORKSPACE_ID` が空、または `cmux` が PATH に無いときは pane を使わず detach する。
-**この経路でだけ**、出力の行き先が無いのでリダイレクトし、検知は sentinel ファイルで行う。
-
-```sh
-rm -f /tmp/takt_<slug>.done
-
-# Claude Code: run_in_background: true(1 回の Bash 呼び出しに収める。変数は呼び出し間で持ち越されない)
-takt run > /tmp/takt_<slug>.log 2>&1; touch /tmp/takt_<slug>.done
-
-# Codex
-nohup sh -c 'takt run > /tmp/takt_<slug>.log 2>&1; touch /tmp/takt_<slug>.done' &
-```
-
-検知は sentinel の出現待ち(`cmux wait-for` は使えない):
+`CMUX_WORKSPACE_ID` が空、`cmux` が PATH に無い、または socket アクセスが拒否された場合は、ホストの継続可能な実行セッションを使う。利用不能な pane の設定変更はこのタスクの前提にしない。
 
 ```sh
-while [ ! -f /tmp/takt_<slug>.done ]; do sleep 30; done; echo done
+takt run > /tmp/takt_<slug>.log 2>&1
 ```
 
-`[ -f ... ]` の単発チェックで次へ進んではならない(実行中のまま後続が走る)。
+- Claude Code は `run_in_background: true`、Codex はセッション ID を返す exec/TTY を使い、同じ実行の完了結果を回収する。大量の stdout は読まず、必要なログだけ抽出する。
+- セッションが実行中なら待機を続ける。応答待ち timeout は失敗・終了の証拠ではない。
+- セッションを回収できないときはプロセスとタスク状態を確認する。古いログや sentinel の存在だけで成功扱い・再起動しない。
+- 完了後の成果確認は SKILL.md の「完了時の確認」に従う。継続実行できる手段が無ければ、投入済み／実行未完了を分けて報告する。
