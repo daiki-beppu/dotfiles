@@ -1,7 +1,7 @@
 ---
 name: chrome-devtools
 description: >-
-  Uses Chrome DevTools via MCP (--autoConnect mode, attaches to the user's running Chrome 144+). Use when debugging web pages, automating browser interactions, analyzing performance, or inspecting network requests.
+  Detailed browser diagnostics via Chrome DevTools MCP (--autoConnect). Use only when the agent's Browser / Computer Use cannot provide the network, JavaScript error, performance, or memory evidence needed for diagnosis. Routine browsing, clicking, typing, and visual checks use the agent's Browser / Computer Use.
 ---
 
 > Note: 本 skill は MCP サーバーが `--autoConnect` モード(既存 Chrome 144+ にアタッチ)で動いている前提。デフォルトの managed モードおよび `--slim` モードには適用されない。
@@ -23,6 +23,10 @@ If `list_pages` returns an empty list, or `new_page`/`navigate_page` fails with 
 
 ## Workflow Patterns
 
+### Diagnostic scope
+
+Identify the diagnostic evidence missing from the agent's Browser / Computer Use before invoking MCP tools. Keep interactions here limited to reproducing the issue and collecting that evidence; return to Browser / Computer Use for routine browser tasks.
+
 ### Efficient data retrieval
 
 - Use `filePath` parameter for large outputs (screenshots, snapshots, traces)
@@ -31,7 +35,7 @@ If `list_pages` returns an empty list, or `new_page`/`navigate_page` fails with 
 
 ### Tool selection
 
-- **Automation/interaction**: `take_snapshot` (text-based, faster, better for automation)
+- **Diagnostic reproduction**: `take_snapshot` for locating elements involved in the issue
 - **Visual inspection**: `take_screenshot` (when the user needs to see visual state)
 - **Additional details**: `evaluate_script` for data not in the accessibility tree
 
