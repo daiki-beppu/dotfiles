@@ -12,6 +12,8 @@
 
 Wayfinder の map 完了後に実装 issue を起票するときは、Matt Pocock の `to-spec` → `to-tickets` の流れに従う。map と決定 ticket を `to-spec` で仕様にまとめ、その仕様を `to-tickets` で実装 ticket に分割して起票する。仕様が既に完成していれば `to-tickets` から進める。各スキルの手順とリポジトリの issue tracker 設定を使い、独自の `issue` スキルは案内・実行しない。
 
+起票時は、実装全体の目的・仕様への参照・完了条件を持つ親 issue を作成し、分割した実装 issue をすべて GitHub のネイティブな sub-issue 関係で紐付ける。同じ実装範囲の親 issue が既にあれば再利用する。各 issue の本文に親へのリンクを記載するだけでは完了とせず、親から全 sub-issue を取得して紐付けを確認し、親と子の URL を報告する。実装 issue 間の blocking 関係も `to-tickets` の分割案に従って設定する。
+
 ### main を最新化してから作業開始
 
 古い main から派生した worktree は、無用な merge conflict と「すでに main に入っている変更の再実装」を引き起こす。前者は事後の `git merge main` で払えるが、**後者は書いてしまった時点で回復できない**（マージ時に「同じことを別の書き方でやっている」コンフリクトとして初めて発覚する）。
