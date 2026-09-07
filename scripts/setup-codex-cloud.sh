@@ -30,6 +30,11 @@ if ! gh pr edit --help 2>/dev/null | grep -q -- '--attach'; then
   (cd "$download_dir" && grep "  $archive\$" checksums.txt | sha256sum --check --strict -)
   tar -xzf "$download_dir/$archive" -C "$download_dir"
   "${privileged[@]}" install -m 755 "$download_dir/gh_${gh_version}_linux_${arch}/bin/gh" /usr/local/bin/gh
+  # Cloud universal は mise 管理の旧 gh が /usr/local/bin より先にある。
+  if command -v mise >/dev/null 2>&1; then
+    mise use --global gh@"$gh_version"
+    eval "$(mise env --shell bash)"
+  fi
   hash -r
 fi
 # PATH に旧版が先行する場合も検出する。

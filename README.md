@@ -98,7 +98,7 @@ Cloud に公開するスキル一覧は `config/codex-cloud/skills.txt`、スキ
 
 bootstrap は Ubuntu Linux (amd64 / arm64)、Node.js 18 以上と npm、root または
 非対話 sudo を前提とする。標準 `--attach` 非対応の gh は公式 2.99.0 バイナリを
-checksum 照合して `/usr/local/bin` に導入する。Playwright CLI 0.1.19、対応する
+checksum 照合して `/usr/local/bin` に導入する。mise がある場合はグローバルの gh 選択も更新する。Playwright CLI 0.1.19、対応する
 Chromium・Linux 依存、FFmpeg も導入し、短い WebM 録画と MP4 変換を検証する。
 セットアップとメンテナンスの両方で同じ bootstrap を呼べる。
 
