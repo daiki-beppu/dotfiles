@@ -8,16 +8,19 @@ Nix + Home Manager ベースの dotfiles 管理リポジトリ。
 - `~/.dotfiles` → このリポジトリへのシンボリックリンク
 - Nix flake でパッケージ管理、darwin-rebuild で適用
 
-## ~/.claude の管理
+## エージェント設定の管理
 
-`~/.claude/` 配下の `CLAUDE.md` / `settings.json` / `hooks/` / `skills/` /
-`statusline-command.sh` は `config/.claude/` 内の実体への symlink
-（それ以外の `sessions/` `projects/` `plugins/` 等は Claude Code 自身が管理する実体）。
+共有スキルの正本は `config/.agents/skills/`。
+`~/.agents/skills/`（Codex）と `~/.claude/skills/`（Claude Code）は、
+Nix の activation でこのディレクトリ全体へリンクする。スキル追加・削除時の同期は不要。
+有効・無効は各エージェントの設定で管理する。
 
-スキル・設定の編集は必ず dotfiles 側（`config/.claude/`）で行う。
-`~/.claude/` を直接書き換えると symlink を実ファイルに置き換えて管理から外れる。
+`~/.claude/` の `CLAUDE.md` / `settings.json` / `hooks/` / `statusline-command.sh` は
+`config/.claude/` 内の実体への symlink。それ以外の実行時データは Claude Code が管理する。
 
-Codex の user scope スキルは `~/.agents/skills/` に置く。dotfiles 管理分は
-`scripts/sync-agent-skills.sh` が `config/.claude/skills/` の同じ実体へ symlink し、
-旧Codex専用スキルディレクトリは使用しない。Codex Cloud で公開するサブセットは
-`config/codex-cloud/skills.txt` を正とする。
+スキルは `config/.agents/skills/`、設定は `config/.claude/` 側で編集する。
+ホーム側の symlink を実ファイルに置き換えない。
+外部 installer のスキルは共通ディレクトリで保持し、ローカルの Git exclude で追跡対象から外す。
+
+Codex Cloud で公開するサブセットは `config/codex-cloud/skills.txt` を正とし、
+`scripts/sync-agent-skills.sh --manifest` で対象のみリンクする。

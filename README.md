@@ -59,12 +59,12 @@ dotfiles/
 │   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
 │   ├── .takt/             # takt グローバル設定（~/.takt/config.yaml に symlink）
 │   │   └── config.yaml    # カスタム workflow は各プロジェクトの .takt/ で管理
+│   ├── .agents/skills/    # 共通スキルの正本（Codex / Claude Code）
 │   └── .claude/           # Claude Code 設定
 │       ├── CLAUDE.md
 │       ├── settings.json
 │       ├── statusline-command.sh
-│       ├── hooks/
-│       └── skills/
+│       └── hooks/
 ├── docs/
 │   ├── manual-setup.md         # 手動設定ガイド
 │   └── takt-usage-baseline.md  # takt 運用状況のベースライン記録
@@ -84,6 +84,18 @@ dotfiles/
 | 全依存を最新化 | `nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
 | ロールバック | `sudo darwin-rebuild switch --rollback` |
 
+## 共通スキル
+
+`config/.agents/skills/` を正本として、Nix の activation が `~/.agents/skills/` と
+`~/.claude/skills/` を同じディレクトリへリンクする。追加・削除ごとの同期は不要。
+有効・無効は Claude Code の `skillOverrides` と Codex の `skills.config` で個別に管理する。
+
+旧構成から初めて切り替える場合は、既存 `~/.agents/skills/` 内の外部スキルを
+正本へ引き継ぎ、同名の衝突がないことを確認してから activation を実行する。
+旧 `config/.claude/skills/` 内の未追跡スキルも確認する。
+外部 installer のファイルはローカルの `.git/info/exclude` で追跡から除外する。
+既存のリンク・ディレクトリは activation が `.backup-before-link` として退避する。
+
 ## Codex Cloud
 
 Codex Cloud では dotfiles を clone した後、次の共通 bootstrap を実行する。
@@ -93,7 +105,7 @@ Codex Cloud では dotfiles を clone した後、次の共通 bootstrap を実�
 ```
 
 Cloud に公開するスキル一覧は `config/codex-cloud/skills.txt`、スキルの実体は
-`config/.claude/skills/` が正本。bootstrap は対象だけを公式 user scope の
+`config/.agents/skills/` が正本。bootstrap は対象だけを公式 user scope の
 `~/.agents/skills/` へ symlink するため、Cloud 側にスキルを複製しない。
 
 bootstrap は Ubuntu Linux (amd64 / arm64)、Node.js 18 以上と npm、root または

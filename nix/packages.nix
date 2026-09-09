@@ -229,13 +229,12 @@ in
     link_force "${dotfilesDir}/.claude/settings.json" "$HOME/.claude/settings.json"
     link_force "${dotfilesDir}/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
-    link_force "${dotfilesDir}/.claude/skills" "$HOME/.claude/skills"
-
-    # Agent skills
-    # Claude / Codex 共通の正本は config/.claude/skills。Codex の公式 user scope
-    # ~/.agents/skills には共通同期スクリプトで個別 symlink を作り、他 installer が
-    # 管理する skill を保護したまま dotfiles 管理分だけを同期する。
-    bash "${dotfilesDir}/../scripts/sync-agent-skills.sh"
+    # 共通スキル: ディレクトリ全体を共有するため、追加・削除時の同期は不要。
+    # 初回移行では既存 ~/.agents/skills の外部スキルを正本へ引き継いでから適用する。
+    # link_force は既存ディレクトリも退避する。
+    mkdir -p "$HOME/.agents"
+    link_force "${dotfilesDir}/.agents/skills" "$HOME/.agents/skills"
+    link_force "${dotfilesDir}/.agents/skills" "$HOME/.claude/skills"
 
     # Codex
     # グローバル規約の実体は config/.claude/CLAUDE.md 1 枚。

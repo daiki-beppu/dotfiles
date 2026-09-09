@@ -46,18 +46,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/sync-codex-skills.sh",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   },
   "worktree": {
@@ -113,12 +101,12 @@
       "Read-only Nix/nix-darwin inspection in this repo, e.g. `nix flake check`, `nix flake metadata`, `nix eval`, `nix build --dry-run`, and `darwin-rebuild build --flake ~/ghq/github.com/daiki-beppu/dotfiles` — evaluate/build only, no system activation",
       "Activating this repo's own flake with `sudo darwin-rebuild switch`, `nix run nix-darwin -- switch`, or `nh darwin switch`. sudo here is Touch ID (`sudo_local.touchIdAuth`), so the fingerprint prompt at execution time IS the user's per-run approval — a classifier confirmation on top of it adds nothing and only strands the nix skill mid-run. Reversible with `sudo darwin-rebuild switch --rollback`. Does not extend to flakes outside this repo",
       "Running `takt` workflows for this repo, including the takt skill's cmux-less fallback of backgrounded / nohup-wrapped `takt run > log 2>&1`",
-      "Editing this repo's own `config/.claude/` skills, hooks and settings files (the real files behind the `~/.claude/` symlinks) as ordinary in-repo source edits"
+      "Editing this repo's own `config/.agents/skills/` skills and `config/.claude/` hooks and settings files (the real files behind the `~/.claude/` symlinks) as ordinary in-repo source edits"
     ],
     "soft_deny": [
       "$defaults",
       "Nix store destruction beyond the current session's build artifacts, e.g. `nix-collect-garbage -d`, `nix store gc`, and `sudo nix-collect-garbage`",
-      "Writing directly into `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/hooks/` or `~/.claude/skills/` — these are symlinks into `config/.claude/`, and writing through them can replace the symlink with a real file and drop the file out of dotfiles management"
+      "Writing directly into `~/.claude/CLAUDE.md`, `~/.claude/settings.json`, `~/.claude/hooks/` or `~/.claude/skills/` — these are symlinks into `config/.claude/` or `config/.agents/skills/`, and writing through them can replace the symlink with a real file and drop the file out of dotfiles management"
     ],
     "environment": [
       "### Org-wide",
@@ -141,10 +129,10 @@
       "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
       "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment. Additionally, this repo applies host-level macOS/system state via `darwin-rebuild switch` / `nix run nix-darwin -- switch` — treat those applies as mutating the local machine's system configuration",
       "### User-specific",
-      "**Primary use of Claude Code**: software development — maintaining a personal Nix + nix-darwin + Home Manager dotfiles repo, including `config/.claude/` skills and settings that are symlinked into `~/.claude/`",
+      "**Primary use of Claude Code**: software development — maintaining a personal Nix + nix-darwin + Home Manager dotfiles repo, including `config/.agents/skills/` skills and `config/.claude/` settings that are symlinked into `~/.claude/`",
       "**Trusted repo**: `/Users/mba/ghq/github.com/daiki-beppu/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
       "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `ni`/`nr`/`nlx` (package-manager wrappers), `codex`",
-      "**Routine under `config/.claude/` prefix**: edits to skills, hooks, settings and `CLAUDE.md` live in `config/.claude/` in this repo and are symlinked into `~/.claude/`; editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
+      "**Routine under `config/.claude/` prefix**: edits to skills live in `config/.agents/skills/`; hooks, settings and `CLAUDE.md` live in `config/.claude/` in this repo and are symlinked into `~/.claude/`; editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
     ]
   }
 }

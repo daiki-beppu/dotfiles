@@ -4,7 +4,7 @@
 
 指示した操作を [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) の `page.screencast` で録画し、**ステップタイトル付き・疑似カーソル/クリック強調つき**の動画にします。出力（スクリプトと動画）は `~/Downloads/evidence-record-<timestamp>/` にまとめて置くので、リポジトリに誤ってコミットされません。
 
-> このディレクトリは [dninomiya/evidence-record](https://github.com/dninomiya/evidence-record)（MIT）を dotfiles にベンダリングしたものです。dotfiles では `config/.claude/skills/` が `~/.claude/skills/` に symlink されるため、追加の導入手順は不要（このリポジトリを pull するだけで全プロジェクトから使える）。
+> このディレクトリは [dninomiya/evidence-record](https://github.com/dninomiya/evidence-record)（MIT）を dotfiles にベンダリングしたものです。dotfiles では `config/.agents/skills/` が `~/.claude/skills/` に symlink されるため、追加の導入手順は不要（このリポジトリを pull するだけで全プロジェクトから使える）。
 
 ## 前提
 
