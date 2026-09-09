@@ -16,8 +16,8 @@ result
 result-*
 
 # skill-creator の評価成果物（workspace）は追跡しない
-config/.claude/skills/*-workspace/
-!config/.claude/skills/cmux-workspace/
+config/.agents/skills/*-workspace/
+!config/.agents/skills/cmux-workspace/
 
 # Python テスト実行時のキャッシュ
 __pycache__/
@@ -31,7 +31,7 @@ __pycache__/
 .worktrees/
 
 # Skills CLI (npx skills add) が ~/.claude/skills 経由で置く外部管理スキル
-# (~/.claude/skills は config/.claude/skills への symlink なので、
+# (~/.claude/skills は config/.agents/skills への symlink なので、
 #  CLI のインストール実体がリポジトリ内に未追跡エントリとして現れる)
-config/.claude/skills/session-title-refresh
-config/.claude/skills/session-title-refresh-codex
+config/.agents/skills/session-title-refresh
+config/.agents/skills/session-title-refresh-codex

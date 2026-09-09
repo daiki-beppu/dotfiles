@@ -177,7 +177,8 @@ check_agent_skills() {
     "$tmp_dir/external-source" \
     "$tmp_dir/legacy/external-real"
   ln -s "$tmp_dir/external-source" "$tmp_dir/destination/external-link"
-  ln -s "$REPO_ROOT/config/.claude/skills/issue-implement" "$tmp_dir/legacy/issue-implement"
+  ln -s "$REPO_ROOT/config/.claude/skills/removed-skill" "$tmp_dir/destination/removed-skill"
+  ln -s "$REPO_ROOT/config/.agents/skills/issue-implement" "$tmp_dir/legacy/issue-implement"
 
   AGENT_SKILLS_DIR="$tmp_dir/destination" \
     LEGACY_AGENT_SKILLS_DIR="$tmp_dir/legacy" \
@@ -195,6 +196,10 @@ check_agent_skills() {
     }
   done
 
+  [ ! -L "$tmp_dir/destination/removed-skill" ] || {
+    echo "STALE: old source link was not removed" >&2
+    return 1
+  }
   [ -d "$tmp_dir/destination/external-real" ] || {
     echo "REMOVED: sync replaced an externally managed skill directory" >&2
     return 1
@@ -217,27 +222,20 @@ check_agent_skills() {
     return 1
   fi
 
-  # --- no-manifest mode: skillOverrides "off" skills must be excluded ---
-  mkdir -p "$tmp_dir/src/keep-me" "$tmp_dir/src/off-me" "$tmp_dir/dest2"
-  printf -- '---\nname: keep-me\ndescription: t\n---\n' > "$tmp_dir/src/keep-me/SKILL.md"
-  printf -- '---\nname: off-me\ndescription: t\n---\n' > "$tmp_dir/src/off-me/SKILL.md"
-  printf '{"skillOverrides":{"off-me":"off","keep-me-extra":"off"}}\n' > "$tmp_dir/settings.json"
-  ln -s "$tmp_dir/src/off-me" "$tmp_dir/dest2/off-me"   # 既存リンクが掃除されることも見る
-
-  DOTFILES_SKILLS_DIR="$tmp_dir/src" \
-  AGENT_SKILLS_DIR="$tmp_dir/dest2" \
-  LEGACY_AGENT_SKILLS_DIR="$tmp_dir/no-legacy" \
-  DOTFILES_SETTINGS_FILE="$tmp_dir/settings.json" \
-    bash scripts/sync-agent-skills.sh
-
-  [ -L "$tmp_dir/dest2/keep-me" ] || {
-    echo "MISSING: no-manifest sync did not link an enabled skill (exact-match regression? see keep-me-extra)" >&2
+  # Cloud-only sync must reject local use and directory links before modifying them.
+  if AGENT_SKILLS_DIR="$tmp_dir/destination" bash scripts/sync-agent-skills.sh; then
+    echo "ERROR: sync accepted a missing manifest" >&2
     return 1
-  }
-  [ ! -e "$tmp_dir/dest2/off-me" ] || {
-    echo "STALE: skillOverrides=off skill is still linked" >&2
+  fi
+  mkdir -p "$tmp_dir/shared"
+  ln -s "$tmp_dir/shared" "$tmp_dir/local-skills"
+  if AGENT_SKILLS_DIR="$tmp_dir/local-skills" \
+    bash scripts/sync-agent-skills.sh --manifest config/codex-cloud/skills.txt; then
+    echo "ERROR: Cloud sync accepted a shared local directory" >&2
     return 1
-  }
+  fi
+  [ -z "$(ls -A "$tmp_dir/shared")" ] || return 1
+
 }
 
 # ---------------------------------------------------------------------------

@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
-# dotfiles を正本として、Codex の公式 user scope (~/.agents/skills) へ
-# スキルディレクトリの symlink を同期する。
+# Codex Cloud 用: manifest のスキルだけを user scope にリンクする。
+# ローカルは Nix が共通ディレクトリ全体をリンクする。
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE_DIR="${DOTFILES_SKILLS_DIR:-$REPO_ROOT/config/.claude/skills}"
+SOURCE_DIR="${DOTFILES_SKILLS_DIR:-$REPO_ROOT/config/.agents/skills}"
+PREVIOUS_SOURCE_DIR="$REPO_ROOT/config/.claude/skills"
 DEST_DIR="${AGENT_SKILLS_DIR:-$HOME/.agents/skills}"
 LEGACY_DIR="${LEGACY_AGENT_SKILLS_DIR:-${CODEX_HOME:-$HOME/.codex}/skills}"
-SETTINGS_FILE="${DOTFILES_SETTINGS_FILE:-$REPO_ROOT/config/.claude/settings.json}"
 MANIFEST=""
 
 usage() {
   cat <<'EOF'
-Usage: sync-agent-skills.sh [--manifest <path>]
+Usage: sync-agent-skills.sh --manifest <path>
 
-Without --manifest, links every non-symlink skill managed by dotfiles, except skills set to "off" in skillOverrides.
-With --manifest, links only the listed skill names.
+Links only the listed skills for Codex Cloud. Local skills use Nix directory links.
 EOF
 }
 
@@ -38,10 +37,10 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+[ -n "$MANIFEST" ] || { usage >&2; exit 2; }
+[ ! -L "$DEST_DIR" ] || { echo "ERROR: refusing to sync into a shared directory symlink: $DEST_DIR" >&2; exit 1; }
 [ -d "$SOURCE_DIR" ] || { echo "ERROR: skill source not found: $SOURCE_DIR" >&2; exit 1; }
-if [ -n "$MANIFEST" ]; then
-  [ -f "$MANIFEST" ] || { echo "ERROR: manifest not found: $MANIFEST" >&2; exit 1; }
-fi
+[ -f "$MANIFEST" ] || { echo "ERROR: manifest not found: $MANIFEST" >&2; exit 1; }
 
 mkdir -p "$DEST_DIR"
 desired_file="$(mktemp)"
@@ -64,31 +63,13 @@ add_skill() {
   printf '%s\n' "$name" >> "$desired_file"
 }
 
-if [ -n "$MANIFEST" ]; then
-  while IFS= read -r line || [ -n "$line" ]; do
-    line="${line%%#*}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    [ -n "$line" ] || continue
-    add_skill "$line"
-  done < "$MANIFEST"
-else
-  disabled=""
-  if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
-    disabled="$(jq -r '.skillOverrides // {} | to_entries[] | select(.value == "off") | .key' "$SETTINGS_FILE")"
-  fi
-  for source in "$SOURCE_DIR"/*; do
-    [ -d "$source" ] || continue
-    [ -L "$source" ] && continue
-    [ -f "$source/SKILL.md" ] || continue
-    name="$(basename "$source")"
-    if printf '%s\n' "$disabled" | grep -Fxq "$name"; then
-      echo "[sync-agent-skills] skipped (off in skillOverrides): $name" >&2
-      continue
-    fi
-    add_skill "$name"
-  done
-fi
+while IFS= read -r line || [ -n "$line" ]; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  [ -n "$line" ] || continue
+  add_skill "$line"
+done < "$MANIFEST"
 
 while IFS= read -r name; do
   source="$SOURCE_DIR/$name"
@@ -106,7 +87,7 @@ for target in "$DEST_DIR"/*; do
   [ -L "$target" ] || continue
   resolved="$(readlink "$target")"
   case "$resolved" in
-    "$SOURCE_DIR"/*)
+    "$SOURCE_DIR"/*|"$PREVIOUS_SOURCE_DIR"/*)
       name="$(basename "$target")"
       if ! grep -Fxq "$name" "$desired_file"; then
         rm "$target"
@@ -123,7 +104,7 @@ if [ -d "$LEGACY_DIR" ] && [ "$LEGACY_DIR" != "$DEST_DIR" ]; then
     [ -L "$target" ] || continue
     resolved="$(readlink "$target")"
     case "$resolved" in
-      "$SOURCE_DIR"/*)
+      "$SOURCE_DIR"/*|"$PREVIOUS_SOURCE_DIR"/*)
         rm "$target"
         echo "[sync-agent-skills] removed legacy link: $(basename "$target")" >&2
         ;;
