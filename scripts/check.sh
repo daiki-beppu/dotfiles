@@ -217,7 +217,7 @@ check_agent_skills() {
     return 1
   }
 
-  if rg -n '[.]codex/skills' config nix scripts README.md CLAUDE.md; then
+  if git grep -n -E '[.]codex/skills' -- config nix scripts README.md CLAUDE.md; then
     echo "ERROR: legacy Codex skill path remains in active configuration" >&2
     return 1
   fi
