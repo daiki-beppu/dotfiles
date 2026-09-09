@@ -7,11 +7,6 @@ description: >
   branch layers, dependent PRs, or gh stack; or when a stack is checked out.
 metadata:
   author: github
-  github-path: skills/gh-stack
-  github-pinned: 14fc42ed9b6c376a53b2f999f138d3bd26dac546
-  github-ref: refs/heads/main
-  github-repo: https://github.com/github/gh-stack
-  github-tree-sha: c29ba25c9c07534c27f1a3253bd0ca3846c4f8c7
   version: "0.1.0"
 ---
 
@@ -170,8 +165,6 @@ an ancestor of the branch.
 - There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, but it is
   TUI-only — restructure with `unstack` then `init` instead.
 - PR titles and bodies are auto-generated. Use `gh pr edit` afterwards to change them.
-- `checkout <branch-name>` resolves against local stacks only. Use a stack or PR number to pull a
-  stack down from GitHub.
 
 ## More detail
 
