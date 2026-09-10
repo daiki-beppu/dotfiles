@@ -49,7 +49,7 @@ conflict と同期の復旧は `gh-stack` に従う。変更された段は CI �
 
 ## 完了
 
-対象一覧の全件について、最新 HEAD の CI 成功、conflict なし、動画添付（または対象外の理由）を確認し、
+対象一覧の全件について、最新 HEAD の CI 成功、conflict なし、PR 本文の動画 URL と再生（または対象外の理由）を確認し、
 各 PR を `gh pr ready` で ready にするまで継続する。一部の PR が完了しても親 issue 全体の完了とはしない。
 未解決の段は draft に保ち、PR 未作成の子も含めて未対応の issue 番号・理由・blocker を報告する。
 issue / PR URL、検証結果、動画 URL または対象外の理由を報告し、worktree を残す。
