@@ -1,91 +1,29 @@
-# --organize: 既存 open issue 群の再構造化
+# 既存 issue 群の整理
 
-open な issue を sub-issue 階層 + `addBlockedBy` 依存チェーン + `[category]` プレフィックスに整理する。依存チェーンはそのまま gh-stack のスタックの積み順になる(1 段目 = blocker を持たない子)。
+`--organize` のときに読む。依頼された issue 群の親子構造・依存関係・カテゴリを整理する。実装や無関係なラベル整理は含めない。
 
-バッチは subagent に分散せず自分で回す(`gh` 呼び出しの列挙であり、委任するとユーザー承認の所在が分裂する)。スコープは依頼されたカテゴリの整理のみ — ついでのラベル整理・本文の書き換えはしない。
+## 現状と変更案
 
-## 1. 現状を取り、方針を合意する
+対象の open issue と既存の親子・blocking 関係をページネーション込みで取得する。`epic` ラベルの有無だけで親を探し終えない。
 
-```bash
-gh issue list --state open --limit 200 --json number,title,labels \
-  --jq '.[] | "\(.number)\t\(.title)\t\(.labels | map(.name) | join(","))"'
-```
+カテゴリと選定基準、親の再利用／作成、子と依存の対応を具体化する。指定や既存の規約で決まる事項は再確認しない。未決の分類が結果を変える場合だけ質問する。`--dry-run` は変更案の提示まで。
 
-既存の sub-issue 構造:
+## 親子と依存
 
-```bash
-gh api graphql -f query='
-query($owner:String!,$repo:String!){
-  repository(owner:$owner,name:$repo){
-    issues(first:20,states:OPEN,labels:["epic"]){
-      nodes{ number title subIssues(first:50){ totalCount nodes{ number title state } } }
-    }
-  }
-}' -F owner=<owner> -F repo=<repo>
-```
+同じ範囲の親があれば再利用する。新規の親には全体の目的・仕様への参照・完了条件を置き、子の詳細は複製しない。native sub-issue の接続には [parent.md](parent.md) を使う。
 
-ユーザーと合意するもの: カテゴリ名とプレフィックス / 各カテゴリの選定基準 / 親は既存 issue か新規作成か / 子 issue 間の実装順(= 依存チェーン)。曖昧な分類は AskUserQuestion で確認してから進める。
+依存は、子の着手に別の子の成果が必要なときだけ設定する。[splitting.md](splitting.md) の `addBlockedBy` を使い、親子関係と区別する。親をスタックの一段として依存に混ぜず、独立した子を直列化しない。
 
-## 2. 親 issue を作る
+別の親が既にある子は「整理済み」と決めつけず、期待する親との違いを確認する。API エラーを duplicate と読み替えない。
 
-既存 epic の body を 1 件読んで書式を踏襲する。body には完了条件と sub-issue への参照だけを置き、子 issue の内容を要約し直さない(子側との二重管理になる)。親のタイトルにも `[category]` プレフィックスを付ける。
+## タイトルと重複
 
-## 3. 階層と依存を接続する
+カテゴリ prefix の統一を依頼された場合は、既存タイトルの意味やドメイン固有 prefix を保った変更一覧を作る。close / title 変更は具体的な一覧への承認後に実行する。同じ一覧への既存承認は有効。
 
-親子(`addSubIssue`)は**階層**、実装順(`addBlockedBy`)は**依存**。別物として両方張る。どちらも `gh issue edit` 未サポートのため GraphQL mutation を使い、バッチではヘルパーをループで回す:
+重複はタイトルだけでなく本文と履歴で確認する。close が承認されていれば実行する。コメント投稿は明示的に依頼された場合だけ行う。
 
-```bash
-add_sub_issue() {   # add_sub_issue <親番号> <子番号>
-  local parent_id child_id result
-  parent_id=$(gh issue view "$1" --json id --jq .id)
-  child_id=$(gh issue view "$2" --json id --jq .id)
-  result=$(gh api graphql -f query="mutation { addSubIssue(input: { issueId: \"$parent_id\", subIssueId: \"$child_id\" }) { issue { number } subIssue { number } } }" 2>&1)
-  if echo "$result" | rg -q '"number"'; then echo "OK: #$2 → #$1"
-  else echo "SKIP: #$2 (already has parent or duplicate)"; fi
-}
+## 完了
 
-add_blocked_by() {  # add_blocked_by <塞がれる番号> <塞ぐ番号> — 塞ぐ側を先に実装する
-  local blocked_id blocker_id result
-  blocked_id=$(gh issue view "$1" --json id --jq .id)
-  blocker_id=$(gh issue view "$2" --json id --jq .id)
-  result=$(gh api graphql -f query='
-    mutation($issueId:ID!,$blockingIssueId:ID!){
-      addBlockedBy(input:{issueId:$issueId, blockingIssueId:$blockingIssueId}){
-        issue{ number issueDependenciesSummary{ totalBlockedBy } }
-      }
-    }' -F issueId="$blocked_id" -F blockingIssueId="$blocker_id" 2>&1)
-  if echo "$result" | rg -q 'totalBlockedBy'; then echo "OK: #$1 blocked by #$2"
-  else echo "FAIL: #$1 ← #$2 ($result)"; fi
-}
-```
+親の sub-issue と各子の blocking 関係を再取得し、要求されたグラフと照合する。成功した mutation の返却だけで、全件の接続が完了したとは扱わない。
 
-- 1 issue に親は 1 つだけ。「already has parent」は SKIP であってエラーではない(既に整理済み)
-- **親 issue に `blockedBy` を張らない**(親は器で PR を持たず、スタックの段にならない)
-- **依存の無い子同士は直列化しない**。gh-stack のスタックは線形なので、順序の必然性が無い子は並列のまま別スタックになる
-- 依存を本文に `Blocked by` と書かない(2 箇所に持つと食い違う — ネイティブ側が唯一の正)。誤った依存は `removeBlockedBy` を同じ引数で呼べば外せる
-
-## 4. プレフィックスを付け、重複を閉じる
-
-```bash
-gh issue edit <N> --title "[category] 既存タイトル"
-```
-
-- 既存の `[xxx]` は置換、`feat(xxx):` 等の conventional prefix は除去して `[category]` に統一
-- `P1:` 等のドメイン固有プレフィックスは残す(`[audit] P1: ...` の形)
-
-同一タイトル・同一 body の重複は close する:
-
-```bash
-gh issue close <N> --comment "Duplicate of #<原本>" --reason "not planned"
-```
-
-**close / title 変更はバッチ実行前に対象一覧をプレビューし、ユーザー承認を得てから流す。**
-
-## 5. 結果を報告する
-
-接続の成否はヘルパーの OK / SKIP / FAIL が正 — 再照会で検算しない。issue 1 件ごとに実況せず、段階ごとに 1 つの表で示す。依存チェーンは積み順ツリーとしてチェーンごとに提示する(実装側はこれをそのまま gh-stack のスタックに積む):
-
-```
-#12 (blocker なし)            → 1 段目
- └── #13 (blocked by #12)     → 2 段目
-```
+親子の URL、依存順、変更したタイトル、close した issue、失敗・未実行をまとめる。再試行前に現在の状態を確認し、作成や接続の重複を避ける。

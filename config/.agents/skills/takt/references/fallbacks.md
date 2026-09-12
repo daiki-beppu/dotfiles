@@ -8,7 +8,7 @@
 `import` が失敗する(takt 更新で `dist/` の構造が変わった)ときは、**握りつぶさずユーザーに
 告げてから**従来の対話経路に落ちる。pane の確保は
 [cmux-workspace](../../cmux-workspace/SKILL.md) の
-**Right-Side Helper Pane** ポリシーに従う(フェーズ 5 と同じ helper pane でよい)。
+**Right-Side Helper Pane** ポリシーに従う(実行時と同じ helper pane でよい)。
 
 ```sh
 cmux send --surface surface:<N> "cd <repo_root> && takt -w <workflow> add \"#<N>\"\n"
@@ -39,4 +39,4 @@ takt run > /tmp/takt_<slug>.log 2>&1
 - Claude Code は `run_in_background: true`、Codex はセッション ID を返す exec/TTY を使い、同じ実行の完了結果を回収する。大量の stdout は読まず、必要なログだけ抽出する。
 - セッションが実行中なら待機を続ける。応答待ち timeout は失敗・終了の証拠ではない。
 - セッションを回収できないときはプロセスとタスク状態を確認する。古いログや sentinel の存在だけで成功扱い・再起動しない。
-- 完了後の成果確認は SKILL.md の「完了時の確認」に従う。継続実行できる手段が無ければ、投入済み／実行未完了を分けて報告する。
+- 完了後の成果確認は [run.md](run.md) の「完了時の確認」に従う。継続実行できる手段が無ければ、投入済み／実行未完了を分けて報告する。

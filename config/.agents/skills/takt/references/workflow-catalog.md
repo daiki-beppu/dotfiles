@@ -1,8 +1,6 @@
 # レーンの語彙と builtin カタログ
 
-フェーズ 2「内容からの判定」で、プロジェクト固有レーンが無く builtin から選ぶときに読む。
-callable sub-workflow の判別レシピと素通り挙動の説明は SKILL.md 本文側に残っている
-(毎回の投入で通す branch のため)。
+プロジェクト固有レーンが無く builtin から選ぶときに読む。以下は過去の版での語彙例であり、現在の実在・用途は投入先で確認する。
 
 ## 意図の語彙(プロジェクト固有レーンがある場合)
 
@@ -41,6 +39,4 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
   が削除され、観点は coding policy に統合)。これらを参照する自作 workflow が残っていれば
   投入先として選ぶ前に facet 参照を張り替える
 
-本数・実名の一覧はここには書かない(takt の更新のたび黙って腐るため)。実在するレーン・
-builtin カタログ・callable の実名は SKILL.md 本文のレシピ(`ls .takt/workflows/`、
-`ls "$BUILTIN/workflows/"`、`grep -l "callable: true" *.yaml`)をその場で実行して確認する。
+実在するレーンは `.takt/workflows/` とインストールされた takt の `builtins/<language>/workflows/` を確認する。language は設定から選ぶ。builtin の `workflow-categories.yaml` があれば用途と推奨順を照合する。各 YAML の `subworkflow.callable` を確認し、callable な部品や `.takt/steps/` の fragment を直接投入しない。

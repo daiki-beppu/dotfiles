@@ -1,9 +1,6 @@
 ---
 name: issue-implement
-description: >-
-  GitHub issue を実装し、gh-stack で PR 化して CI green + ready for review まで進める。
-  単一 issue の対応、親 issue の未完了の子 issue 全件を依存順に実装するときに使う。
-  takt への投入は takt スキル、マージは別の依頼で扱う。
+description: GitHub issue または親 issue の未完了の子を実装し、PR・最新 HEAD の CI 成功・ready for review まで進める。
 ---
 
 # issue-implement
@@ -37,8 +34,8 @@ Matt Pocock の [implement](https://github.com/mattpocock/skills/blob/main/skill
 `gh stack submit --auto` で draft PR を作り、各 PR のタイトルと本文を変更内容に合わせて編集する。
 本文に `Closes #<issue番号>` を記し、既存のスタック情報と動画エビデンス欄を保持する。
 
-[動画エビデンス](references/evidence.md) に従って各段の最終変更を録画・添付する。
-ブラウザで確認できる変更が無ければ、対象外の理由と代わりの検証を本文に記す。
+ブラウザで確認できる変更がある段では [動画エビデンス](references/evidence.md) を読み、最終変更を録画・添付する。
+該当しない段は対象外の理由と代わりの検証を本文に記す。
 
 各 PR の最新 HEAD の CI と conflict を確認する。GitHub Actions の監視に権限上の制約がある場合は
 [watch-pr-actions.sh](references/watch-pr-actions.sh) を使う（引数: PR 番号、間隔秒、期限秒）。
