@@ -1,125 +1,30 @@
 ---
 name: nix
-description: >-
-  macOS (nix-darwin) dotfiles の Nix 環境管理 — CLI ツール・GUI アプリ(cask)の追加削除、
-  パッケージ検索、darwin-rebuild、flake update。「パッケージ追加」「ツール/アプリ入れたい」
-  「brew install」「darwin-rebuild」の文脈で発動。--dry-run で編集も switch もせず計画だけ提示。
+description: この Mac の nix-darwin 管理下のパッケージ追加・削除、flake 更新、適用・世代整理に使う。
 ---
 
 # Nix 環境管理
 
-## 概要
+この dotfiles は CLI を Nix / Home Manager、GUI アプリを nix-darwin の Homebrew cask で管理する。依頼された構成変更と反映まで進める。
 
-この dotfiles は Nix (nix-darwin + Home Manager) で CLI ツールを宣言的に管理している。GUI アプリ (cask) は nix-darwin 経由で Homebrew に委譲。
+## 操作の範囲
 
-## Invocation variants
+- `--search <語>`: 読み取り専用の検索。
+- `--add` / `--remove`: 指定分を編集して switch。
+- `--rebuild`: 編集せず switch。
+- `--update [input]`: 指定 input または依頼された全依存を更新し switch。
+- `--clean`: [世代整理](references/cleanup.md)。
+- `--rollback`: `sudo darwin-rebuild switch --rollback`。
+- `--dry-run`: 全モードで予定だけ提示し、編集・更新・適用・削除をしない。
 
-- Bare invocation → 依頼内容から操作を判別し、ファイル編集から `darwin-rebuild switch` まで通す。
-- `--search <キーワード>` → 読み取り専用。実在と正式名を確認して報告するだけで、ファイルは編集しない（検索方法は「パッケージ追加・削除」を参照）。
-- `--add <名前...>` / `--remove <名前...>` → 3 分類で追加先・削除元を判定して編集し、switch まで行う（「パッケージ追加・削除」）。
-- `--rebuild` → 編集はせず switch だけ実行する（「適用コマンド」）。
-- `--update [<input>]` → `nix flake update` してから switch で適用する（「依存の更新」）。
-- `--clean` → `nh` でストアを掃除する。パッケージ構成には触れない（「ストア掃除（nh）」）。
-- `--rollback` → `sudo darwin-rebuild switch --rollback` で直前の世代に戻す。
-- `--dry-run`（任意の変種への修飾子）→ 変更予定と実行予定コマンドだけ提示して止まる。編集・flake 更新・switch・clean・rollback は実行しない。
+自然文も対応する操作として扱う。パッケージ追加に無関係な全依存更新や整理を混ぜない。依頼範囲を超える依存更新が必要なら、理由と具体的な範囲を示して確認する。
 
-自然文の依頼も対応する操作として実行する。追加・削除が明示されていれば検索結果と既存設定から編集先を決め、適用まで進む。候補が複数で選択が結果を変える場合だけ質問する。
+## 編集と適用
 
-## 構成ファイル
+実際の dotfiles の設定と worktree 規約を確認する。配置は `nix/packages.nix` の `home.packages`（CLI）、`flake.nix` の `homebrew.casks`（GUI）を基本とし、nixpkgs にない CLI は `homebrew.brews` を使う。
 
-| ファイル | 役割 | 編集頻度 |
-|---------|------|---------|
-| `flake.nix` | エントリポイント。inputs（依存）、nix-darwin 設定、Homebrew cask/brews 定義 | たまに |
-| `flake.lock` | 依存バージョンのロック（自動生成、手動編集しない） | 触らない |
-| `nix/packages.nix` | Home Manager の CLI パッケージ一覧 | よく編集する |
+追加前に現行のパッケージ検索で実在名を確認する。依存更新は `nix flake update` で行い、`flake.lock` を手編集しない。
 
-## パッケージ追加・削除
+適用する場合だけ [適用と Touch ID](references/apply.md) を読む。編集した worktree と対象ホストを明示して適用する。`sudo` は実行する旨を伝え、Touch ID の通常の認証経路を使う。`sudo -n true` の失敗だけで実行不能と判断しない。
 
-| 分類 | 編集先 | 追加設定 |
-|---|---|---|
-| nixpkgs にある CLI ツール | `nix/packages.nix` の `home.packages` | なし |
-| GUI アプリ | `flake.nix` の `homebrew.casks` | なし |
-| nixpkgs にない CLI ツール | `flake.nix` の `homebrew.brews` | 必要なら `homebrew.taps` に tap を追加 |
-
-追加前に `nix search nixpkgs <名前>` または https://search.nixos.org/packages で実在と正式名を確認する。
-
-## 適用コマンド
-
-パッケージの追加・削除・変更後は以下を実行して反映する:
-
-```bash
-sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
-```
-
-**注意:** `sudo` が必要（nix-darwin はシステム設定を変更するため）。sudo は
-Touch ID 認証（`sudo_local.touchIdAuth`）なので、Claude が直接実行してよい —
-実行するとユーザーの Mac に指紋プロンプトが出て、そこで承認される。
-
-- `sudo -n true` は「a password is required」で失敗するが、これは `-n` が
-  全プロンプトを禁止するためで正常。Touch ID が使えない証拠ではないので、
-  この事前チェックの失敗を理由に「実行できない」と判断しない
-- 時間のかかるビルドは先に `nix build '<flakeパス>#darwinConfigurations.<host>.system' --no-link`
-  を sudo なしで済ませておくと、switch 本体はアクティベーションだけで一瞬で終わる
-
-`nix` コマンドが `sudo` 環境で見つからない場合はフルパスを使う:
-
-```bash
-sudo /nix/var/nix/profiles/default/bin/nix run nix-darwin -- switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
-```
-
-初回のみ `nix run nix-darwin --` 経由で実行する。2回目以降は `darwin-rebuild` が PATH に入る。
-
-**マルチホスト構成について:** `--flake <path>` だけで、実行マシンの hostname に一致する `darwinConfigurations.<hostname>` が自動選択される。現在対応しているのは `mba`（MacBook Air / user `mba`）と `MacBook-Pro-3`（MacBook Pro / user `daikibeppu`）。新マシンを追加する場合は `flake.nix` の `hosts` attrset に 1 行追加するだけでよい。ホスト名が一致しない環境で試す場合のみ `.#mba` / `.#MacBook-Pro-3` のように明示する。
-
-## 依存の更新
-
-nixpkgs や home-manager を最新に更新する:
-
-```bash
-nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles
-```
-
-更新後は `darwin-rebuild switch` で適用する。
-
-## パス優先順位
-
-Nix > Homebrew > システム の順で PATH が構成されている。
-
-- Nix パッケージ: `/etc/profiles/per-user/$USER/bin/`（`$USER` は実行ユーザー）
-- Homebrew: `/opt/homebrew/bin/`
-
-`which <command>` でどちらが使われているか確認できる。
-
-## ストア掃除（nh）
-
-Determinate Nix（`nix.enable = false`）のため nix-darwin の `nix.gc` /
-`nix.optimise` は使えない。代わりに [nh](https://github.com/nix-community/nh) を使う。
-
-- **自動**: root の launchd daemon `org.nixos.nh-clean` が毎週月曜 12:00 に
-  `nh clean all --keep 1 --keep-since 30d --optimise` を実行する
-  （`flake.nix` で定義。ログ: `/var/log/nh-clean.log`）
-- **手動で即掃除したい場合**:
-
-```bash
-# 削除対象の確認（dry-run）
-nh clean all --dry --keep 1 --keep-since 30d
-
-# 実行（システムプロファイルの世代削除には root が必要）
-sudo nh clean all --keep 1 --keep-since 30d --optimise
-```
-
-保持ポリシー: 直近 30 日の世代はすべて保持 + それ以前は最低 1 世代。
-`--keep-one` は「世代を 1 つ残す」ではなく「direnv プロジェクトごとに
-gcroot を最低 1 つ保持する」フラグなので注意（世代数は `--keep <N>`）。
-
-`programs.nh.flake` で `NH_FLAKE` が設定済みのため、`nh darwin switch` だけで
-`sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` 相当の rebuild ができる。
-
-## Rules
-
-- 依頼された追加・削除だけを行う(`--add a b c` のように複数指定されたならその分すべて、それ以上は触らない)。ついでのパッケージ整理や `nix flake update` の抱き合わせをしない
-- `sudo` を伴うコマンド（`darwin-rebuild switch` / `sudo nh clean`）は事前承認なしで直接実行してよい。sudo は Touch ID 認証で、実行時に出る指紋プロンプトへの応答がユーザーの承認そのもの。ユーザーが不在だと認証できないため、実行する旨を一言伝えてから実行する
-- 全依存更新が明示的に依頼済みなら、その承認で `nix flake update` を実行する。追加・削除に全依存更新が必要になった場合は、理由と範囲を示して承認を得る。特定 input の更新依頼はその input のみ対象にする
-- `flake.lock` は手動編集しない(`nix flake update` の生成物)
-- 検証は差分と依頼対象に絞る。追加・削除は switch の成功と対象コマンド／アプリの反映を確認する。評価・ビルド・適用の成功を区別し、同じ検証を繰り返すのは変更・失敗・未解決の懸念があるときだけにする。
-- 成否、変更したパッケージ・世代、未適用や未確認の項目を簡潔に報告する。
+switch の成功と対象コマンド／アプリの反映を確認する。評価・ビルドだけの成功は適用済みと区別し、失敗や未確認部分を報告する。再検証は変更・失敗・未解決の懸念に対応するものに絞る。

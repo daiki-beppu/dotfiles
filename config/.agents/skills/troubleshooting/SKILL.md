@@ -1,134 +1,30 @@
 ---
 name: troubleshooting
-description: Resolve chrome-devtools MCP connection failures only during detailed diagnostics that require that MCP. Applies to its initialization, page discovery/navigation, and wrong-browser attachment in --autoConnect mode. Browser / Computer Use failures do not trigger this skill.
+description: 詳細診断で必要な Chrome DevTools MCP の --autoConnect 接続失敗を復旧するときに使う。
 ---
 
-## Troubleshooting Wizard (autoConnect mode)
+# Chrome DevTools MCP connection recovery
 
-You are acting as a troubleshooting wizard to help the user fix their `chrome-devtools` MCP server setup. **This setup uses `--autoConnect`** — the MCP attaches to the user's running Chrome (144+) via remote debugging, instead of launching a managed Chrome. When this skill is triggered, follow this step-by-step diagnostic process.
+`chrome-devtools` を使う必要がある診断で、接続・ページ取得・接続先の誤りが発生した場合に使う。Browser / Computer Use 自体の障害には適用しない。
 
-### Step 1: Verify the MCP Server Configuration
+## 症状に応じて確認する
 
-Run:
+使用中のエージェントの MCP 登録と実際のエラーを確認する。Claude Code なら `claude mcp get chrome-devtools` が使える。他のクライアントの設定を Claude のコマンドで修復しない。
 
-```
-claude mcp get chrome-devtools
-```
+- `Could not find DevToolsActivePort`: 対象チャネルの Chrome が起動しているか、`chrome://inspect/#remote-debugging` が有効か、接続許可が必要かを確認する。
+- 新しい空プロファイルが開く: 実際に呼ばれた MCP の引数、`--autoConnect`、重複登録、Chrome チャネルを照合する。過去の設定を根拠に別プラグインを削除しない。
+- tool 不足: `--slim`・カテゴリ指定・クライアント側の利用権限を確認する。tool 数だけで原因を断定しない。
+- 拡張機能だけ失敗: [拡張ツールと互換性](../chrome-devtools/references/extensions.md) を読む。
+- その他: [公式トラブルシューティング](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/troubleshooting.md) からエラーに該当する項目を調べる。
 
-Confirm the registration looks like:
+## 修復と確認
 
-```
-Type: stdio
-Command: npx
-Args: chrome-devtools-mcp@latest --autoConnect
-Scope: User config
-```
+依頼された接続復旧に必要な設定だけを変更し、無関係な MCP・marketplace・権限を保持する。Chrome の Allow やクライアント再起動など、人の操作が必要な箇所だけ具体的に依頼する。
 
-If `--autoConnect` is missing from `Args`, that's the problem. Re-register:
+追加診断が必要ならログ出力を一時的に設定し、該当エラー周辺だけ読む。秘密値を伏せ、採取後は診断用設定を戻す。
 
-```
-claude mcp remove chrome-devtools -s user
-claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --autoConnect
-```
+`list_pages` で対象の Chrome に接続できたことを確認し、元の診断へ戻る。同じエラーを根拠なく再試行しない。autoConnect が使えず専用 debug profile 等への切り替えが必要な場合は、セッションが変わることを説明し、その変更が依頼の範囲か確認してから行う。
 
-Also confirm there is **no duplicate** `chrome-devtools` MCP — in particular, the official marketplace plugin `plugin:chrome-devtools-mcp:chrome-devtools` competes for the same debugging port. Its `plugin.json` hard-codes `args: ["chrome-devtools-mcp@<ver>"]` with no way to inject `--autoConnect`, which is why this setup avoids it in favor of the user-scope MCP added above. The plugin's `chrome-devtools-mcp` entry and its `chrome-devtools-plugins` marketplace have already been removed from `~/.claude/settings.json` (= `~/ghq/github.com/daiki-beppu/dotfiles/config/.claude/settings.json` via symlink) — `enabledPlugins` exists for other plugins, but has no `chrome-devtools` entry to toggle. If `claude mcp list` ever shows the plugin version again, the marketplace was re-added; remove its `enabledPlugins` entry (and the marketplace) from `settings.json` again.
-
-### Step 2: Triage Common Connection Errors
-
-#### Error: `Could not find DevToolsActivePort`
-
-This error is specific to `--autoConnect`. The MCP server cannot find the file that a running, debuggable Chrome creates. **Do not immediately suggest switching to `--browser-url`** — that defeats the autoConnect setup. Follow this sequence:
-
-1. **Confirm Chrome is running**. The default channel autoConnect targets is `stable`. If the user's Chrome is Canary/Beta/Dev, either start the stable channel, or add `--channel=canary` (etc.) to the MCP args.
-2. **Confirm remote debugging is enabled**: open a Chrome tab, navigate to `chrome://inspect/#remote-debugging`, and check "Enable remote debugging". The setting can reset when Chrome restarts — verify it's still on.
-3. **Call `list_pages`** as the simplest sanity check.
-4. If `list_pages` succeeds, the issue is resolved. If it still fails, proceed below.
-
-#### Symptom: MCP starts but creates a new empty Chrome profile instead of attaching to the user's Chrome
-
-The classic "autoConnect not actually applied" symptom. The MCP is silently falling back to managed mode and writing to `~/.cache/chrome-devtools-mcp/chrome-profile`. Likely causes:
-
-- `--autoConnect` flag is missing or misspelled (e.g. `--autoBronnect`) — re-check Step 1.
-- A second `chrome-devtools` MCP (e.g. the marketplace plugin) is the one Claude Code is actually using. Disable it (Step 1).
-- The user's Chrome runs a different channel than the autoConnect target.
-
-Quick check: `lsof -nP -iTCP:9222 | grep LISTEN` should show the user's Chrome listening. If a different process holds 9222, autoConnect won't find Chrome where it expects.
-
-#### Symptom: Missing Tools / Only ~9 tools available
-
-The MCP client is enforcing **read-only mode**. All chrome-devtools-mcp tools are tagged with `readOnlyHint: true` (safe) or `readOnlyHint: false` (mutating, e.g. `click`, `navigate_page`, `emulate`). To use the full toolset, disable read-only mode in the client — e.g. exit Plan Mode in Claude Code, or adjust the client's tool safety settings.
-
-#### Symptom: Extension tools missing / extensions fail to load
-
-1. Confirm `--categoryExtensions` is present in the MCP args (it is mutually exclusive with `autoConnect` on Chrome 144-148).
-2. **Chrome version matters**: Chrome 144-148 cannot load extensions while attached via `--autoConnect`. Either upgrade to Chrome 149+, or temporarily drop `--autoConnect` so the MCP launches its own managed Chrome with `--categoryExtensions`.
-
-#### Other Common Errors
-
-- `Target closed`
-- "Tool not found" (likely `--slim` is set, which exposes only navigation/screenshot tools)
-- `ProtocolError: Network.enable timed out` or `The socket connection was closed unexpectedly`
-- `Error [ERR_MODULE_NOT_FOUND]: Cannot find module`
-- Sandboxing or host validation errors (macOS Seatbelt, Linux containers)
-
-### Step 3: Read Known Issues
-
-Map the error to a documented issue using:
-
-- https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/troubleshooting.md
-
-Pay attention to `--autoConnect` handshakes, sandboxing constraints, and the running-Chrome-144+ requirement.
-
-### Step 4: Last Resort — Switch Connection Mode
-
-If none of the above resolves the issue and the user is in an environment where `--autoConnect` cannot work (heavily sandboxed Chrome, locked-down corporate profile, VM-to-host scenario), switch to manual `--browser-url`. Be explicit that this changes the trade-off: the MCP will use a dedicated debug profile, not the user's main session.
-
-```
-claude mcp remove chrome-devtools -s user
-claude mcp add chrome-devtools --scope user -- npx chrome-devtools-mcp@latest --browser-url http://127.0.0.1:9222
-```
-
-The user then launches Chrome themselves with:
-
-```
-"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  --remote-debugging-port=9222 \
-  --user-data-dir=/tmp/chrome-debug-profile
-```
-
-### Step 5: Diagnostic Commands
-
-If the issue is still unclear, capture verbose logs by editing `~/.claude.json`:
-
-```json
-"chrome-devtools": {
-  "type": "stdio",
-  "command": "npx",
-  "args": ["chrome-devtools-mcp@latest", "--autoConnect", "--logFile=/tmp/cdm-test.log"],
-  "env": { "DEBUG": "*" }
-}
-```
-
-Restart the Claude client, reproduce the failure, then read `/tmp/cdm-test.log`.
-
-Also useful:
-
-- `lsof -nP -iTCP:9222 | grep LISTEN` — is Chrome actually listening on 9222?
-- `npx chrome-devtools-mcp@latest --help` — verify the package can be fetched and run.
-
-### Step 6: Check GitHub Issues
-
-If the troubleshooting doc above doesn't cover the error:
-
-```
-gh issue list --repo ChromeDevTools/chrome-devtools-mcp --search "<error snippet>" --state all
-```
-
-Otherwise direct the user to:
-
-- https://github.com/ChromeDevTools/chrome-devtools-mcp/issues
-- https://github.com/ChromeDevTools/chrome-devtools-mcp/discussions
-
----
+成功した接続先と修正内容、または残るエラーと最小のユーザー操作を報告する。
 
 Adapted from the official `chrome-devtools-mcp` troubleshooting skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for an autoConnect-only setup.

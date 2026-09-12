@@ -1,6 +1,6 @@
 # 設計根拠と過去の実測
 
-仕様の根拠やバージョン差異を調べる場合に読む。以下は SKILL.md から分離した過去の記録で、現行のレーンや API の保証ではない。通常の投入は SKILL.md の確認とレシピに従う。
+仕様の根拠やバージョン差異を調べる場合に読む。以下は SKILL.md から分離した過去の記録で、現行のレーンや API の保証ではない。通常の投入は SKILL.md の条件と [enqueue.md](enqueue.md) に従う。
 
 ## intake と step fragment
 
@@ -66,7 +66,7 @@ step fragment に移行済みのものはそもそも一覧に出ない)。
 
 ## 内部 API の検証記録
 
-**0.62.0 で検証済み**: SKILL.md の投入レシピにある3つの import パスと引数の形はそのまま通る(実測)。`SaveEnqueuedTaskFileOptions` は
+**0.62.0 で検証済み**: [enqueue.md](enqueue.md) の投入レシピにある3つの import パスと引数の形はそのまま通る(実測)。`SaveEnqueuedTaskFileOptions` は
 `managedPr` / `shouldPublishBranchToOrigin` / `contextPrNumber` が増えたが、いずれも
 省略時は従来の挙動だったため、当時の投入レシピの変更は不要だった。
 

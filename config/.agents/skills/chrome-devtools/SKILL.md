@@ -1,81 +1,24 @@
 ---
 name: chrome-devtools
-description: >-
-  Detailed browser diagnostics via Chrome DevTools MCP (--autoConnect). Use only when the agent's Browser / Computer Use cannot provide the network, JavaScript error, performance, or memory evidence needed for diagnosis. Routine browsing, clicking, typing, and visual checks use the agent's Browser / Computer Use.
+description: Browser / Computer Use で不足する通信・JavaScript エラー・性能・メモリ情報を Chrome DevTools MCP で診断するときに使う。
 ---
 
-> Note: 本 skill は MCP サーバーが `--autoConnect` モード(既存 Chrome 144+ にアタッチ)で動いている前提。デフォルトの managed モードおよび `--slim` モードには適用されない。
+# Chrome DevTools diagnostics
 
-## Core Concepts
+通常の閲覧・クリック・入力・画面確認には実行環境の Browser / Computer Use を使う。必要な診断情報が取れない場合に、この MCP で再現と採取を行う。
 
-**Browser lifecycle (autoConnect mode)**: The MCP server attaches to the **user's already-running Chrome (144+)** via the remote debugging endpoint. It does NOT launch a new browser instance. Prerequisites:
+## 接続と対象
 
-- Chrome must already be running before the first MCP tool call
-- Remote debugging must be enabled at `chrome://inspect/#remote-debugging`
-- On the first connection attempt, the user must click "Allow" in Chrome's permission dialog
-- The MCP server has access to all open windows/tabs of the default profile
+この設定は `--autoConnect` でユーザーの起動済み Chrome に接続する。Chrome の起動、remote debugging の有効化、初回の Allow 操作が必要。接続・ページ取得に失敗した場合だけ [接続復旧](../troubleshooting/SKILL.md) を読む。
 
-If `list_pages` returns an empty list, or `new_page`/`navigate_page` fails with connection errors, the user's Chrome is most likely not running or remote debugging is not enabled — invoke the sibling `troubleshooting` skill.
+対象ページが分かっていればそれを選択し、不明なら `list_pages` / `select_page` で特定する。実セッションを共有するため、無関係なタブやログイン状態を変更しない。タブを閉じるのは自分が作ったものか、ユーザーが指定したものに限る。
 
-**Page selection**: Tools operate on the currently selected page. Use `list_pages` to see available pages, then `select_page` to switch context.
+## 証拠の取得
 
-**Element interaction**: Use `take_snapshot` to get page structure with element `uid`s. Each element has a unique `uid` for interaction. If an element isn't found, take a fresh snapshot — the element may have been removed or the page changed.
+不足する情報に対応する tool を使い、再現操作は診断に必要な範囲に留める。要素の uid は新しい snapshot から取得する。大量の trace・snapshot はファイルへ出し、フィルタ・ページネーションで必要な部分だけ読む。
 
-## Workflow Patterns
+拡張機能の診断には [拡張ツールと互換性](references/extensions.md) を読む。通信やエラーの診断だけなら不要。
 
-### Diagnostic scope
-
-Identify the diagnostic evidence missing from the agent's Browser / Computer Use before invoking MCP tools. Keep interactions here limited to reproducing the issue and collecting that evidence; return to Browser / Computer Use for routine browser tasks.
-
-### Efficient data retrieval
-
-- Use `filePath` parameter for large outputs (screenshots, snapshots, traces)
-- Use pagination (`pageIdx`, `pageSize`) and filtering (`types`) to minimize data
-- Set `includeSnapshot: false` on input actions unless you need updated page state
-
-### Tool selection
-
-- **Diagnostic reproduction**: `take_snapshot` for locating elements involved in the issue
-- **Visual inspection**: `take_screenshot` (when the user needs to see visual state)
-- **Additional details**: `evaluate_script` for data not in the accessibility tree
-
-### autoConnect-specific safety
-
-- The MCP shares the user's real session: cookies, logins, open tabs are all visible to the agent. Treat sensitive tabs accordingly. Prefer `take_snapshot` on a specific page rather than enumerating all pages when working in a context with private tabs.
-- Avoid `close_page` on tabs you did not open — they may be the user's working tabs.
-
-### Testing an extension
-
-> **Compatibility note**: Extension tools (`install_extension`, `list_extensions`, etc.) require the `--categoryExtensions` flag on the MCP server. With **Chrome 149+**, `--categoryExtensions` is compatible with `--autoConnect`. With Chrome 144-148, extension tools require launching managed Chrome (i.e., dropping `--autoConnect`). If extension tools are missing, ask the user to confirm Chrome version and update the MCP config:
->
-> ```json
-> {
->   "mcpServers": {
->     "chrome-devtools": {
->       "command": "npx",
->       "args": ["chrome-devtools-mcp@latest", "--autoConnect", "--categoryExtensions"]
->     }
->   }
-> }
-> ```
->
-> After updating, the user must restart the MCP server (or AI client).
-
-1. **Install**: Use `install_extension` with the path to the unpacked extension.
-2. **Identify**: Get the extension ID from the response or by calling `list_extensions`.
-3. **Trigger Action**: Use `trigger_extension_action` to open the popup or side panel if applicable.
-4. **Verify Service Worker**: Use `evaluate_script` with `serviceWorkerId` to check extension state or trigger background actions.
-5. **Verify Page Behavior**: Navigate to a page where the extension operates and use `take_snapshot` to check if content scripts injected elements or modified the page correctly.
-
-## Troubleshooting
-
-If `chrome-devtools-mcp` is insufficient, guide the user to use Chrome DevTools UI directly:
-
-- https://developer.chrome.com/docs/devtools
-- https://developer.chrome.com/docs/devtools/ai-assistance
-
-If there are connection errors or `list_pages` failures, invoke the sibling `troubleshooting` skill.
-
----
+観測結果と再現条件を報告し、復旧を依頼された場合は修正後に同じ症状が解消したか確認する。通常のブラウザ作業に戻ったら Browser / Computer Use を使う。
 
 Adapted from the official `chrome-devtools-mcp` skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for an autoConnect-only setup.
