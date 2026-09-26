@@ -1,65 +1,13 @@
 # takt グローバル設定
 #
-# プロバイダ・モデル・言語を全プロジェクト共通で定義する。
+# 言語・実行制御・observability などを全プロジェクト共通で定義する。
 # プロジェクト固有のオーバーライドは各リポジトリの .takt/config.yaml で行う。
 #
-# 構成方針: All Codex
-# planner / diagnoser は Sol、coder は Luna、レビュー系は Terra。
-# loop monitor の supervisor judge は発火元 step の Codex provider / model を継承する。
+# provider / model の割り当てと companion reviewer は runtime.yaml が持つ。
+# ここ（と各リポジトリの .takt/config.yaml）に provider / model / provider_options /
+# provider_routing / persona_providers を書くと runtime.yaml と混在し、
+# "Mixed provider configuration" で agent 実行前に止まる。
 
-provider: codex
-
-# v0.52 で persona_providers は deprecated。raw persona キーで解決される
-# provider_routing.personas へ移行（優先順位も persona_providers より上）
-provider_routing:
-  personas:
-    coder:
-      provider: codex
-      model: gpt-5.6-luna
-    planner:
-      provider: codex
-      model: gpt-5.6-sol
-    # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
-    # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
-    diagnoser:
-      provider: codex
-      model: gpt-5.6-sol
-    ai-antipattern-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    architecture-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    coding-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    cqrs-es-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    frontend-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    implementation-semantics-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    merge-readiness-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    qa-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    requirements-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    security-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    terraform-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
-    testing-reviewer:
-      provider: codex
-      model: gpt-5.6-terra
 language: ja
 
 # ── 対話モードの形式仕様（v0.63 で構造化、v0.66 で /verify）──
