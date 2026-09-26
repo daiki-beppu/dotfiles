@@ -27,6 +27,9 @@ The subagent prompt must contain:
 > step. Run every verification command and confirm the expected result before
 > moving on. Touch only the files listed as in scope. If any STOP condition
 > occurs, stop immediately and report. Do not improvise around obstacles.
+> A STOP condition is the only early stop: a milestone or a long turn is not
+> one, so put any status note in the same message as your next tool call and
+> keep going.
 > Commit your work in the worktree following the plan's git workflow section.
 > One override: SKIP the plan's instruction to update `plans/README.md` —
 > your reviewer maintains the index. Before reporting, audit every claim in
@@ -48,6 +51,8 @@ NOTES: anything the reviewer should know (deviations, surprises, judgment calls)
 ### Review (the advisor's real job here)
 
 Note on fresh worktrees: they share git history but not `node_modules` or build artifacts — the executor must install dependencies first, and check tooling that resolves from `dist/` may need one build even though the plan's command table (recon'd in the main tree) didn't mention it. Expect this; it isn't a deviation.
+
+A reply without the report format, or one with steps still open and no STOP condition named, is a progress update, not a report. If a command or subagent the executor started is still running, wait for its output. Otherwise SendMessage naming the open steps and telling it to continue; after two such nudges on the same plan, BLOCK instead.
 
 Review like a tech lead reviewing a PR against the spec — never fix anything yourself:
 
