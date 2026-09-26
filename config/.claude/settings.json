@@ -33,8 +33,7 @@
   },
   "model": "opus[1m]",
   "skillOverrides": {
-    "empirical-prompt-tuning": "off",
-    "evidence-record": "off"
+    "empirical-prompt-tuning": "off"
   },
   "hooks": {
     "SessionStart": [
