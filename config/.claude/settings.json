@@ -16,7 +16,9 @@
       "NotebookEdit",
       "Skill",
       "mcp__chrome-devtools",
-      "mcp__plugin_context7_context7"
+      "mcp__plugin_context7_context7",
+      "mcp__takt__takt_list_tasks",
+      "mcp__takt__takt_get_run"
     ],
     "ask": [
       "Bash(rm *)",

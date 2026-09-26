@@ -54,7 +54,7 @@ dotfiles/
 │   ├── .zshenv            # zsh 環境変数（全セッション共通）
 │   ├── .zshrc             # zsh 設定
 │   ├── .zprofile          # PATH 設定（Homebrew + Nix）
-│   ├── .local/bin/        # open-browser, takt-usage-report
+│   ├── .local/bin/        # open-browser, takt-usage-report, takt-mcp-root
 │   ├── .config/
 │   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
 │   ├── .takt/             # takt グローバル設定（~/.takt/config.yaml に symlink）

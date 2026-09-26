@@ -238,6 +238,9 @@ in
     # takt トークン消費の横断集計
     link_force "${dotfilesDir}/.local/bin/takt-usage-report" "$HOME/.local/bin/takt-usage-report"
 
+    # takt-mcp をメインチェックアウトのルートで起動するラッパー（MCP 登録用）
+    link_force "${dotfilesDir}/.local/bin/takt-mcp-root" "$HOME/.local/bin/takt-mcp-root"
+
     # zsh-abbr
     mkdir -p "$HOME/.config/zsh-abbr"
     link_force "${dotfilesDir}/.config/zsh-abbr/user-abbreviations" "$HOME/.config/zsh-abbr/user-abbreviations"

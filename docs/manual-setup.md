@@ -39,3 +39,16 @@ Nix 管理外。公式手順（https://viteplus.dev）でインストールす�
 | Docker Desktop | ログインとリソース設定 |
 | Google Drive | ログインして同期フォルダを設定 |
 | Gyazo | アカウント連携とショートカット設定 |
+
+## 6. takt MCP の登録
+
+MCP サーバーの登録先（`~/.claude.json` / `~/.codex/config.toml`）は実行時データと同居しており dotfiles 管理外。
+darwin-rebuild で `~/.local/bin/takt-mcp-root` が張られた後に 1 回だけ登録する。
+ラッパーはメインチェックアウトのルートへ移ってから `takt-mcp` を起動するので、worktree のセッションからも本体の `.takt/tasks.yaml` を扱える。
+
+```sh
+claude mcp add --scope user takt -- ~/.local/bin/takt-mcp-root
+codex mcp add takt -- ~/.local/bin/takt-mcp-root
+```
+
+読み取り専用の `takt_list_tasks` / `takt_get_run` は `config/.claude/settings.json` で許可済み。`takt_tell_run` / `takt_enqueue_task` は都度確認になる。
