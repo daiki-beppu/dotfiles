@@ -241,7 +241,9 @@ in
 
     # Claude Code
     mkdir -p "$HOME/.claude"
-    link_force "${dotfilesDir}/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+    # グローバル指示の正本は AGENTS.md。Claude Code は user-level の AGENTS.md を
+    # 読まないので、CLAUDE.md という名前でだけ配置する。
+    link_force "${dotfilesDir}/.agents/AGENTS.md" "$HOME/.claude/CLAUDE.md"
     link_force "${dotfilesDir}/.claude/settings.json" "$HOME/.claude/settings.json"
     link_force "${dotfilesDir}/.claude/statusline-command.sh" "$HOME/.claude/statusline-command.sh"
     link_force "${dotfilesDir}/.claude/hooks" "$HOME/.claude/hooks"
@@ -253,12 +255,11 @@ in
     link_force "${dotfilesDir}/.agents/skills" "$HOME/.claude/skills"
 
     # Codex
-    # グローバル規約の実体は config/.claude/CLAUDE.md 1 枚。
-    # Codex はそれを ~/.codex/AGENTS.md という名前で読むだけなので、
-    # 内容を複製せず同じソースへ symlink する（2 枚に分けると drift する）。
+    # グローバル規約の実体は config/.agents/AGENTS.md 1 枚。
+    # Claude Code と内容を複製せず同じソースへ symlink する（2 枚に分けると drift する）。
     # ~/.codex 自体は Codex が実行時状態を書く通常ディレクトリ。
     mkdir -p "$HOME/.codex"
-    link_force "${dotfilesDir}/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md"
+    link_force "${dotfilesDir}/.agents/AGENTS.md" "$HOME/.codex/AGENTS.md"
 
     # takt
     # ~/.takt 自体は takt が実行時状態を書く通常ディレクトリ。
