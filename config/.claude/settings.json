@@ -34,7 +34,16 @@
   "model": "opus[1m]",
   "skillOverrides": {
     "empirical-prompt-tuning": "off",
-    "evidence-record": "off"
+    "evidence-record": "off",
+    "find-skills": "off",
+    "git-guardrails-claude-code": "off",
+    "migrate-to-shoehorn": "off",
+    "scaffold-exercises": "off",
+    "setup-pre-commit": "off",
+    "resolving-merge-conflicts": "off",
+    "diagnosing-bugs": "off",
+    "session-title-refresh": "off",
+    "session-title-refresh-codex": "off"
   },
   "hooks": {
     "SessionStart": [
@@ -64,7 +73,7 @@
     "learning-output-style@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
     "qodo-skills@claude-plugins-official": false,
-    "skill-creator@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": false,
     "notion@claude-plugins-official": false,
     "claude-code-setup@claude-plugins-official": false,
     "commit-commands@claude-plugins-official": true,
