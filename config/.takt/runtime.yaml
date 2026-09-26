@@ -1,0 +1,91 @@
+# takt グローバル runtime 設定（~/.takt/runtime.yaml に symlink）
+#
+# provider / model の割り当てと companion reviewer をここで定義する。
+# provider セクションがあると legacy の config.yaml 側の provider / provider_routing /
+# persona_providers と共存できず、agent 実行前に "Mixed provider configuration" で止まる。
+# どのレイヤー（global / project）の legacy 設定でも止まるので、各リポジトリの
+# .takt/config.yaml にも provider 系のキーを書かない。
+#
+# 構成方針: All Codex
+# planner / diagnoser は Sol、coder は Luna、レビュー系は Terra。
+# loop monitor の supervisor judge は発火元 step の provider / model を継承する。
+#
+# project の .takt/runtime.yaml に targets を書くと、global の targets は丸ごと置き換わる
+# （profiles は名前単位で合成されるが targets は合成されない。takt 0.66.1 の loader 実装）。
+# persona を 1 つだけ上書きしたいリポジトリも、下の targets を全量写して書き換える
+# （例: specv）。ここを変えたらそちらも追従させる。
+
+version: 1
+
+provider:
+  profiles:
+    # persona 割り当ての無い agent と takt 内部の agent（assistant 等）が使う既定。
+    # legacy では `provider: codex` だけを置き Codex 側の既定モデルに任せていたが、
+    # runtime の defaults は model の明示が必須なので、Codex の既定（~/.codex/config.toml の
+    # model）と同じものを書く。Codex 側の既定を変えたらここも合わせる
+    codex-default:
+      provider: codex
+      model: gpt-6-astra
+    sol:
+      provider: codex
+      model: gpt-5.6-sol
+    luna:
+      provider: codex
+      model: gpt-5.6-luna
+    terra:
+      provider: codex
+      model: gpt-5.6-terra
+
+  defaults:
+    profile: codex-default
+
+  targets:
+    personas:
+      coder:
+        profile: luna
+      planner:
+        profile: sol
+      # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
+      # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
+      diagnoser:
+        profile: sol
+      ai-antipattern-reviewer:
+        profile: terra
+      architecture-reviewer:
+        profile: terra
+      coding-reviewer:
+        profile: terra
+      cqrs-es-reviewer:
+        profile: terra
+      frontend-reviewer:
+        profile: terra
+      implementation-semantics-reviewer:
+        profile: terra
+      merge-readiness-reviewer:
+        profile: terra
+      qa-reviewer:
+        profile: terra
+      requirements-reviewer:
+        profile: terra
+      security-reviewer:
+        profile: terra
+      terraform-reviewer:
+        profile: terra
+      testing-reviewer:
+        profile: terra
+    # companion は builtin の default / maintenance / review-fix 系 workflow が実装 step に
+    # 付けている読み取り専用の併走レビュアー。reviewer 系と同じ Terra に揃える
+    companions:
+      ai-antipattern-review-companion:
+        profile: terra
+      testing-review-companion:
+        profile: terra
+      review-companion-moderator:
+        profile: terra
+
+# v0.64 以降の既定どおり fix_policy は single（指摘は実装者への助言として 1 回だけ渡し、
+# 再レビューはしない）。completion = 実装エージェントの成功応答後に累積差分をレビューする
+companion:
+  enabled: true
+  review_mode: completion
+  fix_policy: single

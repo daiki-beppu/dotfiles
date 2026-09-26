@@ -269,10 +269,13 @@ in
 
     # takt
     # ~/.takt 自体は takt が実行時状態を書く通常ディレクトリ。
-    # グローバルで git 管理するのは config.yaml のみ。
+    # グローバルで git 管理するのは config.yaml と runtime.yaml のみ。
+    # runtime.yaml は takt が初回起動時に `version: 1` だけの実ファイルを生成するので、
+    # link_force で置き換える。
     # カスタム workflow / facets / schemas は各プロジェクトの .takt/ で管理する方針
     mkdir -p "$HOME/.takt"
     link_force "${dotfilesDir}/.takt/config.yaml" "$HOME/.takt/config.yaml"
+    link_force "${dotfilesDir}/.takt/runtime.yaml" "$HOME/.takt/runtime.yaml"
 
     if [ -n "$MISSING_SOURCES" ]; then
       echo "ERROR: linkDotfiles aborted: missing sources:$MISSING_SOURCES" >&2

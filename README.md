@@ -57,8 +57,9 @@ dotfiles/
 │   ├── .local/bin/        # open-browser, takt-usage-report, takt-mcp-root
 │   ├── .config/
 │   │   └── zsh-abbr/      # zsh-abbr のユーザー定義略語
-│   ├── .takt/             # takt グローバル設定（~/.takt/config.yaml に symlink）
-│   │   └── config.yaml    # カスタム workflow は各プロジェクトの .takt/ で管理
+│   ├── .takt/             # takt グローバル設定（~/.takt/ に symlink）
+│   │   ├── config.yaml    # カスタム workflow は各プロジェクトの .takt/ で管理
+│   │   └── runtime.yaml   # provider / model の割り当てと companion reviewer
 │   ├── .agents/
 │   │   ├── AGENTS.md      # グローバル指示の正本（~/.claude/CLAUDE.md・~/.codex/AGENTS.md に symlink）
 │   │   └── skills/        # 共通スキルの正本（Codex / Claude Code）
