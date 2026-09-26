@@ -160,13 +160,16 @@
                 # nixpkgs にないツールと cask は Homebrew で管理
                 homebrew = {
                   enable = true;
-                  onActivation.cleanup = "none";
+                  # flake に無い formula / cask は activation 時にアンインストール（データは残す）
+                  onActivation.cleanup = "uninstall";
 
                   taps = [
                     "manaflow-ai/cmux"
+                    "olets/tap"
                   ];
 
                   brews = [
+                    "git-lfs"
                     "ni"
                     "vercel" # Vercel CLI。nixpkgs 未収録（vercel-pkg は別物のバンドラ）
                   ];
@@ -177,6 +180,7 @@
                     "antigravity-cli"
                     "aqua-voice"
                     "azookey"
+                    "cap"
                     "chatgpt"
                     "claude"
                     "manaflow-ai/cmux/cmux"
