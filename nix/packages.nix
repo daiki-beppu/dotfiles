@@ -56,6 +56,7 @@ in
     # ld がクラッシュ）なため、whisper フィルタを無効化（上流修正後に外す）
     (ffmpeg-full.override { withWhisper = false; })
     ghCli
+    fzf # ghq のリポジトリへ移動する Ctrl-] ウィジェット（.zshrc）で使う
     ghq
     google-cloud-sdk
     gzip
