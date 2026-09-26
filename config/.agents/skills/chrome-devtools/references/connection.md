@@ -1,11 +1,6 @@
----
-name: troubleshooting
-description: 詳細診断で必要な Chrome DevTools MCP の --autoConnect 接続失敗を復旧するときに使う。
----
+# 接続復旧
 
-# Chrome DevTools MCP connection recovery
-
-`chrome-devtools` を使う必要がある診断で、接続・ページ取得・接続先の誤りが発生した場合に使う。Browser / Computer Use 自体の障害には適用しない。
+接続・ページ取得・接続先の誤りが発生した場合だけ読む。Browser / Computer Use 自体の障害には適用しない。
 
 ## 症状に応じて確認する
 
@@ -14,7 +9,7 @@ description: 詳細診断で必要な Chrome DevTools MCP の --autoConnect 接�
 - `Could not find DevToolsActivePort`: 対象チャネルの Chrome が起動しているか、`chrome://inspect/#remote-debugging` が有効か、接続許可が必要かを確認する。
 - 新しい空プロファイルが開く: 実際に呼ばれた MCP の引数、`--autoConnect`、重複登録、Chrome チャネルを照合する。過去の設定を根拠に別プラグインを削除しない。
 - tool 不足: `--slim`・カテゴリ指定・クライアント側の利用権限を確認する。tool 数だけで原因を断定しない。
-- 拡張機能だけ失敗: [拡張ツールと互換性](../chrome-devtools/references/extensions.md) を読む。
+- 拡張機能だけ失敗: [拡張ツールと互換性](extensions.md) を読む。
 - その他: [公式トラブルシューティング](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/troubleshooting.md) からエラーに該当する項目を調べる。
 
 ## 修復と確認
