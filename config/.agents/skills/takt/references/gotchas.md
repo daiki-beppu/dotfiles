@@ -39,6 +39,12 @@
   効かない**ので、手順が要るなら issue 本文に直接書く。復活させるなら
   `.takt/config.yaml` で `provider_options.claude.skills.enabled: true`(検証済み最低版は
   Claude Code 2.1.220)
+- **provider / model の割り当ては `runtime.yaml` だけに書く**。global の `~/.takt/runtime.yaml` が
+  provider セクションを持つので、どのリポジトリの `.takt/config.yaml` に `provider` / `model` /
+  `provider_routing` / `persona_providers` を足しても、`Mixed provider configuration detected` で
+  agent 実行前に止まる。project で persona を上書きするなら `.takt/runtime.yaml` の `targets` に
+  書くが、**project の `targets` は global の `targets` を丸ごと置き換える**（profiles は名前単位で
+  合成される）ので、global の persona・companion の割り当てを全量写してから書き換える（実例: specv）
 - **`max_steps` は workflow ツリー全体の共有予算になった**(0.55.0 BREAKING)。`workflow_call` は
   ステップ数にカウントされない制御ノードで、予算は root の `max_steps` だけが持つ。
   **callable workflow に `max_steps` を書くとロード時に落ちる**。上限に当たって止まった run を
