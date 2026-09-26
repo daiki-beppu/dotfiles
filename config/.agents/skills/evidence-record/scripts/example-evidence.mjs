@@ -10,7 +10,7 @@
 //       相対パスだと webm/png がどこに行ったか分からなくなる。
 // この例は /tmp/evidence-record-example/ に出力する。事前に:
 //   mkdir -p /tmp/evidence-record-example
-// 生成時は ~/Downloads/evidence-record-<timestamp>/ の実パスへ置換する。
+// 生成時は mktemp -d で作った一時ディレクトリの実パスへ置換する。
 
 async page => {
   // ===== evidence-record helpers (screencast) =====

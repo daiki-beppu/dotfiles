@@ -167,7 +167,7 @@ async page => {
   で**新しいページにしてから** `run-code` する。`dispose()` 自体はクリーンな状態なら正しく効く。
 - **出力は絶対パス**: `playwright-cli` は自前の cwd で実行されるため、`screencast.start({path})` と `__EVREC_FAIL_PNG__` は**必ず絶対パス**。相対パスだと webm/png が行方不明になる。
 - **`setViewportSize` で録画サイズと一致**させる。揃えないと下部に灰色の余白が出る。
-- `<OUT>` は `~/Downloads/evidence-record-<timestamp>/` の実パスに置換すること。
+- `<OUT>` は SKILL.md の手順 2 で作った一時ディレクトリ（`mktemp -d`）の実パスに置換すること。
 - ステップ内の最後の操作（`waitFor` / `expect` 相当）が「確認項目」を兼ねる。ここが失敗すると `step()` が撮影を止めて投げる。
 - ロケータは可能な限り `getByRole` / `getByText` など堅牢なものを使う。CSS セレクタは最終手段。
 - **映したくない操作（ログイン等）は `screencast.start()` の前に `setup()` で実行する**。`page.screencast` に pause は無く、start 後の操作はすべて動画に残る。`setup()` が失敗すると `SETUP FAILED` を投げ、録画（`evidence.webm`）は生成されない。

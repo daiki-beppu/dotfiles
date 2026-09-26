@@ -2,14 +2,15 @@
 
 ブラウザ操作のエビデンス動画を撮る [Claude Code](https://claude.com/claude-code) スキル。
 
-指示した操作を [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) の `page.screencast` で録画し、**ステップタイトル付き・疑似カーソル/クリック強調つき**の動画にします。出力（スクリプトと動画）は `~/Downloads/evidence-record-<timestamp>/` にまとめて置くので、リポジトリに誤ってコミットされません。
+指示した操作を [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) の `page.screencast` で録画し、**ステップタイトル付き・疑似カーソル/クリック強調つき**の動画にし、`gh pr edit --attach` で対象 PR の本文に添付します。録画は一時ディレクトリで行い、添付を確認したら削除するため、動画はローカルにもリポジトリにも残りません。
 
 > このディレクトリは [dninomiya/evidence-record](https://github.com/dninomiya/evidence-record)（MIT）を dotfiles にベンダリングしたものです。dotfiles では `config/.agents/skills/` が `~/.claude/skills/` に symlink されるため、追加の導入手順は不要（このリポジトリを pull するだけで全プロジェクトから使える）。
 
 ## 前提
 
 - [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) … 録画に必須。無ければ `ni -g @playwright/cli@latest`。
-- `ffmpeg` … webm → mp4 変換に使用。無ければ webm のみ出力。
+- `ffmpeg` … webm → mp4 変換に使用。無ければ webm を添付。
+- [GitHub CLI](https://cli.github.com/) 2.99.0 以上 … `--attach` での PR 添付に必須。添付先の PR と、対象リポジトリへの push 権限が必要。
 
 ## 使い方
 
@@ -25,7 +26,7 @@ Claude Code で次のように起動します。
 /evidence-record ログインしてダッシュボードで新規プロジェクトを作成する様子を撮って
 ```
 
-スキルは操作を「セットアップ（録画しない前準備）」と「録画するテストステップ」に仕分け、ステップ一覧を提示してから録画します。
+スキルは操作を「セットアップ（録画しない前準備）」と「録画するテストステップ」に仕分け、ステップ一覧を提示してから録画し、現ブランチ（または指定）の PR の `## 動画エビデンス` 欄に添付します。
 
 ## テストに関係ないフローを動画に含めない
 

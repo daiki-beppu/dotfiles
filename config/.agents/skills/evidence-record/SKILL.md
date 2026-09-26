@@ -1,17 +1,16 @@
 ---
 name: evidence-record
-description: 実行時に指示されたブラウザ操作を、playwright-cli の screencast でステップタイトル付き動画（カーソル/クリック強調つき）として録画する。スクリプトと動画は ~/Downloads 配下の専用ディレクトリに出力し、誤コミットを防ぐ。/evidence-record で起動します。
-allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bash(ffprobe:*) Bash(mkdir:*) Bash(rm:*) Bash(ls:*) Bash(date:*) Bash(open:*)
+description: 指示されたブラウザ操作を playwright-cli の screencast でステップタイトル付き動画に録画し、GitHub PR に添付する。動画はローカルに残さない。
+allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bash(ffprobe:*) Bash(gh:*) Bash(mktemp:*) Bash(test:*) Bash(mkdir:*) Bash(rm:*) Bash(ls:*)
 ---
 
-# evidence-record — ブラウザ操作のエビデンス動画を撮る
+# evidence-record — ブラウザ操作のエビデンス動画を PR に添付する
 
 `/evidence-record <録画したい操作の自由記述>` で起動する。
-指示された操作を `playwright-cli` の `page.screencast` で録画し、**ステップタイトル付き・疑似カーソル/クリック強調つき**の動画にする。
-出力（スクリプトと動画）は **`~/Downloads/evidence-record-<timestamp>/`** にまとめて置く。
-作業ツリーの外なので**リポジトリに誤ってコミットされない**。
+指示された操作を `playwright-cli` の `page.screencast` で録画し、**ステップタイトル付き・疑似カーソル/クリック強調つき**の動画にして、対象 PR の本文へ `gh pr edit --attach` で添付する。
+録画は一時ディレクトリで行い、**添付を確認したら削除する**。動画の保存先は PR 上の添付 URL だけになる。
 
-このスキルの役割は「何を撮るか（diff解析・PR添付・dev server起動）」ではなく、**指示された操作をきれいな動画にすること**に限定する。
+このスキルの役割は**指示された操作をきれいな動画にして PR に載せること**に限定する。何を撮るかの判断（diff 解析）や dev server の起動は呼び出し側が行う。
 
 ## 同梱ファイル
 - `scripts/recorder-helpers.md` … 生成スクリプトの先頭に **inline する正典ヘルパー**（step帯 / 疑似カーソル / clickFx / fillFx）。
@@ -30,7 +29,12 @@ allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bas
   ```bash
   ni -g @playwright/cli@latest
   ```
-- `ffmpeg` が無ければ mp4 化はスキップし webm のみ案内する。
+- `ffmpeg` が無ければ mp4 化はスキップし webm を添付する。
+- 添付先 PR を確定する。指定が無ければ現ブランチの PR を使い、PR が無ければ**録画せずに止める**（ローカルに動画だけ残る状態を作らない）。
+  ```bash
+  gh pr view [<PR番号>] --json number,url,headRefOid
+  ```
+- `gh pr edit --help` に `--attach` があるか確認する（GitHub CLI 2.99.0 以上）。無ければ録画前に止めて更新を案内する。添付にはリポジトリへの push 権限が要る。GitHub Enterprise Server は未対応。
 
 ### 1. 操作をセットアップとテストステップに仕分けて提示
 - 起動時の引数、または起動後の指示から「録画する操作」を読み取る。
@@ -41,12 +45,11 @@ allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bas
 - ステップ一覧（番号・タイトル・操作の要点）を**箇条書きでユーザーに提示してから**録画に進む。**どれがセットアップ（録画対象外）か**も明記する。
 - 各ステップの**最後の操作を「確認項目」**にする（`waitFor`/可視チェック等）。ここが落ちたら撮影中断になる。
 
-### 2. 出力ディレクトリを作る
+### 2. 一時ディレクトリを作る
 ```bash
-OUT="$HOME/Downloads/evidence-record-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$OUT"
+OUT="$(mktemp -d "${TMPDIR:-/tmp}/evidence-record.XXXXXX")"
 ```
-以降 `run.mjs` / `evidence.webm` / `evidence.mp4` / `fail.png` は**すべて `$OUT` 配下（絶対パス）**に置く。
+以降 `run.mjs` / `evidence.webm` / `evidence.mp4` / `fail.png` / `body.md` は**すべて `$OUT` 配下（絶対パス）**に置く。作業ツリーの外なのでリポジトリにコミットされない。
 
 ### 3. 録画スクリプト `$OUT/run.mjs` を生成
 - **`scripts/recorder-helpers.md` のコードブロック（ヘルパー前文）を、`run.mjs` の `async page => {` 直後にそのまま inline する**（run-code はモジュール解決が不安定なので import しない）。
@@ -77,16 +80,32 @@ playwright-cli run-code --filename="$OUT/run.mjs"
   - `evidence.webm` は生成されていない。どの前準備で落ちたか・エラー要旨・`$OUT/fail.png` のパスを報告する。**mp4 化はしない**。
 - 出力に **`STEP n FAILED` / `Error`** が出た、または `$OUT/fail.png` が生成された場合 → **撮影中断**。
   - どのステップで落ちたか・エラー要旨・`$OUT/fail.png` のパスをユーザーに報告する。
-  - `run.mjs` と途中の `evidence.webm` は `$OUT` に残し、原因調査に使えると伝える。**mp4 化はしない**。
+  - `run.mjs` と途中の `evidence.webm` は原因調査用に一時ディレクトリへ残す。**mp4 化も PR 添付もしない**。
 - 成功（`fail.png` が無く `evidence.webm` がある）→ 次へ。
 
-### 6. mp4 変換 ＋ 報告
+### 6. mp4 変換と動画の確認
 ```bash
 ffmpeg -y -i "$OUT/evidence.webm" -movflags +faststart -pix_fmt yuv420p "$OUT/evidence.mp4"
+test -s "$OUT/evidence.mp4" && ffprobe -v error -show_entries format=duration,size -of json "$OUT/evidence.mp4"
 ```
-- 完了を報告し、`$OUT`（`run.mjs` / `evidence.webm` / `evidence.mp4`）のパスを示す。
-- `open "$OUT"` で Finder に表示する（任意）。
-- **「出力はすべて ~/Downloads 配下なのでリポジトリにはコミットされない」**ことを明記する。
+- 動画を再生して、期待結果と機密情報の映り込みが無いことを確認する。
+- 添付上限は Free 10 MB、有料プラン 100 MB。超える場合は添付せず、サイズと対処（ステップの分割・短縮）を報告する。
+
+### 7. PR に添付する
+既存本文を `$OUT/body.md` に取得し、`## 動画エビデンス` 欄だけを追加または置換する（再実行で欄を重複させない。他の本文は保持する）。欄にはステップ一覧・録画した commit SHA と、**独立した段落**の `![](<動画の絶対パス>)` を置く。単独段落でないと動画プレイヤーにならない。
+```bash
+gh pr view <PR番号> --json body --jq .body > "$OUT/body.md"
+# body.md の「## 動画エビデンス」欄を編集してから:
+gh pr edit <PR番号> --body-file "$OUT/body.md" --attach "$OUT/evidence.mp4"
+```
+本文の参照と `--attach` には同じパスを渡す。gh がアップロードしてローカルパスを添付 URL に置き換える。
+
+`gh pr view <PR番号> --json body` で本文にローカルパスが残らず添付 URL に置き換わったことを確認する。
+
+### 8. 後始末と報告
+- 添付を確認できたら `rm -rf "$OUT"` で一時ディレクトリを削除する。
+- PR URL・添付 URL・録画した commit SHA・ステップ一覧を報告する。
+- 添付に失敗したら一時ディレクトリを残し、エラーと `$OUT` のパスを報告する（再添付に使える）。
 
 ---
 
@@ -98,7 +117,7 @@ ffmpeg -y -i "$OUT/evidence.webm" -movflags +faststart -pix_fmt yuv420p "$OUT/ev
 5. **映したくない操作は録画開始前に**: ログイン等は `screencast.start()` の前に `setup()` で実行する。`page.screencast` に pause は無いので、start 後の操作はすべて動画に残る。
 
 ## スコープ外
-diff からの確認項目自動生成、dev server 自動検出・起動、PR への動画添付は行わない（指示された操作の録画に専念する）。
+diff からの確認項目自動生成、dev server 自動検出・起動は行わない（指示された操作の録画と PR 添付に専念する）。
 
 ## Source
 
