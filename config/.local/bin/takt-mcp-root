@@ -1,0 +1,20 @@
+#!/bin/bash
+# takt-mcp をメインチェックアウトのルートで起動するラッパー（Claude Code / Codex の MCP 登録用）
+#
+# takt-mcp はツールの cwd を「起動時の cwd」配下に制限する（allowedProjectRoot）。
+# エージェントは worktree（<repo>/.claude/worktrees/<slug>）で起動することが多く、
+# そのまま起動するとキューの正本であるメインチェックアウトの .takt/tasks.yaml が
+# 許可範囲の外になる。git の common dir の親 = メインチェックアウトへ移ってから起動し、
+# リポジトリ全体（worktree 配下を含む）を許可範囲にする。
+# git 管理外で起動された場合は cwd のまま起動する。
+set -euo pipefail
+
+# GUI アプリ（Claude / Codex デスクトップ）から起動されると login shell の PATH を
+# 継がず、home-manager の takt-mcp が見つからないことがある
+export PATH="/etc/profiles/per-user/$USER/bin:$PATH"
+
+if common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+  cd "$(dirname "$common_dir")"
+fi
+
+exec takt-mcp "$@"

@@ -28,6 +28,12 @@ Claude Code では background Bash、Codex 等では継続可能な実行セッ�
 
 cmux が利用できなければ [fallbacks.md](fallbacks.md) の継続実行セッションを使う。
 
+途中経過を聞かれたら、pane やログではなく takt MCP を引く。`takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を、`takt_get_run`（`cwd` + `runSlug`）でその run の step log・レポートを取る。MCP ツールが見えない環境では下の「完了時の確認」の手作業経路を使う。
+
+## 実行中の追加指示
+
+実行中のタスクに指示を足すよう頼まれたら、止めて積み直さず、次の step 境界で届ける `takt_tell_run`（`cwd` + `runSlug` + `content`）を使う。送る前に対象 slug と指示文をユーザーに示して確認を取る。届くのは worktree クローンで running のタスクだけで、完了・slug 不一致なら書き込まず理由が返る。MCP が無ければ、人間が `takt list` → 対象の running タスク → **Interactive** → `/tell` で送る（TTY が要る）。
+
 ## 完了時の確認
 
 signal は runner の終了通知であり、タスク成功の証拠ではない。`tasks.yaml` で対象全件の最終 status を確認する。
@@ -37,6 +43,6 @@ signal は runner の終了通知であり、タスク成功の証拠ではな�
 - `failed` / `exceeded`: 失敗原因と未完了部分を調べる。`exceeded` は step 予算切れで、続けるなら `--ignore-exceed`（[gotchas.md](gotchas.md)）。
 - `pending` / `running` 等が残る: 完了扱いせず、同じ実行の状態を確認する。
 
-実行ログは `.takt/clone-meta/<name>.json` の `clonePath` から辿り、そのクローンの `.takt/runs/<run_slug>/reports/` を使う。メイン checkout のログだけで判断しない。必要なら pane の末尾を取得できるが、trace や JSONL を全文表示せず、エラーや検証結果の周辺だけ読む。
+実行ログは `takt_get_run` で取る。MCP が無ければ `.takt/clone-meta/<name>.json` の `clonePath` から辿り、そのクローンの `.takt/runs/<run_slug>/reports/` を使う。メイン checkout のログだけで判断しない。必要なら pane の末尾を取得できるが、trace や JSONL を全文表示せず、エラーや検証結果の周辺だけ読む。
 
 status、PR URL、テスト結果、review verdict と未完了の理由を報告する。
