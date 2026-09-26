@@ -61,6 +61,9 @@ in
     google-cloud-sdk
     gzip
     herdr
+    # takt の /verify（形式仕様検証）で quint verify（Apalache）と Alloy Analyzer が
+    # Java 17 以上を要求する。無いとモデル検査だけが黙ってスキップされる
+    jdk21_headless
     rclone
     ripgrep
     terraform
