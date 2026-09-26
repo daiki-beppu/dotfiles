@@ -33,7 +33,8 @@ cmux が利用できなければ [fallbacks.md](fallbacks.md) の継続実行セ
 signal は runner の終了通知であり、タスク成功の証拠ではない。`tasks.yaml` で対象全件の最終 status を確認する。
 
 - `completed`: `pr_url`、または対象 branch の PR から成果を確認する。
-- `failed` / `aborted`: 失敗原因と未完了部分を調べる。
+- `pr_failed`: workflow は成功し、PR 作成／push だけが失敗している。branch の push 状態を確かめ、PR 作成から再開する。
+- `failed` / `exceeded`: 失敗原因と未完了部分を調べる。`exceeded` は step 予算切れで、続けるなら `--ignore-exceed`（[gotchas.md](gotchas.md)）。
 - `pending` / `running` 等が残る: 完了扱いせず、同じ実行の状態を確認する。
 
 実行ログは `.takt/clone-meta/<name>.json` の `clonePath` から辿り、そのクローンの `.takt/runs/<run_slug>/reports/` を使う。メイン checkout のログだけで判断しない。必要なら pane の末尾を取得できるが、trace や JSONL を全文表示せず、エラーや検証結果の周辺だけ読む。
