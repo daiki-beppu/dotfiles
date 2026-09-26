@@ -190,7 +190,6 @@
                     "notion"
                     "nvidia-geforce-now"
                     "raycast"
-                    "visual-studio-code"
                     "zoom"
                   ];
                 };
