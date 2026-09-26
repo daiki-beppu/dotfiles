@@ -41,6 +41,19 @@ ABBR_REGULAR_ABBREVIATION_GLOB_PREFIXES+=(
   '*; '
 )
 
+# Ctrl-]: ghq 管理のリポジトリを fzf で選んで cd する。
+# 作業場所は ghq の実パスに統一している（symlink 経由だと Claude Code の
+# プロジェクト・memory がパス違いで分裂する）。Raycast の ghq 拡張が主経路で、
+# これはターミナルにいるときの補助。
+ghq-fzf() {
+  local dir
+  dir=$(ghq list | fzf --height 40% --reverse --query "$LBUFFER") || { zle reset-prompt; return; }
+  BUFFER="cd ${(q)$(ghq root)}/${(q)dir}"
+  zle accept-line
+}
+zle -N ghq-fzf
+bindkey '^]' ghq-fzf
+
 # ターミナルのタブタイトル自動設定（OSC 2。xterm 互換端末で共通に効く）
 precmd() {
   # カレントディレクトリを取得（ホームディレクトリは~に短縮）
