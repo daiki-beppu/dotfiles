@@ -5,7 +5,7 @@ description: GitHub issue を takt に投入・実行する依頼に使う。「
 
 # takt タスク投入・実行
 
-起票済み issue をキューへ積み、実行依頼があれば完了まで追跡する。通常 PR を既定とし、マージは含めない。バージョン依存のレシピは takt 0.62.0 の実測なので、現行のインストールを確認して使う。
+起票済み issue をキューへ積み、実行依頼があれば完了まで追跡する。通常 PR を既定とし、マージは含めない。バージョン依存のレシピは takt 0.66.1 の実測なので、現行のインストールを確認して使う。
 
 ## モード
 
@@ -37,6 +37,6 @@ API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 実行依頼がある場合だけ [run.md](references/run.md) を読み、cmux の helper surface または継続可能な実行セッションで一度起動する。大量の stdout をコンテキストへ流さず、完了シグナルとタスク状態で追跡する。待機 timeout だけで再起動しない。
 
-投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / aborted と未完了を区別する。ログは実行クローンの `clonePath` 配下から必要部分だけ読む。
+投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / exceeded / pr_failed と未完了を区別する。ログは実行クローンの `clonePath` 配下から必要部分だけ読む。
 
 未知のエラーは [gotchas.md](references/gotchas.md) を参照する。
