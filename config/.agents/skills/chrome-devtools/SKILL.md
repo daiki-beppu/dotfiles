@@ -1,6 +1,6 @@
 ---
 name: chrome-devtools
-description: Browser / Computer Use で不足する通信・JavaScript エラー・性能・メモリ情報を Chrome DevTools MCP で診断するときに使う。
+description: Browser / Computer Use で不足する通信・JavaScript エラー・性能・メモリ情報を Chrome DevTools MCP で診断するとき、またはその MCP の接続失敗を復旧するときに使う。
 ---
 
 # Chrome DevTools diagnostics
@@ -9,7 +9,7 @@ description: Browser / Computer Use で不足する通信・JavaScript エラー
 
 ## 接続と対象
 
-この設定は `--autoConnect` でユーザーの起動済み Chrome に接続する。Chrome の起動、remote debugging の有効化、初回の Allow 操作が必要。接続・ページ取得に失敗した場合だけ [接続復旧](../troubleshooting/SKILL.md) を読む。
+この設定は `--autoConnect` でユーザーの起動済み Chrome に接続する。Chrome の起動、remote debugging の有効化、初回の Allow 操作が必要。接続・ページ取得に失敗した場合だけ [接続復旧](references/connection.md) を読む。
 
 対象ページが分かっていればそれを選択し、不明なら `list_pages` / `select_page` で特定する。実セッションを共有するため、無関係なタブやログイン状態を変更しない。タブを閉じるのは自分が作ったものか、ユーザーが指定したものに限る。
 

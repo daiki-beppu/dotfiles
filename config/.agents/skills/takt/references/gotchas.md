@@ -28,7 +28,8 @@
 - **内部 API は `dist/` の構造に依存する**。import パスや `SaveEnqueuedTaskFileOptions` の形は
   takt のバージョン更新で変わり得る(CLI の互換保証の外側)。**更新後は最初の 1 件で
   `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
-  壊れていたら[fallbacks.md](fallbacks.md) へ落とし、このスキルの修正が要るサインとして報告する。
+  壊れていたら書き込まれた不完全なレコードを先に外し(残したまま fallback すると二重投入になる)、
+  [fallbacks.md](fallbacks.md) へ落として、このスキルの修正が要るサインとして報告する。
   実際 `enqueueService.js` は 0.55.1 までに `dist/infra/task/` へ移動しており(`saveEnqueuedTaskFile`
   の import 元は変わっていない)、**パスの移動は起きる前提で扱う**
 - **takt 経由の run では Claude が自分のスキルを見ない**。0.55.0 の BREAKING で

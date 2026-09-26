@@ -39,4 +39,4 @@ API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / aborted と未完了を区別する。ログは実行クローンの `clonePath` 配下から必要部分だけ読む。
 
-未知のエラーは [gotchas.md](references/gotchas.md)、過去の設計理由が必要なら [design-history.md](references/design-history.md) を参照する。履歴を現在の状態の代わりにしない。
+未知のエラーは [gotchas.md](references/gotchas.md) を参照する。

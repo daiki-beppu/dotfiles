@@ -24,7 +24,7 @@ description: cmux の呼び出し元 workspace 内で helper pane・surface・�
 
 有効な ref が拒否された場合、一覧を更新して対象や対応コマンドを確認する。別の明示的な対象指定で回復できれば続ける。フォーカス変更を復旧手段にせず、操作不能な部分だけ報告する。
 
-コマンドの構文は [commands.md](references/commands.md) または現行 `cmux --help` を参照する。サンプルの ref は実際の戻り値に置き換える。
+コマンドの構文は `cmux --help` / `cmux <command> --help` を正とし、ref は実際の戻り値を使う。
 
 ## Socket と開発時の reload
 
