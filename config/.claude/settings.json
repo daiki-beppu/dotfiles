@@ -34,16 +34,7 @@
   "model": "opus[1m]",
   "skillOverrides": {
     "empirical-prompt-tuning": "off",
-    "evidence-record": "off",
-    "find-skills": "off",
-    "git-guardrails-claude-code": "off",
-    "migrate-to-shoehorn": "off",
-    "scaffold-exercises": "off",
-    "setup-pre-commit": "off",
-    "resolving-merge-conflicts": "off",
-    "diagnosing-bugs": "off",
-    "session-title-refresh": "off",
-    "session-title-refresh-codex": "off"
+    "evidence-record": "off"
   },
   "hooks": {
     "SessionStart": [
