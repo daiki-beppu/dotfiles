@@ -19,7 +19,7 @@ description: GitHub issue を takt に投入・実行する依頼に使う。「
 
 ## 投入条件
 
-issue 本文が仕様の正本で、投入時に order.md へコピーされる。自前の order.md は上書きされる。本文の矛盾・不足を確認し、修正は依頼された範囲で issue 側に行う。未起票ならリポジトリの起票規約に従う。Wayfinder 後は `to-spec` → `to-tickets`、その他は `issue` を使う。
+issue 本文が仕様の正本で、投入時に order.md へコピーされる。自前の order.md は上書きされる。本文の矛盾・不足を確認し、修正は依頼された範囲で issue 側に行う。未起票ならリポジトリの起票規約に従う。起票は `to-spec` → `to-tickets`（仕様が完成済みなら `to-tickets`）を使う。
 
 pending / running と既存 branch を確認して重複・競合を避ける。稼働中の runner は投入直後に pending を拾うため、「後で実行」と指定されていれば即実行されるキューへ投入しない。実行を許可された場合は即時に走り得ることを伝える。
 
