@@ -29,6 +29,20 @@ let
     vendorHash = "sha256-0Xtr/MOpX4u5GnbRdNxKPA0GpSzi8PIbVc9MmP05De4=";
     nativeCheckInputs = (prev.nativeCheckInputs or [ ]) ++ [ pkgs.git ];
   });
+
+  # gh: evidence-record スキルの PR 動画添付（`gh pr edit --attach`）が 2.99.0 以降にしか
+  # 無いため上書きする。2.101.0 は go.mod が go 1.27 を要求するのでビルダーも差し替える。
+  # nixpkgs が 2.99.0 以降に追いついたらこの定義ごと消して pkgs.gh に戻す。
+  ghCli = (pkgs.gh.override { buildGoModule = pkgs.buildGo127Module; }).overrideAttrs (_: {
+    version = "2.101.0";
+    src = pkgs.fetchFromGitHub {
+      owner = "cli";
+      repo = "cli";
+      tag = "v2.101.0";
+      hash = "sha256-EoKF2m5sZP+uQ5AVOKkFqSCACfkeUc7vnH8PHWCO6FE=";
+    };
+    vendorHash = "sha256-4KYQBgMNc/sI0mbcXSfJ7A/77VAS6NM8TOzQ3w7AlK8=";
+  });
 in
 {
   home.stateVersion = "24.11";
@@ -41,7 +55,7 @@ in
     # nixpkgs 716c7a2 で依存の whisper-cpp が darwin でビルド不能（CoreML リンク時に
     # ld がクラッシュ）なため、whisper フィルタを無効化（上流修正後に外す）
     (ffmpeg-full.override { withWhisper = false; })
-    gh
+    ghCli
     ghq
     google-cloud-sdk
     gzip
