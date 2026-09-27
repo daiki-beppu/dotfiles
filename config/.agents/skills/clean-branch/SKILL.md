@@ -18,7 +18,7 @@ description: 不要な Git ブランチ・worktree の調査と一括削除に�
 
 ## 分類と削除判断
 
-fetch 後に [`scripts/inventory.sh`](scripts/inventory.sh) を実行し、デフォルトブランチ以外のブランチ（リモートだけのものを含む）について、tip・PR・worktree・dirty の対応表を得る。判断はその表から始め、表で決まらない行だけを個別に調べる。
+fetch 後に [`scripts/inventory.sh`](scripts/inventory.sh) を実行し、デフォルトブランチ以外のブランチ（リモートだけのものを含む）について、tip・PR・worktree・dirty の対応表を得る。判断はその表から始め、表で決まらない行だけを個別に調べる。upstream が `gone` の行はリモートにもう実在しない（マージ時の自動削除など）ので、リモート削除の対象に入れず、prune で追跡参照を消す。
 
 マージ判定は PR state を主な根拠にする。`git branch --merged` だけでは squash / rebase マージを拾えない。ブランチ名の再利用やマージ後の追加コミットがあれば、現在の tip がその PR と対応するか確かめる。
 
