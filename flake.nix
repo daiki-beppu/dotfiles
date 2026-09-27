@@ -201,7 +201,12 @@
 
                   # Mac App Store 限定のアプリ。mas CLI は brew bundle が自動でインストールする。
                   # App Store に Apple ID でサインイン済みであることが前提。
+                  # masApps を 1 つでも宣言すると、onActivation.cleanup = "uninstall" が
+                  # ここに無い App Store アプリもアンインストール対象にする。
+                  # 入っている App Store アプリはすべてここに列挙する。
                   masApps = {
+                    "Klack" = 6446206067;
+                    "Logic Pro" = 634148309;
                     "MindNode" = 6446116532; # MindNode: Mind Map & Outline
                   };
                 };
