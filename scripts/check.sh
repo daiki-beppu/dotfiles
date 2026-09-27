@@ -6,7 +6,7 @@
 #   scripts/check.sh nix-eval     # run only the nix-eval check
 #   scripts/check.sh shellcheck links   # run only the named checks
 #
-# Available checks: nix-eval, shellcheck, links, hooks, agent-skills
+# Available checks: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -239,12 +239,87 @@ check_agent_skills() {
 }
 
 # ---------------------------------------------------------------------------
+# Check: guard-main-commit
+# Feeds PreToolUse inputs to config/.claude/hooks/guard-main-commit.sh against
+# throwaway repos: a commit on main/master must be denied, while feature
+# branches, `cd <worktree> && git commit`, `git -C <worktree>`, non-commit git
+# commands and non-git commands must pass through with no output.
+# ---------------------------------------------------------------------------
+check_guard_main_commit() {
+  echo "== guard-main-commit =="
+  local hook="$REPO_ROOT/config/.claude/hooks/guard-main-commit.sh"
+  local tmp_dir status=0
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' RETURN
+
+  local main_repo="$tmp_dir/main-repo" master_repo="$tmp_dir/master-repo"
+  local worktree="$tmp_dir/main-repo/.claude/worktrees/feature"
+  git init -q -b main "$main_repo"
+  git -C "$main_repo" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+  git -C "$main_repo" worktree add -q -b feature "$worktree"
+  git init -q -b master "$master_repo"
+  mkdir -p "$tmp_dir/not-a-repo"
+
+  # expect <deny|allow> <cwd> <command>
+  expect() {
+    local want="$1" cwd="$2" command="$3" out got
+    out="$(jq -n --arg cwd "$cwd" --arg command "$command" \
+      '{hook_event_name: "PreToolUse", cwd: $cwd, tool_name: "Bash", tool_input: {command: $command}}' |
+      "$hook")" || {
+      echo "FAIL: hook exited non-zero for [$command] in $cwd" >&2
+      status=1
+      return
+    }
+    if [ -z "$out" ]; then
+      got=allow
+    elif [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$out")" = deny ]; then
+      got=deny
+    else
+      got="unexpected output: $out"
+    fi
+    if [ "$got" = "$want" ]; then
+      echo "ok: $want [$command]"
+    else
+      echo "FAIL: expected $want, got $got for [$command] in $cwd" >&2
+      status=1
+    fi
+  }
+
+  expect deny "$main_repo" 'git commit -m x'
+  expect deny "$main_repo" 'git add -A && git commit -m "msg"'
+  expect deny "$master_repo" 'git commit --allow-empty -m x'
+  expect deny "$main_repo" 'GIT_AUTHOR_NAME=x git -c core.editor=true commit'
+  expect deny "$worktree" "git -C $main_repo commit -m x"
+  expect deny "$worktree" "cd $main_repo && git commit -m x"
+  expect allow "$worktree" 'git add -A && git commit -m x'
+  expect allow "$main_repo" "cd $worktree && git add -A && git commit -m x"
+  expect allow "$main_repo" 'cd .claude/worktrees/feature && git commit -m x'
+  expect allow "$main_repo" "git -C $worktree commit -m x"
+  expect allow "$main_repo" 'git -C .claude/worktrees/feature commit -m x'
+  expect allow "$main_repo" 'git status && git log --grep commit'
+  expect allow "$main_repo" 'ls -la && echo done'
+  expect allow "$tmp_dir/not-a-repo" 'git commit -m x'
+  expect allow "$main_repo" "cd $tmp_dir/missing && git commit -m x"
+
+  local out
+  out="$(jq -n '{cwd: "/", tool_name: "Read", tool_input: {file_path: "/etc/hosts"}}' | "$hook")"
+  if [ -n "$out" ]; then
+    echo "FAIL: non-Bash input produced output: $out" >&2
+    status=1
+  else
+    echo "ok: allow [non-Bash tool input]"
+  fi
+
+  return "$status"
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 main() {
   local -a checks=("$@")
   if [ "${#checks[@]}" -eq 0 ]; then
-    checks=(nix-eval shellcheck links hooks agent-skills)
+    checks=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
   fi
 
   local -a ran=()
@@ -257,9 +332,10 @@ main() {
       shellcheck) ran+=("$c"); check_shellcheck || failed+=("$c") ;;
       links) ran+=("$c"); check_links || failed+=("$c") ;;
       hooks) ran+=("$c"); check_hooks || failed+=("$c") ;;
+      guard-main-commit) ran+=("$c"); check_guard_main_commit || failed+=("$c") ;;
       agent-skills) ran+=("$c"); check_agent_skills || failed+=("$c") ;;
       *)
-        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, agent-skills)" >&2
+        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills)" >&2
         exit 2
         ;;
     esac

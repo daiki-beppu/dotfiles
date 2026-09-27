@@ -125,6 +125,17 @@
     ],
     "PreToolUse": [
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git *)",
+            "command": "~/.claude/hooks/guard-main-commit.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "*",
         "hooks": [
           {
@@ -196,6 +207,12 @@
   },
   "worktree": {
     "baseRef": "head"
+  },
+  "sandbox": {
+    "excludedCommands": [
+      "npx --yes hyperframes@* render *",
+      "npx -y hyperframes@* render *"
+    ]
   },
   "statusLine": {
     "type": "command",

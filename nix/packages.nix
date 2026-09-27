@@ -16,6 +16,7 @@ in
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
+    actionlint # GitHub Actions の workflow を検査する。run: の bash は PATH 上の shellcheck で検査する
     bun
     xz
     codex
@@ -34,6 +35,7 @@ in
     jdk21_headless
     rclone
     ripgrep
+    shellcheck # actionlint が run: を検査するのに使う。scripts/check.sh の shellcheck check もこれを優先する
     terraform
     tmux
     tree
