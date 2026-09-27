@@ -9,40 +9,6 @@
 
 let
   dotfilesDir = "${config.home.homeDirectory}/ghq/github.com/daiki-beppu/dotfiles/config";
-
-  # gh-stack: GitHub Stacked PRs（public preview）の CLI 拡張。
-  # nixpkgs は 0.0.4（2026-05）で止まっており、preview 公開の目玉である
-  # `gh stack merge`（スタックを一括ランディング）と、rebase/sync が古い trunk の
-  # まま success を返す・amend した親コミットが子ブランチへ再生される、という
-  # 2 つのデータ破壊系バグの修正がいずれも 0.1.0 以降にしかないため上書きする。
-  # v0.1.0 で追加された統合テストが git を exec するので nativeCheckInputs に git を足す
-  # （素通しだとサンドボックスに git が無く checkPhase が落ちる）。
-  # nixpkgs が 0.1.0 以降に追いついたらこの let ごと消して pkgs.gh-stack に戻す。
-  ghStack = pkgs.gh-stack.overrideAttrs (_: prev: {
-    version = "0.1.0";
-    src = pkgs.fetchFromGitHub {
-      owner = "github";
-      repo = "gh-stack";
-      tag = "v0.1.0";
-      hash = "sha256-48JkOeqbvHlCZ2u3LnwJymw55xMQWLTPJLDbV44clGI=";
-    };
-    vendorHash = "sha256-0Xtr/MOpX4u5GnbRdNxKPA0GpSzi8PIbVc9MmP05De4=";
-    nativeCheckInputs = (prev.nativeCheckInputs or [ ]) ++ [ pkgs.git ];
-  });
-
-  # gh: evidence-record スキルの PR 動画添付（`gh pr edit --attach`）が 2.99.0 以降にしか
-  # 無いため上書きする。2.101.0 は go.mod が go 1.27 を要求するのでビルダーも差し替える。
-  # nixpkgs が 2.99.0 以降に追いついたらこの定義ごと消して pkgs.gh に戻す。
-  ghCli = (pkgs.gh.override { buildGoModule = pkgs.buildGo127Module; }).overrideAttrs (_: {
-    version = "2.101.0";
-    src = pkgs.fetchFromGitHub {
-      owner = "cli";
-      repo = "cli";
-      tag = "v2.101.0";
-      hash = "sha256-EoKF2m5sZP+uQ5AVOKkFqSCACfkeUc7vnH8PHWCO6FE=";
-    };
-    vendorHash = "sha256-4KYQBgMNc/sI0mbcXSfJ7A/77VAS6NM8TOzQ3w7AlK8=";
-  });
 in
 {
   home.stateVersion = "24.11";
@@ -55,7 +21,7 @@ in
     # nixpkgs 716c7a2 で依存の whisper-cpp が darwin でビルド不能（CoreML リンク時に
     # ld がクラッシュ）なため、whisper フィルタを無効化（上流修正後に外す）
     (ffmpeg-full.override { withWhisper = false; })
-    ghCli
+    gh
     fzf # ghq のリポジトリへ移動する Ctrl-] ウィジェット（.zshrc）で使う
     ghq
     google-cloud-sdk
@@ -115,7 +81,7 @@ in
   #      `gh stack alias` や `gh config set` が書き込めなくなる
   #   2. github.com / gist.github.com に credential.helper を自動注入する
   # 拡張を 1 つ入れたいだけなのでその二つは引き受けない。
-  xdg.dataFile."gh/extensions/gh-stack".source = "${ghStack}/bin";
+  xdg.dataFile."gh/extensions/gh-stack".source = "${pkgs.gh-stack}/bin";
 
   # ── nh: Nix ヘルパー CLI（GC root まで掃除できる clean コマンド持ち） ──
   # 手動実行用: `nh clean all --dry` で削除対象を確認できる。
