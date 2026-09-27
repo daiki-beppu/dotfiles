@@ -6,10 +6,15 @@
 #   scripts/check.sh nix-eval     # run only the nix-eval check
 #   scripts/check.sh shellcheck links   # run only the named checks
 #   scripts/check.sh mas-declared       # local-only, before darwin-rebuild switch
+#   scripts/check.sh --list             # print available checks
 #
-# Available checks: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills,
-# mas-declared (opt-in: inspects this Mac, so it is not part of the default run)
+# Available checks: DEFAULT_CHECKS and OPT_IN_CHECKS below. Adding a check means
+# defining check_<name> (dashes become underscores) and listing <name> there.
 set -euo pipefail
+
+DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
+# Opt-in: inspects this Mac, so it is not part of the default run.
+OPT_IN_CHECKS=(mas-declared)
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
@@ -347,9 +352,14 @@ check_mas_declared() {
 # main
 # ---------------------------------------------------------------------------
 main() {
+  if [ "${1:-}" = "--list" ]; then
+    printf '%s\n' "${DEFAULT_CHECKS[@]}" "${OPT_IN_CHECKS[@]}"
+    exit 0
+  fi
+
   local -a checks=("$@")
   if [ "${#checks[@]}" -eq 0 ]; then
-    checks=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
+    checks=("${DEFAULT_CHECKS[@]}")
   fi
 
   local -a ran=()
@@ -357,19 +367,15 @@ main() {
   local c
 
   for c in "${checks[@]}"; do
-    case "$c" in
-      nix-eval) ran+=("$c"); check_nix_eval || failed+=("$c") ;;
-      shellcheck) ran+=("$c"); check_shellcheck || failed+=("$c") ;;
-      links) ran+=("$c"); check_links || failed+=("$c") ;;
-      hooks) ran+=("$c"); check_hooks || failed+=("$c") ;;
-      guard-main-commit) ran+=("$c"); check_guard_main_commit || failed+=("$c") ;;
-      mas-declared) ran+=("$c"); check_mas_declared || failed+=("$c") ;;
-      agent-skills) ran+=("$c"); check_agent_skills || failed+=("$c") ;;
+    case " ${DEFAULT_CHECKS[*]} ${OPT_IN_CHECKS[*]} " in
+      *" $c "*) ;;
       *)
-        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills, mas-declared)" >&2
+        echo "unknown check: $c (available: ${DEFAULT_CHECKS[*]} ${OPT_IN_CHECKS[*]})" >&2
         exit 2
         ;;
     esac
+    ran+=("$c")
+    "check_${c//-/_}" || failed+=("$c")
   done
 
   echo
