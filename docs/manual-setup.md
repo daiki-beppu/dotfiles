@@ -38,7 +38,8 @@ Nix 管理外。公式手順（https://viteplus.dev）でインストールす�
 | 1Password | アカウントでサインイン |
 | Docker Desktop | ログインとリソース設定 |
 | Google Drive | ログインして同期フォルダを設定 |
-| Gyazo | アカウント連携とショートカット設定 |
+| Cap | 画面収録の権限許可とショートカット設定（クラウド共有を使うならサインイン） |
+| MindNode | App Store にサインイン済みであること（`masApps` 経由でインストール） |
 
 ## 6. takt MCP の登録
 

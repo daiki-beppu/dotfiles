@@ -198,6 +198,12 @@
                     "raycast"
                     "zoom"
                   ];
+
+                  # Mac App Store 限定のアプリ。mas CLI は brew bundle が自動でインストールする。
+                  # App Store に Apple ID でサインイン済みであることが前提。
+                  masApps = {
+                    "MindNode" = 6446116532; # MindNode: Mind Map & Outline
+                  };
                 };
               }
             )
