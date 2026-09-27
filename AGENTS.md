@@ -6,6 +6,7 @@ Nix + Home Manager ベースの dotfiles 管理リポジトリ。
 
 - `config/` 配下にドットファイルの実体を配置
 - `~/.dotfiles` → このリポジトリへのシンボリックリンク
+- `~/.zshrc`・`~/.zshenv`・`~/.zprofile` もメインチェックアウトの `config/` を指す（`nix/packages.nix` の `linkDotfiles`）。シェル設定に追記する installer は `env -i HOME=<scratchpad>` で隔離して試す
 - Nix flake でパッケージ管理、darwin-rebuild で適用
 
 ## エージェント設定の管理
