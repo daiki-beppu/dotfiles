@@ -64,6 +64,14 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 
 - **Starting multi-part work:** create the stack before writing files. Do not implement every
   concern on trunk and split it later. Put one dependent concern in each layer, bottom to top.
+  This includes a session that will open two or more related PRs, even when the concerns look
+  independent: stack them instead of branching each from trunk.
+- **One stack, one worktree:** run every layer in a single worktree and switch layers with
+  `gh stack up` / `down`. `gh stack rebase` cannot check out a branch that another worktree
+  holds, so a stack spread across worktrees must be rebased by hand, layer by layer.
+- **Single layer:** open it as an ordinary PR (`git push -u` + `gh pr create`); `gh stack link`
+  requires at least two arguments. When a second layer arrives, `gh stack init <existing> <new>`
+  adopts the existing branch as the bottom.
 - **Editing an existing stack:** check out the layer that owns the change before editing. Never
   commit a lower layer's concern on the current top branch. Run `gh stack view --json`; if
   ownership is unclear, inspect `git log --all -- <path>`. Then check out the owner, edit, commit,
