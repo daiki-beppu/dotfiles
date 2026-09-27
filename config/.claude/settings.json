@@ -208,6 +208,12 @@
   "worktree": {
     "baseRef": "head"
   },
+  "sandbox": {
+    "excludedCommands": [
+      "npx --yes hyperframes@* render *",
+      "npx -y hyperframes@* render *"
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh",
