@@ -30,7 +30,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 ## 4. Vite+ の確認
 
 `darwin-rebuild switch` がグローバル CLI を自動導入する。新しいシェルで
-`command -v vp` と `vp --version` を確認する。Node.js shim は導入せず
+`command -v vp` と `vp --version` を確認する。`node` / `npm` などの shim は
 system-first に設定し、既存の Node.js／パッケージマネージャーを継続使用する。
 導入方法と更新手順は README の「PATH 優先順位」「よくある操作」を参照。
 

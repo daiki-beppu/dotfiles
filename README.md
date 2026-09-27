@@ -37,7 +37,7 @@ sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 | **Nix (programs.git)** | git の設定 (.gitconfig, .gitignore) |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (home.activation)** | dotfiles 一式のシンボリンク (.zshenv, .zshrc, .zprofile, .local/bin/*, .config/zsh-abbr/*, .claude/*) |
-| **Nix (home.activation / 公式 installer)** | Vite+ グローバル CLI `vp`（Node.js shim は導入せず、system-first） |
+| **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`（shim は system-first） |
 | **Homebrew (brews)** | nixpkgs にないツール (ni, turso) |
 | **Homebrew (casks)** | GUI アプリ (Arc, Claude, Cursor, Figma 等) |
 
@@ -82,7 +82,7 @@ dotfiles/
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
 | nixpkgs にないツール追加 | upstream が flake を提供するなら `flake.nix` の `inputs` に、なければ `brews` に追加 |
 | takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch |
-| vp を更新 | `nix/vite-plus.nix` の `version` と公式 installer の `hash` を更新 → switch（ネットワーク接続が必要） |
+| vp を更新 | `nix/vite-plus.nix` の `version` と npm tarball の `hash` を更新 → switch（ネットワーク接続が必要） |
 | 変更を適用 | `sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
 | 全依存を最新化 | `nix flake update --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
@@ -155,10 +155,12 @@ fine-grained PAT のメディア添付対応は未保証。ブラウザー Cooki
 `command -v vp` と `vp --version` を確認する。起動済みアプリが古い PATH を
 保持している場合はターミナル／Codex を再起動する。
 
-Vite+ は固定中の nixpkgs に未収録。Homebrew 版の Node.js 依存更新を避けるため、
-バージョンとハッシュを固定した公式 installer を Home Manager から実行する。
-`VP_NODE_MANAGER=no` で Node.js shim の導入を避け、`vp env off` で
-system-first にする。通常の `node` / `npm` / `pnpm` の管理は維持し、
+Vite+ は nixpkgs に未収録。Homebrew 版の Node.js 依存更新を避けるため、
+npm 配布の `vp` バイナリをバージョンとハッシュで固定し、Home Manager の
+activation から self-setup で `~/.vite-plus` に展開する。
+`VP_SELF_SETUP_NO_MODIFY_PATH=1` でシェル設定ファイルを書き換えさせず、
+`VP_NODE_MANAGER=no` で `node` / `npm` / `pnpm` の shim を system-first にする。
+通常の `node` / `npm` / `pnpm` の管理は維持し、
 `vp` 内の実行環境はプロジェクトの指定に従う。
 各リポジトリの `vite-plus` 依存と lockfile は変更しない。
 グローバル CLI の更新は `vp upgrade` ではなく上記の Nix 設定で行う。
@@ -166,7 +168,7 @@ activation で取得したファイルは Nix store 外にあるため、Nix の
 `vp` は戻らない。以前の `version` / `hash` に戻して switch する。
 
 公式資料: [Getting Started](https://viteplus.dev/guide/)、
-[Installer Environment Variables](https://viteplus.dev/guide/installer-env-vars/)。
+[環境変数の定義（v0.3.3）](https://github.com/voidzero-dev/vite-plus/blob/v0.3.3/crates/vp_shared/src/env_vars.rs)。
 
 ```
 Nix (/etc/profiles/per-user/mba/bin/)
