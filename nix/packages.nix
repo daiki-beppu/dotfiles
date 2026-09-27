@@ -11,6 +11,8 @@ let
   dotfilesDir = "${config.home.homeDirectory}/ghq/github.com/daiki-beppu/dotfiles/config";
 in
 {
+  imports = [ ./vite-plus.nix ];
+
   home.stateVersion = "24.11";
 
   home.packages = with pkgs; [
