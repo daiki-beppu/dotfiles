@@ -166,6 +166,7 @@
                   taps = [
                     "manaflow-ai/cmux"
                     "olets/tap"
+                    "stablyai/orca"
                   ];
 
                   brews = [
@@ -193,6 +194,7 @@
                     "nani"
                     "notion"
                     "nvidia-geforce-now"
+                    "stablyai/orca/orca" # Orca（エージェント並列実行 IDE）。nixpkgs の orca はスクリーンリーダーで別物
                     "raycast"
                     "zoom"
                   ];
