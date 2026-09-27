@@ -5,8 +5,10 @@
 #   scripts/check.sh              # run all checks
 #   scripts/check.sh nix-eval     # run only the nix-eval check
 #   scripts/check.sh shellcheck links   # run only the named checks
+#   scripts/check.sh mas-declared       # local-only, before darwin-rebuild switch
 #
-# Available checks: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills
+# Available checks: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills,
+# mas-declared (opt-in: inspects this Mac, so it is not part of the default run)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -314,6 +316,34 @@ check_guard_main_commit() {
 }
 
 # ---------------------------------------------------------------------------
+# Check: mas-declared
+# Once masApps declares any app, homebrew.onActivation.cleanup = "uninstall"
+# uninstalls every installed App Store app missing from masApps on switch.
+# Fails when an installed App Store app (Spotlight kMDItemAppStoreAdamID, the
+# same source `mas list` reads) is not declared for this host. Host defaults
+# to LocalHostName; override with DARWIN_HOST.
+# ---------------------------------------------------------------------------
+check_mas_declared() {
+  echo "== mas-declared =="
+  local host="${DARWIN_HOST:-$(scutil --get LocalHostName)}"
+  local declared
+  declared="$(nix eval --raw ".#darwinConfigurations.\"$host\".config.homebrew.masApps" \
+    --apply 'a: builtins.concatStringsSep " " (map toString (builtins.attrValues a))')" || return 1
+  [ -n "$declared" ] || { echo "masApps is empty for $host; cleanup leaves App Store apps alone"; return 0; }
+
+  local app id missing=0
+  while IFS= read -r app; do
+    id="$(mdls -raw -name kMDItemAppStoreAdamID "$app")"
+    case " $declared " in
+      *" $id "*) ;;
+      *) echo "undeclared: \"$(basename "$app" .app)\" = $id;  # $app" >&2; missing=1 ;;
+    esac
+  done < <(mdfind -onlyin /Applications 'kMDItemAppStoreAdamID == *')
+  [ "$missing" -eq 0 ] || { echo "add these to masApps in flake.nix, or switch will uninstall them" >&2; return 1; }
+  echo "all installed App Store apps are declared for $host"
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 main() {
@@ -333,9 +363,10 @@ main() {
       links) ran+=("$c"); check_links || failed+=("$c") ;;
       hooks) ran+=("$c"); check_hooks || failed+=("$c") ;;
       guard-main-commit) ran+=("$c"); check_guard_main_commit || failed+=("$c") ;;
+      mas-declared) ran+=("$c"); check_mas_declared || failed+=("$c") ;;
       agent-skills) ran+=("$c"); check_agent_skills || failed+=("$c") ;;
       *)
-        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills)" >&2
+        echo "unknown check: $c (available: nix-eval, shellcheck, links, hooks, guard-main-commit, agent-skills, mas-declared)" >&2
         exit 2
         ;;
     esac
