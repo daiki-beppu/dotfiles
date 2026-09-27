@@ -1,11 +1,11 @@
 ---
 name: chrome-devtools
-description: Browser / Computer Use で不足する通信・JavaScript エラー・性能・メモリ情報を Chrome DevTools MCP で診断するとき、またはその MCP の接続失敗を復旧するときに使う。
+description: Browser / Computer Use で不足する通信・JavaScript エラー・性能・メモリ情報を Chrome DevTools MCP で診断するとき、Browser / Computer Use の無い環境で UI 変更後の画面を確かめるとき、またはその MCP の接続失敗を復旧するときに使う。
 ---
 
 # Chrome DevTools diagnostics
 
-通常の閲覧・クリック・入力・画面確認には実行環境の Browser / Computer Use を使う。必要な診断情報が取れない場合に、この MCP で再現と採取を行う。
+通常の閲覧・クリック・入力・画面確認には実行環境の Browser / Computer Use を使う。必要な診断情報が取れない場合に、この MCP で再現と採取を行う。Browser / Computer Use が無い環境では、画面の確認（`navigate_page` → `take_screenshot`）にもこの MCP を使う。
 
 ## 接続と対象
 
