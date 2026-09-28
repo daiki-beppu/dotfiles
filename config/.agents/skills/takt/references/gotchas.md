@@ -7,10 +7,9 @@
   worktree が要るなら**積んで `takt run` で回す**経路を通す(投入時に `worktree: true` を渡し、
   `run` が `<repo-parent>/takt-worktrees/` に隔離クローンを作る)。`--pipeline` も worktree を
   作らない(help に *non-interactive, no worktree, direct branch creation* と明記。CI 用)
-- **`--auto-pr` / `--draft` は `--pipeline` 専用になった**。非 pipeline で渡すと実行に入る前に
+- **`--auto-pr` / `--draft` は `--pipeline` 専用**。非 pipeline で渡すと実行に入る前に
   `[ERROR] --auto-pr/--draft are supported only in --pipeline mode` で exit する
-  (`routing.js::executeDefaultAction` の最初のガード)。**他所の手順書が
-  `takt --auto-pr -w <wf> "#<N>"` を指していたらそれは古い**。このスキルの経路では
+  (`routing.js::executeDefaultAction` の最初のガード)。このスキルの経路では
   PR 自動作成は投入時の `autoPr` フラグ([enqueue.md](enqueue.md))で表現するので、CLI の `--auto-pr` は使わない
 - **`--pipeline` に切り替えても素直には通らない。3 段階でずれる**。1 つ直すと次が出るので、
   行き当たりばったりに直さず最初から 3 つとも満たす:
@@ -32,8 +31,8 @@
   [fallbacks.md](fallbacks.md) へ落として、このスキルの修正が要るサインとして報告する。
   実際 `enqueueService.js` は 0.55.1 までに `dist/infra/task/` へ移動しており(`saveEnqueuedTaskFile`
   の import 元は変わっていない)、**パスの移動は起きる前提で扱う**
-- **takt 経由の run では Claude が自分のスキルを見ない**。0.55.0 の BREAKING で
-  `provider_options.claude.skills.enabled` の既定が `false` になり、`claude-sdk` は `skills: []`、
+- **takt 経由の run では Claude が自分のスキルを見ない**。
+  `provider_options.claude.skills.enabled` の既定が `false` で、`claude-sdk` は `skills: []`、
   CLI 系(`claude` / `claude-terminal`)は `--disable-slash-commands` 付きで起動する
   (custom slash command も同時に死ぬ)。**「あのスキルを使って実装して」と issue 本文に書いても
   効かない**ので、手順が要るなら issue 本文に直接書く。復活させるなら
@@ -45,14 +44,13 @@
   agent 実行前に止まる。project で persona を上書きするなら `.takt/runtime.yaml` の `targets` に
   書くが、**project の `targets` は global の `targets` を丸ごと置き換える**（profiles は名前単位で
   合成される）ので、global の persona・companion の割り当てを全量写してから書き換える（実例: specv）
-- **`max_steps` は workflow ツリー全体の共有予算になった**(0.55.0 BREAKING)。`workflow_call` は
+- **`max_steps` は workflow ツリー全体の共有予算**。`workflow_call` は
   ステップ数にカウントされない制御ノードで、予算は root の `max_steps` だけが持つ。
   **callable workflow に `max_steps` を書くとロード時に落ちる**。上限に当たって止まった run を
   そのまま伸ばしたいときは `takt run --ignore-exceed`(共有予算を延長する。pane に送る行に足す)
-- **run の report ディレクトリ名が変わった**(0.55.0 BREAKING)。`.takt/runs/*/reports/` 配下は
-  `iteration-N--step-X--workflow-Y` から `call-…` セグメントになり、**旧形式の run を読む /
-  resume する経路は削除された**(移行措置なし)。0.55.0 より前に走った run のログを漁るときは
-  パス形式が違う前提で探す
+- **run の report ディレクトリは `call-…` セグメント形式**(`.takt/runs/*/reports/` 配下)。
+  0.55.0 より前の run は `iteration-N--step-X--workflow-Y` 形式で、takt から読む / resume する
+  経路は無い。古い run のログはその形式で探す
 - **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
   `Workflow not found` で止まる(積まれない)。ただしworkflow の選択条件を省くと、**存在はするが
   意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物

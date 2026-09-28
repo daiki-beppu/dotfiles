@@ -43,7 +43,7 @@ worktree は新規チェックアウトなので `.env` 等の未追跡ファイ
 config/secrets.json
 ```
 
-gitignore された設定ファイルを持つリポジトリでは、**worktree を使う前に必ず `.worktreeinclude` を置く**（フォールバックの hook は廃止済み。置き忘れると worktree でだけ `.env` が無い状態になり、原因が分かりにくい）。
+gitignore された設定ファイルを持つリポジトリでは、**worktree を使う前に必ず `.worktreeinclude` を置く**（置き忘れると worktree でだけ `.env` が無い状態になり、原因が分かりにくい）。
 
 `.worktreeinclude` は Codex（ChatGPT デスクトップアプリ）とも同名・同構文の共通仕様なので、1 つ置けば両方に効く（Codex 側は `AGENTS.override.md` を列挙なしで自動コピーする）。
 
