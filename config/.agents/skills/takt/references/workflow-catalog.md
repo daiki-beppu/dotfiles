@@ -29,14 +29,14 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 - 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
 - takt / tayk 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
 
-0.54〜0.55 で builtin の構成が動いたので、以前の選び方をそのまま持ち込まない:
+builtin の構成(現行版の実在は投入先で確認する):
 
-- **`simple` 系列が 🚀 Quick Start の先頭に来た**。モデルの判断を信じて orchestration を
+- **`simple` 系列が 🚀 Quick Start の先頭**。モデルの判断を信じて orchestration を
   最小化する設計で、`simple` / `simple-mini` + スタック別 5 本
-- **`default-high` / `dual` は Team Leader 委譲をやめて直接実装するようになった**。
+- **`default-high` / `dual` は Team Leader に委譲せず直接実装する**。
   leader 経路が欲しいときは `takt-default-team` を明示する
-- **QA reviewer は撤去された**(`qa-reviewer` persona / `qa` policy / `qa-review` output contract
-  が削除され、観点は coding policy に統合)。これらを参照する自作 workflow が残っていれば
+- **QA reviewer は存在しない**(`qa-reviewer` persona / `qa` policy / `qa-review` output contract
+  は無く、観点は coding policy にある)。これらを参照する自作 workflow が残っていれば
   投入先として選ぶ前に facet 参照を張り替える
 
 実在するレーンは `.takt/workflows/` とインストールされた takt の `builtins/<language>/workflows/` を確認する。language は設定から選ぶ。builtin の `workflow-categories.yaml` があれば用途と推奨順を照合する。各 YAML の `subworkflow.callable` を確認し、callable な部品や `.takt/steps/` の fragment を直接投入しない。

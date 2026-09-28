@@ -26,8 +26,6 @@ cmux send --surface surface:<N> "cd <repo_root> && takt -w <workflow> add \"#<N>
 | 5 | `Create as draft?` | **Yes** | Enter 連打すると **draft PR** になる。通常の PR が欲しければ No |
 | 6 | 最終確認 | Yes | |
 
-fallback に落ちたことは報告に必ず含める(このスキル側の修正が要るサイン)。
-
 ## cmux を利用できない環境
 
 `CMUX_WORKSPACE_ID` が空、`cmux` が PATH に無い、または socket アクセスが拒否された場合は、ホストの継続可能な実行セッションを使う。利用不能な pane の設定変更はこのタスクの前提にしない。
