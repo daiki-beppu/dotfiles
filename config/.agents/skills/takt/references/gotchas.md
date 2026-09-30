@@ -47,7 +47,7 @@
 - **`max_steps` は workflow ツリー全体の共有予算**。`workflow_call` は
   ステップ数にカウントされない制御ノードで、予算は root の `max_steps` だけが持つ。
   **callable workflow に `max_steps` を書くとロード時に落ちる**。上限に当たって止まった run を
-  そのまま伸ばしたいときは `takt run --ignore-exceed`(共有予算を延長する。pane に送る行に足す)
+  そのまま伸ばしたいときは `takt run --ignore-exceed`(共有予算を延長する。起動コマンドに足す)
 - **run の report ディレクトリは `call-…` セグメント形式**(`.takt/runs/*/reports/` 配下)。
   0.55.0 より前の run は `iteration-N--step-X--workflow-Y` 形式で、takt から読む / resume する
   経路は無い。古い run のログはその形式で探す
@@ -84,12 +84,3 @@
 - **draft の既定が経路によって逆になる**。内部 API 経路は `TAKT_DRAFT` を明示するので
   **指定しなければ通常 PR**、対話 fallback の `Create as draft?` は**既定 Yes**(Enter 連打で
   draft PR)。fallback に落ちたときだけ、通常 PR が欲しければ明示的に No を選ぶよう伝える
-- **`cmux` は PATH に無いことがある**。cask 由来で実体は
-  `/Applications/cmux.app/Contents/Resources/bin/cmux`。`config/.zshrc` で PATH の**末尾**に
-  追加してあるが、反映前のシェルでは解決できない。**先頭に足してはいけない** — 同じ bin に
-  `open` と `ghostty` が同居しており、先頭に置くと macOS 標準の `/usr/bin/open` を覆い隠す
-- **pane に送るコマンドは repo root への `cd` から始める**。helper pane の cwd は caller と
-  同じとは限らず、`.takt/` を見つけられないまま `takt run` が空振りする
-- **pane では `-q` を付けない・`tee` を挟まない**。`-q` は AI 出力を落とす CI 向けオプションで、
-  `tee` はバッファ遅延を招く。どちらも「止まっているのか進んでいるのか」の判断材料を潰す。
-  pane に出力を素通しさせることが、この経路の存在意義そのもの

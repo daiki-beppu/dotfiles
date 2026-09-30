@@ -4,7 +4,7 @@
 
 
 **`takt add` は使わない**。ユーザーに 6 問のプロンプトを手入力させる代わりに、
-takt の内部 API を直呼びして対話ゼロで積む。pane も要らない。
+takt の内部 API を直呼びして対話ゼロで積む。
 
 MCP の `takt_enqueue_task` も投入に使わない。入力に draft の指定が無く（設定の `draft_pr` 任せになる）、
 `issue.number` は紐付けるだけで issue 本文を取得しないため、`--draft` と「issue が仕様の正本」を守れない。
