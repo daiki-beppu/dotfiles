@@ -17,7 +17,6 @@ result-*
 
 # skill-creator の評価成果物（workspace）は追跡しない
 config/.agents/skills/*-workspace/
-!config/.agents/skills/cmux-workspace/
 
 # Python テスト実行時のキャッシュ
 __pycache__/

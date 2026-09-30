@@ -35,7 +35,7 @@ API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 ## 実行と完了
 
-実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。実行は cmux の helper surface または継続可能な実行セッションで一度起動する。大量の stdout をコンテキストへ流さず、完了シグナルとタスク状態で追跡する。待機 timeout だけで再起動しない。
+実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。実行は継続可能な実行セッションで一度起動する。大量の stdout をコンテキストへ流さず、セッションの終了とタスク状態で追跡する。待機 timeout だけで再起動しない。
 
 投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / exceeded / pr_failed と未完了を区別する。ログは takt MCP の `takt_get_run`（無ければ実行クローンの `clonePath` 配下）から必要部分だけ読む。
 
