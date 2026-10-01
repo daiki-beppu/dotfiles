@@ -4,14 +4,33 @@
 
 ## 起動
 
-ホストの継続可能な実行セッションで、対象リポジトリへ移動して `takt run` を一度起動する。パスは shell quote する。
+対象リポジトリへ移動して `takt run` を一度起動する。パスは shell quote する。`-q` で AI 出力を消さない。
+
+### Orca 上（`ORCA_TERMINAL_HANDLE` がある）
+
+ユーザーが進捗を見られるよう、自分の pane の右に split して takt を走らせる。`orca` の解決と `runtime_access_denied` の扱いは orca-cli スキルに従う。
+
+```sh
+orca terminal split --terminal "$ORCA_TERMINAL_HANDLE" --direction horizontal \
+  --command "cd <shell-quote済みrepo_root> && takt run; exit" --json
+```
+
+- 末尾の `; exit` を省かない。`--command` の後もシェルが残り、終了を検知できなくなる。
+- 出力は pane に素通しする。`tee` やリダイレクトを挟まない。
+- pane は takt の終了で閉じ、出力は残らない。結果は下の「完了時の確認」で取る。
+- 返った `result.split.handle` の終了を下のコマンドで待つ（Claude Code は `run_in_background: true`、Codex はセッション ID を返す exec）。`satisfied: false` は timeout なので、同じ handle で待ち直す。
+
+```sh
+orca terminal wait --terminal <handle> --for exit --timeout-ms 7000000 --json
+```
+
+### それ以外
+
+ホストの継続可能な実行セッションで起動する。Claude Code は `run_in_background: true`、Codex はセッション ID を返す exec/TTY を使う。ログは失敗箇所を探すためだけに使い、全文は読まない。
 
 ```sh
 cd <shell-quote済みrepo_root> && takt run > <scratchpad>/takt_<slug>.log 2>&1
 ```
-
-- Claude Code は `run_in_background: true`、Codex はセッション ID を返す exec/TTY を使う。
-- `-q` で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
 
 複数タスクでも runner の起動は一回。worker pool が設定された concurrency で pending を消化する。全 pending が対象になり得るため、実行前に依頼外の pending が混じっていないか確認する。
 
