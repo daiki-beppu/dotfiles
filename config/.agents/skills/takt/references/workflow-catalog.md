@@ -1,24 +1,11 @@
 # レーンの語彙と builtin カタログ
 
-プロジェクト固有レーンが無く builtin から選ぶときに読む。以下は過去の版での語彙例であり、現在の実在・用途は投入先で確認する。
+プロジェクト固有レーンが無く builtin から選ぶときに読む。現在の実在・用途は投入先で確認する。
 
 ## 意図の語彙(プロジェクト固有レーンがある場合)
 
-**プロジェクト固有レーンがあればその設計に従う**。意図別レーンは `<prefix>-<意図>` の命名で、
-prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語彙も揃っていない**:
-
-| 状況 | 意図の語 | 実在例 |
-| --- | --- | --- |
-| 壊れている(バグ・回帰) | `fix` | `yt-auto-fix` / `tayk-fix` |
-| コードを変えず文書 / skill だけ | `docs` | `yt-auto-docs`(tayk には無い) |
-| 挙動を変えずに構造を変える(refactor) | `maintenance` | `yt-auto-maintenance`(tayk には無い) |
-| 調査して報告するだけ | `audit` | `yt-auto-audit` / `tayk-audit-architecture` |
-| workflow / facet / 実行トレース自体を点検する | `audit-runs` | `tayk-audit-runs` / `yt-auto-audit-runs`(`00-automation` のみ) |
-| それ以外(新機能・機能拡張) | `feature` | `yt-auto-feature` / `tayk-feature` |
-
-この表は**語彙の対応であって実在の保証ではない**。同じ意図の語が全リポジトリにあるとは限らない
-(実測: `docs` / `maintenance` は yt-auto 系にしか無く、`audit-runs` は yt-auto 系でも
-リポジトリによって有無が分かれる)。必ず実在一覧と突き合わせる。
+**プロジェクト固有レーン(`.takt/workflows/`)があればその設計に従う**。レーンの命名と意図の語彙(fix / docs / audit / feature など)は
+リポジトリごとに違うので、必ず投入先の実在一覧と突き合わせる。
 
 ## builtin の選択軸・深度(プロジェクト固有レーンが無い場合)
 
@@ -27,7 +14,7 @@ prefix はリポジトリごとに違う(`yt-auto-` / `tayk-`)。**意図の語�
 - スタック: `frontend` / `backend` / `dual`(両方) / `cli` / `terraform` / 無印(汎用)
 - 深度: `simple-*`(最小) → `*-mini`(軽量) → 無印
 - 監査・レビューは `audit-*` / `review-*`、調査だけなら `research` / `deep-research`
-- takt / tayk 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
+- takt 自身の開発は `takt-default*`(🎵 TAKT開発 カテゴリ)
 
 builtin の構成(現行版の実在は投入先で確認する):
 
