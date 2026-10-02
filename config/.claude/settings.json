@@ -132,6 +132,12 @@
             "if": "Bash(git *)",
             "command": "~/.claude/hooks/guard-main-commit.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge *)",
+            "command": "~/.claude/hooks/guard-pr-merge.sh",
+            "timeout": 30
           }
         ]
       },
