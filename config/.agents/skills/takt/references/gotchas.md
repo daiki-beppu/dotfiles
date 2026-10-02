@@ -88,7 +88,11 @@
   (ホストの実行時間の上限など)、次の `takt run` が `Marked 1 interrupted running task(s) as failed.` と
   失敗に書き換えるが、`was not auto-requeued: failed step is missing` で積み直さない。積み直しは
   `takt list` の対話(前の workflow を使うか・開始位置の 2 問)しかないので、内部 API を同じ順に呼んで
-  非対話で行う。開始位置は既定の `resume-checkpoint`(止まった工程から)を選ぶ:
+  非対話で行う。開始位置は `resume-checkpoint`(止まった位置から)を選ぶ。この選択肢は止まった位置を
+  今の workflow 定義で解決できたときだけ出る。動的な並列の工程(peer-review の review など)の途中で
+  止まると種類の照合が合わず出ない(0.67.0、上流 main も同じ)。そのときは既定が最初の plan になるので、
+  `buildTaskRetryStartOptions(ctx.workflowConfig, ctx.options)` で id の一覧(`restart:0.4.0.0` = "review" など)を
+  出し、止まった工程の id を渡す:
 
   ```js
   const { TaskRunner } = await import(`${root}/dist/infra/task/index.js`);
@@ -107,6 +111,8 @@
     sourceRunSlug: prep.matchedRunSlug, restartPoint: own.restartPoint });
   ```
 
-  その後 `takt run` を起動し直す(`run.md` の `timeout` を付けて)
+  開始位置を誤って積み直したら、pending のまま `new TaskRunner(cwd).requeueTask(name, ['pending'], {...})` に
+  正しい `startStep` / `resumePoint` / `restartPoint` を渡して付け替える。その後 `takt run` を起動し直す
+  (`run.md` の起動方法で)
 - **takt のエージェントは issue 本文のリンク先を読めない**。order.md に写るのは本文だけで、計画の工程は
   `gh` を許可されていない(「仕様の issue は未確認」と書いて進む)。実装に要る仕様は投入前に本文へ書き写す
