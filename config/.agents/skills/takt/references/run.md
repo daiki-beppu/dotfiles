@@ -10,7 +10,7 @@
 cd <shell-quote済みrepo_root> && takt run > <scratchpad>/takt_<slug>.log 2>&1
 ```
 
-- Claude Code は `run_in_background: true` に `timeout: 7200000`（上限の 2 時間）を付ける。既定の 30 分では 1 件の実行（30〜60 分）が途中で打ち切られ、takt も道連れで止まる。Codex はセッション ID を返す exec/TTY を使う。
+- Claude Code は takt run を `nohup … < /dev/null & echo $! > <scratchpad>/takt_<slug>.pid; disown` で切り離して起動し、終了の回収には PID の終了を待つループを `run_in_background: true` と `timeout: 7200000` で流す。takt run 自体をバックグラウンド実行に載せると、その上限（既定 30 分、最大 2 時間）で takt も道連れで止まる（調査の issue は 2 時間を超えた）。待つループが上限で止まっても takt は動き続けるので、ループだけ張り直す。Codex はセッション ID を返す exec/TTY を使う。
 - `-q` で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
 
 複数タスクでも runner の起動は一回。worker pool が設定された concurrency で pending を消化する。全 pending が対象になり得るため、実行前に依頼外の pending が混じっていないか確認する。
