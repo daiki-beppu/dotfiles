@@ -19,7 +19,7 @@ description: GitHub issue を takt に投入・実行する依頼に使う。「
 
 ## 投入条件
 
-issue 本文が仕様の正本で、投入時に order.md へコピーされる。自前の order.md は上書きされる。本文の矛盾・不足を確認し、修正は依頼された範囲で issue 側に行う。未起票ならリポジトリの起票規約に従う。起票は `to-spec` → `to-tickets`（仕様が完成済みなら `to-tickets`）を使う。
+issue 本文が仕様の正本で、投入時に order.md へコピーされる。自前の order.md は上書きされる。本文の矛盾・不足を確認し、修正は依頼された範囲で issue 側に行う。エージェントはリンク先の issue を読めないので、実装に要る仕様は本文に書き写す。未起票ならリポジトリの起票規約に従う。起票は `to-spec` → `to-tickets`（仕様が完成済みなら `to-tickets`）を使う。
 
 pending / running と既存 branch を確認して重複・競合を避ける。稼働中の runner は投入直後に pending を拾うため、「後で実行」と指定されていれば即実行されるキューへ投入しない。実行を許可された場合は即時に走り得ることを伝える。
 
@@ -36,6 +36,8 @@ API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 ## 実行と完了
 
 実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。実行は継続可能な実行セッションで一度起動する。大量の stdout をコンテキストへ流さず、セッションの終了とタスク状態で追跡する。待機 timeout だけで再起動しない。
+
+途中経過・後片付けは `scripts/` の takt-status / takt-cleanup を使う（使い方は [run.md](references/run.md)）。
 
 投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / exceeded / pr_failed と未完了を区別する。ログは takt MCP の `takt_get_run`（無ければ実行クローンの `clonePath` 配下）から必要部分だけ読む。
 

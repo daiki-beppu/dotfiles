@@ -84,3 +84,29 @@
 - **draft の既定が経路によって逆になる**。内部 API 経路は `TAKT_DRAFT` を明示するので
   **指定しなければ通常 PR**、対話 fallback の `Create as draft?` は**既定 Yes**(Enter 連打で
   draft PR)。fallback に落ちたときだけ、通常 PR が欲しければ明示的に No を選ぶよう伝える
+- **外から止められたタスクは自動で積み直されない**(0.67.0 で実測)。runner のプロセスが殺されると
+  (ホストの実行時間の上限など)、次の `takt run` が `Marked 1 interrupted running task(s) as failed.` と
+  失敗に書き換えるが、`was not auto-requeued: failed step is missing` で積み直さない。積み直しは
+  `takt list` の対話(前の workflow を使うか・開始位置の 2 問)しかないので、内部 API を同じ順に呼んで
+  非対話で行う。開始位置は既定の `resume-checkpoint`(止まった工程から)を選ぶ:
+
+  ```js
+  const { TaskRunner } = await import(`${root}/dist/infra/task/index.js`);
+  const { prepareFailedTaskRetry, buildFailedTaskRetryStartContext } = await import(`${root}/dist/features/tasks/taskRetryPreparation.js`);
+  const { resolveTaskRetryStartOption, resolveTaskRetryStartOwnership } = await import(`${root}/dist/features/tasks/list/taskRetryStartSelection.js`);
+  const { appendRetryNote, persistFailedTaskRetry } = await import(`${root}/dist/features/tasks/taskRetryPersistence.js`);
+  const { buildAutoRequeueNote } = await import(`${root}/dist/features/tasks/list/requeueHelpers.js`);
+  const task = new TaskRunner(cwd, {}).listFailedTasks().find((t) => t.name === name);
+  const prep = prepareFailedTaskRetry(task, cwd);
+  const ctx = buildFailedTaskRetryStartContext(prep, cwd, prep.previousWorkflow);
+  const sel = resolveTaskRetryStartOption(ctx.workflowConfig, ctx.options, 'resume-checkpoint');
+  const own = resolveTaskRetryStartOwnership(sel.selection, ctx.workflowConfig);
+  persistFailedTaskRetry({ task, projectDir: cwd, worktreePath: prep.worktreePath, startStep: own.startStep,
+    retryNote: appendRetryNote(task.data?.retry_note, buildAutoRequeueNote({ ...prep.failure, step: prep.failedStep })),
+    resumePoint: own.resumePoint, workflow: ctx.workflowOverride, taskDir: undefined,
+    sourceRunSlug: prep.matchedRunSlug, restartPoint: own.restartPoint });
+  ```
+
+  その後 `takt run` を起動し直す(`run.md` の `timeout` を付けて)
+- **takt のエージェントは issue 本文のリンク先を読めない**。order.md に写るのは本文だけで、計画の工程は
+  `gh` を許可されていない(「仕様の issue は未確認」と書いて進む)。実装に要る仕様は投入前に本文へ書き写す
