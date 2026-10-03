@@ -4,14 +4,28 @@
 
 ## 起動
 
-ホストの継続可能な実行セッションで、対象リポジトリへ移動して `takt run` を一度起動する。パスは shell quote する。
+対象リポジトリへ移動して `takt run` を一度起動する。パスは shell quote する。
+
+Orca の端末内（`ORCA_TERMINAL_HANDLE` がある）では、自分の pane の右に分割した別 pane で起動し、ユーザーが進行を見られるようにする。
+
+```sh
+orca terminal split --terminal "$ORCA_TERMINAL_HANDLE" --direction vertical --json \
+  --command "cd <shell-quote済みrepo_root> && takt run 2>&1 | tee <scratchpad>/takt_<slug>.log; touch <scratchpad>/takt_<slug>.done"
+```
+
+- 右に出すのは `vertical`。Orca 1.4.217 の実測では `horizontal` が上下分割で、同梱ガイドの説明と逆になっている。
+- `--command` は pane のシェルに打ち込まれるだけで、takt が終わっても pane は残る。`terminal wait --for exit` は返らないので、終了は `.done` の出現で回収する。`until [ -f <scratchpad>/takt_<slug>.done ]; do sleep 30; done` を `run_in_background: true` と `timeout: 7200000` で流し、上限で止まったらループだけ張り直す。返った `handle` は報告に含める。
+- pane を閉じると takt も止まる。pane の後片付けは完了を確認してから行う。
+
+Orca の外では、継続可能な実行セッションで切り離して起動する。
 
 ```sh
 cd <shell-quote済みrepo_root> && takt run > <scratchpad>/takt_<slug>.log 2>&1
 ```
 
 - Claude Code は takt run を `nohup … < /dev/null & echo $! > <scratchpad>/takt_<slug>.pid; disown` で切り離して起動し、終了の回収には PID の終了を待つループを `run_in_background: true` と `timeout: 7200000` で流す。takt run 自体をバックグラウンド実行に載せると、その上限（既定 30 分、最大 2 時間）で takt も道連れで止まる（調査の issue は 2 時間を超えた）。待つループが上限で止まっても takt は動き続けるので、ループだけ張り直す。Codex はセッション ID を返す exec/TTY を使う。
-- `-q` で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
+
+どちらでも `-q` で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
 
 複数タスクでも runner の起動は一回。worker pool が設定された concurrency で pending を消化する。全 pending が対象になり得るため、実行前に依頼外の pending が混じっていないか確認する。
 
