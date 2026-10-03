@@ -29,8 +29,7 @@
   `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
   壊れていたら書き込まれた不完全なレコードを先に外し(残したまま fallback すると二重投入になる)、
   [fallbacks.md](fallbacks.md) へ落として、このスキルの修正が要るサインとして報告する。
-  実際 `enqueueService.js` は 0.55.1 までに `dist/infra/task/` へ移動しており(`saveEnqueuedTaskFile`
-  の import 元は変わっていない)、**パスの移動は起きる前提で扱う**
+  `dist/` 内のモジュールの移動は起きる前提で扱う
 - **takt 経由の run では Claude が自分のスキルを見ない**。
   `provider_options.claude.skills.enabled` の既定が `false` で、`claude-sdk` は `skills: []`、
   CLI 系(`claude` / `claude-terminal`)は `--disable-slash-commands` 付きで起動する
@@ -81,9 +80,6 @@
   `git check-ignore -v` で見る
 - **nix store のパスを直書きしない**。takt バイナリは flake 管理でバージョンごとにハッシュが
   変わる。builtin レーン一覧を引くときも `which takt` + `realpath` から辿る([workflow-catalog.md](workflow-catalog.md))
-- **draft の既定が経路によって逆になる**。内部 API 経路は `TAKT_DRAFT` を明示するので
-  **指定しなければ通常 PR**、対話 fallback の `Create as draft?` は**既定 Yes**(Enter 連打で
-  draft PR)。fallback に落ちたときだけ、通常 PR が欲しければ明示的に No を選ぶよう伝える
 - **外から止められたタスクは自動で積み直されない**(0.67.0 で実測)。runner のプロセスが殺されると
   (ホストの実行時間の上限など)、次の `takt run` が `Marked 1 interrupted running task(s) as failed.` と
   失敗に書き換えるが、`was not auto-requeued: failed step is missing` で積み直さない。積み直しは
