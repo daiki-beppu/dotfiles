@@ -187,6 +187,7 @@
                     "manaflow-ai/cmux/cmux"
                     "codex-app"
                     "cursor"
+                    "devin-cli"
                     "devin-desktop"
                     "discord"
                     "font-hackgen"
