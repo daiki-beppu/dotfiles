@@ -7,7 +7,7 @@
 # 削除は確認なしで通しつつ、取り返しのつかない消し方だけを塞ぐ。
 #
 # 判定:
-#   - コマンドを && / || / ; / | / 改行で区切り、各区切りの先頭のコマンドを読む
+#   - 引用符の中を除いてから、コマンドを && / || / ; / | / 改行で区切り、各区切りの先頭のコマンドを読む
 #   - 先頭の ( { と環境変数の代入、sudo / command / env / nohup / time / exec / xargs は読み飛ばす
 #   - そのコマンドが rm（/bin/rm を含む）か、find に -delete か -exec rm があれば拒否する
 #   - `git rm` は git の追跡下の操作で戻せるので対象外
@@ -33,7 +33,9 @@ deny() {
 
 reason='rm は使わず、`trash <path>...` でゴミ箱へ移してください（-r / -f は不要で、ディレクトリもそのまま渡せます。Finder のゴミ箱から戻せます）。存在しないパスはエラーになるので、必要なら `[ -e <path> ] && trash <path>` のように書いてください。'
 
-segments=${cmd//&&/$'\n'}
+# 引用符の中（grep の正規表現 'a|rm|b' や、メッセージの文字列）を区切りや rm と読まないよう、先に Q に置き換える
+unquoted=$(printf '%s' "$cmd" | sed -E "s/'[^']*'/Q/g; s/\"([^\"\\\\]|\\\\.)*\"/Q/g")
+segments=${unquoted//&&/$'\n'}
 segments=${segments//||/$'\n'}
 segments=${segments//;/$'\n'}
 segments=${segments//|/$'\n'}
