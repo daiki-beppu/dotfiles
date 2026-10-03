@@ -96,3 +96,6 @@ export BROWSER="$HOME/.local/bin/open-browser"
 
 # direnv hook
 eval "$(direnv hook zsh)"
+
+# Added by Devin
+export PATH="/Users/mba/.codeium/windsurf/bin:$PATH"
