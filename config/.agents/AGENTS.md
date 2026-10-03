@@ -23,15 +23,17 @@ Wayfinder の map 完了後に実装 issue を起票するときは、Matt Pococ
 
 古い main から派生した worktree は、無用な merge conflict と「すでに main に入っている変更の再実装」を引き起こす。前者は事後の `git merge main` で払えるが、**後者は書いてしまった時点で回復できない**（マージ時に「同じことを別の書き方でやっている」コンフリクトとして初めて発覚する）。
 
-**落とし穴**: worktree の分岐元は `worktree.baseRef: "head"` = **セッションの cwd の HEAD**。メインチェックアウトの main ではない。feature ブランチにいれば feature から、worktree 内なら**その worktree の HEAD** から分岐する。意図しないベースを避けるため、worktree は main をチェックアウトした状態から切る（`head` なのでローカル main の未 push コミットも worktree に入る）。
+worktree を作る前に `git fetch origin` を実行し、`--base-branch origin/main` を明示して切る。
+
+**落とし穴**: `--base-branch` を省くと Orca の repo の既定の base ref（`orca repo set-base-ref` で設定）から切られる。サブエージェントの isolation worktree は、Claude Code の `worktree.baseRef: "head"` に従い、**セッションの cwd の HEAD** から分岐する（メインチェックアウトの main ではない）。
 
 ### worktree 必須
 
 開発作業（コード編集 / コミット / PR 化）は **必ず worktree 上で行う**。リポジトリ本体のメイン作業ツリーで直接ブランチを切って作業してはならない（進行中の他作業との衝突を避けるため）。
 
-置き場は `$REPO_ROOT/.claude/worktrees/<slug>/` に統一する（takt 自動生成の `<repo-parent>/takt-worktrees/` のみ例外・takt CLI が管理）。新しいリポジトリでは `.gitignore` に `.claude/worktrees/` を追加すること。
+worktree は **Orca 経由で作る**: `orca worktree create --repo name:<repo> --name <slug> --base-branch origin/main`（置き場は Orca の workspace、ブランチは Orca が作る。依存 install などは Orca の repo の setup script が実行する）。手動の `git worktree add` や Claude Code の `--worktree` / EnterWorktree は使わない（例外: takt 自動生成の `<repo-parent>/takt-worktrees/` は takt CLI が管理し、サブエージェントの isolation worktree は Claude Code が管理する）。repo が Orca に未登録なら `orca repo add` で登録する。
 
-**落とし穴**: `--worktree` / EnterWorktree で作った worktree は `cleanupPeriodDays` の自動スイープ対象外（スイープされるのは subagent / background 由来のみ）。セッション終了時に「保持」を選ぶと削除するまで残り続ける。不要になったら `git worktree remove <path>`、まとめてなら `/clean-branch`。
+不要になった worktree は `orca worktree rm` で消す（Orca のメタデータと git の両方から外れる）。まとめて整理するなら `/clean-branch`。
 
 ### worktree に .env を持ち込む
 
@@ -47,4 +49,4 @@ gitignore された設定ファイルを持つリポジトリでは、**worktree
 
 `.worktreeinclude` は Codex（ChatGPT デスクトップアプリ）とも同名・同構文の共通仕様なので、1 つ置けば両方に効く（Codex 側は `AGENTS.override.md` を列挙なしで自動コピーする）。
 
-**落とし穴**: `.worktreeinclude` が効くのは **エージェントが worktree を作るとき**（Claude Code の `--worktree` / EnterWorktree / subagent / Desktop、Codex デスクトップの Worktree チャット）だけ。手動 `git worktree add`、Codex CLI、takt では適用されないので、その場合は自分でコピーする。
+**落とし穴**: `.worktreeinclude` が効くのは **エージェントが worktree を作るとき**（Claude Code の `--worktree` / EnterWorktree / subagent / Desktop、Codex デスクトップの Worktree チャット）だけ。Orca・手動 `git worktree add`・Codex CLI・takt では適用されない。Orca で作る worktree に `.env` 等を持ち込むときは、Orca の repo の setup script でコピーする。
