@@ -164,7 +164,6 @@
                   onActivation.cleanup = "uninstall";
 
                   taps = [
-                    "manaflow-ai/cmux"
                     "olets/tap"
                     "stablyai/orca"
                   ];
@@ -184,7 +183,6 @@
                     "cap"
                     "chatgpt"
                     "claude"
-                    "manaflow-ai/cmux/cmux"
                     "codex-app"
                     "cursor"
                     "devin-cli"
