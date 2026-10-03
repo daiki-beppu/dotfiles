@@ -125,4 +125,4 @@ Stop and report back (do not improvise) if:
 
 - takt をバージョンアップしたら `scripts/takt-builtin-workflows.txt` を再生成する（Step 2 のコマンド）。ローカル実行時の鮮度 warning が更新忘れを検知する。
 - 新しいスキルが takt workflow を参照し始めたら、Step 1 の抽出対象ファイル一覧に追加する。
-- 将来 takt 側に workflow の機械可読な export（`takt list --json` 等）が入ったら、散文抽出をそれに置き換えるのが本筋。fork（daiki-beppu/takt）への提案候補。
+- 将来 takt 側に workflow の機械可読な export（`takt list --json` 等）が入ったら、散文抽出をそれに置き換えるのが本筋。本家 nrslib/takt への提案候補。
