@@ -84,6 +84,6 @@ claude は `cache_read/cache_creation_input_tokens` が input 外数のため in
 4. **aborted 対策** — abort 判定の早期化(plan 段階の ABORT 条件強化)。1 件で 1 億の空費を防ぐ。
 5. **phase2_report の構造改善** — report が 47% を占めるのは takt 本体の設計。
    output_contract の report ファイル統合(1 step 1 ファイル)で軽減、
-   根本改善は本家 nrslib/takt への提案(fork 保有: daiki-beppu/takt)。
+   根本改善は本家 nrslib/takt への提案(提案時に fork を作る)。
 6. **persona/model 振り分け** — reviewer 系 persona を軽量モデルへ
    (`persona_providers.<persona>.model`)。総量は減らないがレート枠の消費を軽減。
