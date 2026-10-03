@@ -1,0 +1,49 @@
+# Devin の macOS VM で、この dotfiles がまっさらな Mac に switch できるかを検証する。
+# 対応する nix-darwin ホストは flake.nix の "devin"（cleanup なし・masApps なし）。
+#
+# switch は build に入れず、セッション内で knowledge の手順を実行する。
+# build が失敗すると snapshot が作られず、調査する場所がなくなるため。
+# 初回の検証が通ったら、switch を initialize へ移して毎日の build で main を検証する。
+runs-on: macos
+
+initialize:
+  - name: "Install Determinate Nix"
+    # flake.nix は nix.enable = false（Determinate Nix 前提）
+    run: |
+      curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
+        | sh -s -- install --no-confirm
+  - name: "Link the repo to the path nix/packages.nix expects"
+    # nix/packages.nix は dotfiles を ~/ghq/github.com/daiki-beppu/dotfiles に決め打ちしている。
+    # Devin は ~/repos/ の下にしか clone できない（clone.path も ~/repos/ 配下のみ）
+    run: |
+      mkdir -p /Users/devin/ghq/github.com/daiki-beppu
+      ln -sfn /Users/devin/repos/dotfiles /Users/devin/ghq/github.com/daiki-beppu/dotfiles
+
+maintenance:
+  - name: "Prebuild the devin system closure"
+    # store を温めておき、セッション内の switch をアクティベーションだけにする
+    run: |
+      . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      nix build .#darwinConfigurations.devin.system --no-link
+
+knowledge:
+  - name: switch
+    contents: |
+      . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+      cd /Users/devin/ghq/github.com/daiki-beppu/dotfiles
+      nix build .#darwinConfigurations.devin.system --out-link /tmp/darwin-system
+      sudo /tmp/darwin-system/sw/bin/darwin-rebuild switch --flake .#devin
+      # 初回に "Unexpected files in /etc" で止まったら、表示されたファイルを
+      # <name>.before-nix-darwin に sudo mv してから再実行する（Nix の installer が書き換えた /etc/zshrc 等）
+  - name: verify
+    contents: |
+      # cask と formula が入ったか（flake.nix の homebrew.casks / brews と突き合わせる）
+      brew list --cask
+      brew list --formula
+      # Home Manager のリンクがメインの clone を指しているか
+      ls -l ~/.zshrc ~/.claude/settings.json ~/.claude/skills
+      # system.defaults が反映されたか
+      defaults read NSGlobalDomain AppleInterfaceStyle
+      defaults read com.apple.dock autohide
+  - name: check
+    contents: bash scripts/check.sh

@@ -46,6 +46,23 @@
         "mba" = {
           username = "mba";
         };
+        # Devin の macOS VM。まっさらな Mac に switch が通るかの検証用（.devin/blueprint.yaml）
+        "devin" = {
+          username = "devin";
+          extraModules = [
+            (
+              { lib, ... }:
+              {
+                homebrew = {
+                  # VM の image が Homebrew で入れているツール（gh / jq / ripgrep 等）を消さない
+                  onActivation.cleanup = lib.mkForce "none";
+                  # VM には Apple ID が無く、App Store アプリを入れられない
+                  masApps = lib.mkForce { };
+                };
+              }
+            )
+          ];
+        };
       };
       mkDarwin =
         hostname:
