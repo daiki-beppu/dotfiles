@@ -20,11 +20,6 @@
       "mcp__takt__takt_list_tasks",
       "mcp__takt__takt_get_run"
     ],
-    "ask": [
-      "Bash(rm *)",
-      "Bash(mv *)",
-      "Bash(chmod *)"
-    ],
     "defaultMode": "auto",
     "additionalDirectories": [
       "~/.claude",
@@ -138,6 +133,11 @@
             "if": "Bash(gh pr merge *)",
             "command": "~/.claude/hooks/guard-pr-merge.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/guard-rm.sh",
+            "timeout": 10
           }
         ]
       },
