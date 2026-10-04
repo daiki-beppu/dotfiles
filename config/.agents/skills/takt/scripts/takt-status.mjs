@@ -17,7 +17,7 @@ const clone = t.worktreePath && existsSync(t.worktreePath) ? t.worktreePath : un
 console.log(`clone: ${clone ?? "なし"}`);
 
 if (logPath && existsSync(logPath)) {
-  const lines = readFileSync(logPath, "utf8").replace(/\r/g, "\n").split("\n");
+  const lines = readFileSync(logPath, "utf8").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\r/g, "\n").split("\n");
   const steps = lines.filter((l) => /^\[INFO\] \[\d+\/\d+\]/.test(l));
   if (steps.length) console.log(`工程: ${steps.slice(-3).map((l) => l.replace("[INFO] ", "")).join(" → ")}`);
   const done = lines.findLast((l) => /Workflow completed|PR created|auto-requeued|not auto-requeued/.test(l));
