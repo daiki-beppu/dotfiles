@@ -1,13 +1,13 @@
 { pkgs, lib, ... }:
 let
-  version = "0.3.3";
+  version = "1.0.0";
   # npm で配布される単体バイナリ（依存なし）。ホストは aarch64-darwin のみ。
   vp = pkgs.stdenvNoCC.mkDerivation {
     pname = "vite-plus-cli";
     inherit version;
     src = pkgs.fetchurl {
       url = "https://registry.npmjs.org/@voidzero-dev/vite-plus-cli-darwin-arm64/-/vite-plus-cli-darwin-arm64-${version}.tgz";
-      hash = "sha256-opYlp3O8j+9N5ENKZ6JPNISbPCwBWeqHqFTIhT7JR1Q=";
+      hash = "sha256-MasCokHtBO0TarNlnYFvKUnogAEWsFPH9FtxURP2dKs=";
     };
     installPhase = ''
       install -Dm755 vp "$out/bin/vp"
