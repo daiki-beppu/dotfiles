@@ -35,7 +35,7 @@ API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 ## 実行と完了
 
-実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。実行は継続可能な実行セッションで一度起動する。大量の stdout をコンテキストへ流さず、セッションの終了とタスク状態で追跡する。待機 timeout だけで再起動しない。
+実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。`takt run` は Orca の新しいターミナルタブで一度起動し、出力をそのタブに表示する。大量の stdout をコンテキストへ流さず、`.exit` ファイルとタスク状態で追跡する。待機 timeout だけで再起動しない。
 
 途中経過・後片付けは `scripts/` の takt-status / takt-cleanup を使う（使い方は [run.md](references/run.md)）。
 
