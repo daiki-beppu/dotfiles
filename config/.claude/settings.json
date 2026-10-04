@@ -130,12 +130,6 @@
           },
           {
             "type": "command",
-            "if": "Bash(gh pr merge *)",
-            "command": "~/.claude/hooks/guard-pr-merge.sh",
-            "timeout": 30
-          },
-          {
-            "type": "command",
             "command": "~/.claude/hooks/guard-rm.sh",
             "timeout": 10
           }
