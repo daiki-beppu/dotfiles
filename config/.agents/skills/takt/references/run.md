@@ -4,20 +4,22 @@
 
 ## 起動
 
-ホストの継続可能な実行セッションで、対象リポジトリへ移動して `takt run` を一度起動する。パスは shell quote する。
+Orca の新しいターミナルタブで `takt run` を一度起動する。takt の出力はタブにそのまま表示され、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。
 
 ```sh
-cd <shell-quote済みrepo_root> && takt run > <scratchpad>/takt_<slug>.log 2>&1
+orca terminal create --worktree active --title "takt <slug>" --json \
+  --command "cd <repo_root> && script -q <scratchpad>/takt_<slug>.log takt run; echo \$? > <scratchpad>/takt_<slug>.exit"
 ```
 
-- Claude Code は takt run を `nohup … < /dev/null & echo $! > <scratchpad>/takt_<slug>.pid; disown` で切り離して起動し、終了の回収には PID の終了を待つループを `run_in_background: true` と `timeout: 7200000` で流す。takt run 自体をバックグラウンド実行に載せると、その上限（既定 30 分、最大 2 時間）で takt も道連れで止まる（調査の issue は 2 時間を超えた）。待つループが上限で止まっても takt は動き続けるので、ループだけ張り直す。Codex はセッション ID を返す exec/TTY を使う。
-- `-q` で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
+- `script` は TTY を保ったまま（色・進捗表示がタブに出る）ログを取り、takt の終了コードを返す。`-q`（takt の quiet）で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
+- 結果の `terminal.handle` を控える。終了は `.exit` ファイルの出現で検知する。`--command` はログインシェルに打ち込まれるので takt が終わってもタブは残り、`orca terminal wait --for exit` は発火しない。Claude Code は `until [ -e <exit> ]; do sleep 30; done` を `run_in_background: true` と `timeout: 7200000` で流し、上限で止まったらループだけ張り直す。
+- Orca が無い環境では、継続可能な実行セッションで `cd <repo_root> && takt run > <log> 2>&1` を起動する。Claude Code は `nohup … < /dev/null & echo $! > <pid>; disown` で切り離し（バックグラウンド実行に直接載せると、その上限で takt も止まる）、Codex はセッション ID を返す exec/TTY を使う。
 
 複数タスクでも runner の起動は一回。worker pool が設定された concurrency で pending を消化する。全 pending が対象になり得るため、実行前に依頼外の pending が混じっていないか確認する。
 
 ## 待機
 
-同じセッションの終了を回収する。ホスト側の待機時間・進捗通知規約に従う。セッションが実行中なら待機を続ける。応答待ち timeout は takt の終了・失敗の証拠ではなく、再起動の理由にしない。
+`.exit` ファイル（Orca が無い環境ではセッションの終了）を回収する。ホスト側の待機時間・進捗通知規約に従う。takt が実行中なら待機を続ける。応答待ち timeout は takt の終了・失敗の証拠ではなく、再起動の理由にしない。
 
 セッションを回収できないときはプロセスとタスク状態を確認する。古いログの存在だけで成功扱い・再起動しない。継続実行できる手段が無ければ、投入済み／実行未完了を分けて報告する。
 
