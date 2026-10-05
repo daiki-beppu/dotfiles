@@ -7,8 +7,9 @@
 # .takt/config.yaml にも provider 系のキーを書かない。
 #
 # 構成方針: Claude 主体、レビューだけ Codex
-# planner / diagnoser は Claude opus、coder と既定は Claude sonnet、
-# reviewer / companion は Codex gpt-6-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
+# planner / diagnoser は Claude opus、既定は Claude sonnet、coder は auto_routing で
+# 作業の重さに応じて sonnet-medium / sonnet / opus から選ぶ。
+# reviewer / companion は Codex gpt-6.1-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
 # loop monitor の supervisor judge は発火元 step の provider / model を継承する。
 #
 # project の .takt/runtime.yaml に targets を書くと、global の targets は丸ごと置き換わる
@@ -23,12 +24,38 @@ provider:
     sonnet:
       provider: claude
       model: sonnet
+    # coder 用。既定の effort（多め）だと、テストを書く・実装の工程で見えない思考が出力の 8〜9 割になり、
+    # 1 工程に 40〜75 分かかった（live-mindmap #161、2026-10-05）。中程度に下げて、質はレビューで担保する
+    sonnet-medium:
+      extends: sonnet
+      options:
+        effort: medium
     opus:
       provider: claude
       model: opus
+    # auto_routing の router。作業の重さ（tier）を見積もるだけなので安いモデルで足りる
+    haiku:
+      provider: claude
+      model: haiku
     sol:
       provider: codex
-      model: gpt-6-sol
+      model: gpt-6.1-sol
+
+  # coder の割り当てを step ごとに router が選ぶ。router が見積もった tier 以上の候補のうち、
+  # balanced は最も低い tier を選ぶ。見積もりに失敗したら fallback_profile に落ちる
+  auto_routing:
+    strategy: balanced
+    router_profile: haiku
+    pools:
+      coder:
+        candidates:
+          - profile: sonnet-medium
+            tier: low
+          - profile: sonnet
+            tier: medium
+          - profile: opus
+            tier: high
+        fallback_profile: sonnet-medium
 
   # persona 割り当ての無い agent と takt 内部の agent（assistant 等）が使う既定
   defaults:
@@ -37,7 +64,7 @@ provider:
   targets:
     personas:
       coder:
-        profile: sonnet
+        pool: coder
       planner:
         profile: opus
       # diagnose-fix workflow の診断者。1 run に 1 回しか走らず promotion の保険が効かないため、
