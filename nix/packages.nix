@@ -9,6 +9,26 @@
 
 let
   dotfilesDir = "${config.home.homeDirectory}/ghq/github.com/daiki-beppu/dotfiles/config";
+  # nixpkgs は 0.1.1 止まり（2026-10-05 時点）。0.2.0 の worktree 対応を使うため上書きする。
+  # nixpkgs が 0.2.0 以上になったらこの上書きを消して pkgs.gh-stack に戻す。
+  ghStack = pkgs.gh-stack.overrideAttrs (old: rec {
+    version = "0.2.0";
+    src = pkgs.fetchFromGitHub {
+      owner = "github";
+      repo = "gh-stack";
+      tag = "v${version}";
+      hash = "sha256-70H1kOdvklTeB8OVFg7g6xQ4rn0gqv+zU7yjDYPd3vo=";
+    };
+    vendorHash = "sha256-Otstml5TSTJeYsP9o94aUperP1MgT2axa/wqALEnXYk=";
+    # installAgentSkills は go-modules の導出で pname 未設定エラーになる。スキルは npx skills で入れているので外す。
+    nativeBuildInputs = lib.remove pkgs.installAgentSkills old.nativeBuildInputs;
+    # modify の TUI（エージェントからは使わない）の branch 挿入テストが Nix のサンドボックスで落ちるため除外する。
+    checkFlags = [ "-skip=Insert" ];
+    ldflags = [
+      "-s"
+      "-X=github.com/github/gh-stack/cmd.Version=${version}"
+    ];
+  });
 in
 {
   imports = [ ./vite-plus.nix ];
@@ -85,7 +105,7 @@ in
   #      `gh stack alias` や `gh config set` が書き込めなくなる
   #   2. github.com / gist.github.com に credential.helper を自動注入する
   # 拡張を 1 つ入れたいだけなのでその二つは引き受けない。
-  xdg.dataFile."gh/extensions/gh-stack".source = "${pkgs.gh-stack}/bin";
+  xdg.dataFile."gh/extensions/gh-stack".source = "${ghStack}/bin";
 
   # ── nh: Nix ヘルパー CLI（GC root まで掃除できる clean コマンド持ち） ──
   # 手動実行用: `nh clean all --dry` で削除対象を確認できる。
