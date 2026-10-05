@@ -7,9 +7,10 @@
 # .takt/config.yaml にも provider 系のキーを書かない。
 #
 # 構成方針: Claude 主体、レビューだけ Codex
-# planner / diagnoser は Claude opus、既定は Claude sonnet、coder は auto_routing で
-# 作業の重さに応じて sonnet-medium / sonnet / opus から選ぶ。
-# reviewer / companion は Codex gpt-6.1-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
+# 計画と裁定（planner / diagnoser / review-adjudicator / research-planner / research-supervisor）は
+# Claude opus、既定は Claude sonnet。coder と research の量産 step は auto_routing で、作業の重さに
+# 応じて sonnet-medium / sonnet / opus から選ぶ。
+# reviewer / companion / supervisor は Codex gpt-6.1-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
 # loop monitor の supervisor judge は発火元 step の provider / model を継承する。
 #
 # project の .takt/runtime.yaml に targets を書くと、global の targets は丸ごと置き換わる
@@ -41,7 +42,7 @@ provider:
       provider: codex
       model: gpt-6.1-sol
 
-  # coder の割り当てを step ごとに router が選ぶ。router が見積もった tier 以上の候補のうち、
+  # coder と research の量産 step の割り当てを、step ごとに router が選ぶ。router が見積もった tier 以上の候補のうち、
   # balanced は最も低い tier を選ぶ。見積もりに失敗したら fallback_profile に落ちる
   auto_routing:
     strategy: balanced
@@ -56,6 +57,17 @@ provider:
           - profile: opus
             tier: high
         fallback_profile: sonnet-medium
+      # deep-research の dig / analyze。dig は 1 run で数十回並列に呼ばれる量産 step なので、
+      # 軽い調べ物は sonnet-medium に落として量を削る。見積もり失敗時は従来どおり sonnet
+      research:
+        candidates:
+          - profile: sonnet-medium
+            tier: low
+          - profile: sonnet
+            tier: medium
+          - profile: opus
+            tier: high
+        fallback_profile: sonnet
 
   # persona 割り当ての無い agent と takt 内部の agent（assistant 等）が使う既定
   defaults:
@@ -71,6 +83,21 @@ provider:
       # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
       diagnoser:
         profile: opus
+      # peer-review で reviewer（Codex）の指摘を採るか退けるかを裁く。書き手（Claude）と
+      # 査読者のどちらにも寄らない判断が要り、1 run に数回なので最強モデルを置く
+      review-adjudicator:
+        profile: opus
+      # final-gate・完了判定・replan 要求。完了を判定する査読側なので reviewer と同じ系統にする
+      supervisor:
+        profile: sol
+      research-planner:
+        profile: opus
+      research-supervisor:
+        profile: opus
+      research-digger:
+        pool: research
+      research-analyzer:
+        pool: research
       ai-antipattern-reviewer:
         profile: sol
       architecture-reviewer:
