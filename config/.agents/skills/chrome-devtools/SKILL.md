@@ -9,9 +9,9 @@ description: Browser / Computer Use で不足する通信・JavaScript エラー
 
 ## 接続と対象
 
-この設定は `--autoConnect` でユーザーの起動済み Chrome に接続する。Chrome の起動、remote debugging の有効化、初回の Allow 操作が必要。接続・ページ取得に失敗した場合だけ [接続復旧](references/connection.md) を読む。
+この設定は `--headless --isolated` で MCP 専用の Chrome を画面なしで起動する。毎回空のプロファイルなので、ユーザーの Chrome のタブ・ログイン状態は使えない。ログインが必要なページはその旨を報告する。接続・ページ取得に失敗した場合だけ [接続復旧](references/connection.md) を読む。
 
-対象ページが分かっていればそれを選択し、不明なら `list_pages` / `select_page` で特定する。実セッションを共有するため、無関係なタブやログイン状態を変更しない。タブを閉じるのは自分が作ったものか、ユーザーが指定したものに限る。
+対象 URL は `new_page` / `navigate_page` で開く。
 
 ## 証拠の取得
 
@@ -21,4 +21,4 @@ description: Browser / Computer Use で不足する通信・JavaScript エラー
 
 観測結果と再現条件を報告し、復旧を依頼された場合は修正後に同じ症状が解消したか確認する。通常のブラウザ作業に戻ったら Browser / Computer Use を使う。
 
-Adapted from the official `chrome-devtools-mcp` skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for an autoConnect-only setup.
+Adapted from the official `chrome-devtools-mcp` skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for a headless-only setup.
