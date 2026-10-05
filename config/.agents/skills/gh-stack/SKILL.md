@@ -7,7 +7,7 @@ description: >
   branch layers, dependent PRs, or gh stack; or when a stack is checked out.
 metadata:
   author: github
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # gh-stack
@@ -28,6 +28,8 @@ Foundational work belongs at the bottom, code that depends on it above. For how 
 layers, read `references/stack-design.md`.
 
 ## Setup
+
+Requires Git 2.36+ and an authenticated GitHub CLI.
 
 ```bash
 gh extension install github/gh-stack
@@ -59,19 +61,15 @@ Agent harnesses differ, so always pass the flags below instead of relying on tha
 - `view --short` is safe in both modes, but it is formatted for humans. Use `--json` to parse.
 - **`checkout <pr>` when a different local stack already covers those branches** cannot be forced.
   Run `gh stack unstack --local` first (this keeps the stack on GitHub), then retry.
+- **Worktrees:** local stacks share one common-directory catalog. Use `--print-path` with
+  navigation or explicit-target `checkout` to locate a foreign-owned branch without stealing its
+  checkout. Unoccupied targets are checked out here first. Check the exit status before changing
+  directories; parse only successful path-mode stdout, never status messages.
 
 ## Branch placement
 
 - **Starting multi-part work:** create the stack before writing files. Do not implement every
   concern on trunk and split it later. Put one dependent concern in each layer, bottom to top.
-  This includes a session that will open two or more related PRs, even when the concerns look
-  independent: stack them instead of branching each from trunk.
-- **One stack, one worktree:** run every layer in a single worktree and switch layers with
-  `gh stack up` / `down`. `gh stack rebase` cannot check out a branch that another worktree
-  holds, so a stack spread across worktrees must be rebased by hand, layer by layer.
-- **Single layer:** open it as an ordinary PR (`git push -u` + `gh pr create`); `gh stack link`
-  requires at least two arguments. When a second layer arrives, `gh stack init <existing> <new>`
-  adopts the existing branch as the bottom.
 - **Editing an existing stack:** check out the layer that owns the change before editing. Never
   commit a lower layer's concern on the current top branch. Run `gh stack view --json`; if
   ownership is unclear, inspect `git log --all -- <path>`. Then check out the owner, edit, commit,
@@ -170,6 +168,13 @@ an ancestor of the branch.
 ## Constraints
 
 - Stacks are strictly linear: one parent, at most one child. Use separate stacks for parallel work.
+- `rebase` and `sync` automatically update affected clean worktrees; they never auto-stash or
+  create/remove worktrees. Mutations serialize across the clone, and paused operations require
+  recovery in their recorded owners.
+- `modify` supports distributed stack branches, but its editor remains TUI-only. Actions run in
+  affected clean owners; unoccupied branches use the origin. Drop/fold source branches and
+  worktrees are preserved. Recovery flags may run from any worktree and use recorded native
+  operation owners; never resolve/stage in the caller's tree unless the diagnostic names it.
 - There is no non-interactive reorder or removal. Errors may suggest `gh stack modify`, but it is
   TUI-only — restructure with `unstack` then `init` instead.
 - PR titles and bodies are auto-generated. Use `gh pr edit` afterwards to change them.
