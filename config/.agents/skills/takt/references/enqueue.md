@@ -1,78 +1,76 @@
 # 非対話の投入
 
-起票済み issue を投入するときに読む。以下は takt 0.66.1 で実測し、0.67.0 で API と引数の形を確認したもの。現行版の API と CLI を照合し、互換性を確認できない場合は fallback を使う。
-
+起票済み issue を投入するときに読む。以下は takt 0.68.0 で確認したもの。現行版の MCP の入力と CLI を照合し、互換性を確認できない場合は fallback を使う。
 
 **`takt add` は使わない**。ユーザーに 6 問のプロンプトを手入力させる代わりに、
-takt の内部 API を直呼びして対話ゼロで積む。
+takt MCP の `takt_enqueue_task` で対話ゼロで積む。
 
-MCP の `takt_enqueue_task` も投入に使わない。入力に draft の指定が無く（設定の `draft_pr` 任せになる）、
-`issue.number` は紐付けるだけで issue 本文を取得しないため、`--draft` と「issue が仕様の正本」を守れない。
+### MCP が代わりにやらないこと
+
+`takt_enqueue_task` は渡された値をそのまま `tasks.yaml` に保存する。`takt add` が持っていた次の処理は
+無いので、呼ぶ前に自分で済ませる。
+
+- **workflow の検証**。`cd <repo_root> && takt workflow doctor <workflow>` を通す。存在しない名前は
+  exit 1(`Workflow not found`)、定義が壊れていても落ちる。省くと、**存在しないレーン名がそのまま
+  tasks.yaml に積まれ**、runner が拾うまで気付けない。doctor は callable な部品を通すので、
+  [workflow-catalog.md](workflow-catalog.md) の callable 確認も通す
+- **issue 本文の取得**。`issue.number` は紐付けるだけで本文を取らない。`task` に次の出力を入れる
+  (takt の `resolveIssueTask` と同じ形式)。自前の要約に替えると「issue が仕様の正本」が崩れる
+
+  ```sh
+  gh issue view <N> --json number,title,body,labels,comments --jq '
+    ["## Issue #\(.number): \(.title)"]
+    + (if .body != "" then ["", .body] else [] end)
+    + (if (.labels | length) > 0 then ["", "### Labels", (.labels | map(.name) | join(", "))] else [] end)
+    + (if (.comments | length) > 0 then ["", "### Comments"] + (.comments | map("**\(.author.login)**: \(.body)")) else [] end)
+    | join("\n")'
+  ```
+
+- **base の実在確認**。`taskContext.baseBranch` は書式しか見ない。渡す前に `git rev-parse --verify <base>` を通す
 
 ### 投入
 
-```sh
-TAKT_ROOT=$(dirname "$(dirname "$(realpath "$(which takt)")")")/lib/node_modules/takt
-TAKT_NODE=$(grep -o '/nix/store/[^ ]*/bin/node' "$(realpath "$(which takt)")" | head -1)
-TAKT_NODE=${TAKT_NODE:-$(command -v node)}
+`takt_enqueue_task` を次の入力で呼ぶ。
 
-TAKT_ROOT="$TAKT_ROOT" TAKT_CWD="<repo_root>" \
-TAKT_WF="<workflow>" TAKT_ISSUE="<N>" \
-TAKT_BRANCH="<branch|空>" TAKT_BASE="<base|空>" \
-TAKT_AUTO_PR=true TAKT_DRAFT=false \
-"$TAKT_NODE" --input-type=module <<'EOF'
-const root = process.env.TAKT_ROOT, cwd = process.env.TAKT_CWD;
-const { determineWorkflow } = await import(`${root}/dist/features/tasks/execute/selectAndExecute.js`);
-const { resolveIssueTask } = await import(`${root}/dist/infra/git/index.js`);
-const { saveEnqueuedTaskFile } = await import(`${root}/dist/infra/task/enqueuedTaskFile.js`);
-
-const wf = await determineWorkflow(cwd, process.env.TAKT_WF);
-if (!wf) { console.error('Workflow not found'); process.exit(1); }
-
-const issue = Number(process.env.TAKT_ISSUE);
-const body = resolveIssueTask(`#${issue}`, cwd);
-
-const created = await saveEnqueuedTaskFile(cwd, body, {
-  workflow: wf, issue, worktree: true,
-  branch: process.env.TAKT_BRANCH || undefined,
-  baseBranch: process.env.TAKT_BASE || undefined,
-  autoPr: process.env.TAKT_AUTO_PR !== 'false',
-  draftPr: process.env.TAKT_DRAFT === 'true',
-});
-console.log(JSON.stringify({ ...created, workflow: wf }));
-EOF
+```json
+{
+  "cwd": "<repo_root の絶対パス>",
+  "task": "<上の jq の出力>",
+  "workflow": "<doctor を通した workflow>",
+  "worktree": true,
+  "autoPr": true,
+  "issue": { "number": <N> },
+  "taskContext": { "branch": "<branch>", "baseBranch": "<base>" }
+}
 ```
 
-値は**環境変数で渡す**(ヒアドキュメントに直書きするとブランチ名や issue 本文の quoting 事故に
-なる)。`<<'EOF'` のクォートも外さない。node は takt 同梱のものを使う — nix ラッパーの
-shebang から引くので、**store パスは直書きしない**。
+- **`worktree: true` は省略時の既定だが明示する**。落とすと run が隔離クローンを作らず、worktree 必須の規約が崩れる
+- `autoPr` は必須。`--no-auto-pr` のときだけ `false`
+- `taskContext` は branch / base を指定するときだけ入れる。空なら takt が自動で決める
+- **`cwd` は MCP を起動したリポジトリの配下に限られる**(`takt-mcp-root` がメインチェックアウトを
+  許可範囲にする)。別リポジトリの issue は、そのリポジトリで動くセッションから積む
 
-### この経路で落としてはいけないもの
+### draft は repo の設定で決まる
 
-- **`determineWorkflow` を必ず通す**。`takt add -w` が持っていた実在確認がこれ。省いて
-  `workflow` を直書きすると、**存在しないレーン名がそのまま tasks.yaml に積まれる**
-  (`Workflow not found` で止まる防護が消える)
-- **`worktree: true` を必ず渡す**。落とすと run が隔離クローンを作らず、worktree 必須の規約が崩れる
-- **`resolveIssueTask` で issue 本文を取る**。自前の文字列に替えると「issue が仕様の正本」が
-  崩れる(SKILL.md の投入条件)
-- **`baseBranch` の実在は呼び出し側で確認する**。対話版の `resolveExistingBaseBranch` は
-  実在しない base を聞き直すが、**内部 API にその検証は無い**。渡す前に
-  `git rev-parse --verify <base>` を通す
+MCP の入力に draft の指定は無く、repo の `.takt/config.yaml` の `draft_pr` に従う。`--draft` を
+受けたら、その repo の `draft_pr` を確認する。`false` なら 1 件だけ draft にはできないので、
+投入前にその旨を伝え、通常 PR で積むか、PR 作成後に `gh pr ready --undo` で draft に戻すかを確認する。
 
-### draft の既定が対話 UI と逆になる
+### 書かれたレコードの確認
 
-対話 UI の `Create as draft?` は**既定 Yes**(Enter 連打で draft PR)。この経路では
-`TAKT_DRAFT` を明示するので、**指定しなければ通常 PR** になる。draft が欲しいときだけ
-`--draft` を受けて `TAKT_DRAFT=true` にする。
+投入後は `<repo_root>/.takt/tasks.yaml` の該当レコードを読み(書き換えない)、issue・workflow・
+`worktree`・`branch`・`base_branch`・`auto_pr` が意図どおりか確認する。`takt_list_tasks` は name・
+status・workflow しか返さないので、branch と base の確認には使えない。応答が不明なときもまず
+このレコードを照合し、二重投入を避ける。
 
-### 内部 API が壊れたときの fallback
+### MCP が使えないとき
 
-import が失敗したら**続行せず** [fallbacks.md](fallbacks.md) の
-「内部 API が壊れたとき」に従う(対話 6 問の値の入れ方まで書いてある)。
+MCP ツールが見えない・呼び出しが失敗するときは**続行せず** [fallbacks.md](fallbacks.md) の
+「MCP が使えないとき」に従う(対話 6 問の値の入れ方まで書いてある)。
 
 ### 既存 PR への積み増し
 
-`TAKT_BRANCH` に既存ブランチ名を入れるだけで成立し、新しい PR は作られない。
+`taskContext.branch` に既存ブランチ名を入れるだけで成立し、新しい PR は作られない。
 `--pr <番号>` で渡されたときは head ブランチを引いてから入れる:
 
 ```sh

@@ -14,7 +14,7 @@ description: GitHub issue を takt に投入・実行する依頼に使う。「
 - `--workflow <name>`: 実在する実行用 workflow を指定。
 - `--branch <name>` / `--pr <N>`: 既存ブランチ／PR への積み増し。
 - `--base <name>`: 実在する base を指定。
-- `--draft` / `--no-auto-pr`: draft にする／PR を自動作成しない。
+- `--draft` / `--no-auto-pr`: draft にする（repo の `draft_pr` 次第）／PR を自動作成しない。
 - `--dry-run`: workflow・branch・base・auto_pr・draft の予定を示すだけ。投入・起動・issue 編集をしない。
 
 ## 投入条件
@@ -29,9 +29,9 @@ pending / running と既存 branch を確認して重複・競合を避ける。
 
 明示指定 → リポジトリの運用文書 → issue のラベル → 内容の順で選ぶ。選択前に実在と直接実行可能かを確認する。step fragment や `subworkflow.callable: true` は投入対象にしない。`takt:manual` は手動の意思表示なので、今回の明示指示と食い違う場合は意図を確認する。古いラベルを理由に存在しない workflow を選ばない。
 
-builtin から選ぶ場合は [workflow-catalog.md](references/workflow-catalog.md)、投入する場合は [enqueue.md](references/enqueue.md) を読む。投入は検証済みの内部 API を使い、`worktree: true`・issue 解決・workflow 検証・base 実在確認を保持する。`tasks.yaml` はロック付き API で更新し、手書きしない。現ブランチを書き換える直接実行経路は使わない。
+builtin から選ぶ場合は [workflow-catalog.md](references/workflow-catalog.md)、投入する場合は [enqueue.md](references/enqueue.md) を読む。投入は takt MCP の `takt_enqueue_task` を使い、`worktree: true`・issue 本文・workflow 検証・base 実在確認を保持する。`tasks.yaml` は MCP 経由で更新し、手書きしない。現ブランチを書き換える直接実行経路は使わない。
 
-API が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読む。投入応答が不明ならタスクレコードを照合してから再試行し、二重投入を避ける。書かれたレコードの issue・workflow・branch・base・draft を確認する。
+MCP が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読む。投入応答が不明ならタスクレコードを照合してから再試行し、二重投入を避ける。書かれたレコードの issue・workflow・branch・base・draft を確認する。
 
 ## 実行と完了
 
