@@ -3,7 +3,7 @@
 拡張機能の診断が必要な場合だけ使う。以下の互換性情報は現行 Chrome と MCP の仕様を照合してから適用する。
 
 
-> **Compatibility note**: Extension tools (`install_extension`, `list_extensions`, etc.) require the `--categoryExtensions` flag on the MCP server. If extension tools are missing, update the MCP config:
+> **Compatibility note**: Extension tools (`install_extension`, `list_extensions`, etc.) require the `--categoryExtensions` flag on the MCP server. If extension tools are missing, add the flag to the server in use. With Chrome 144-148, `--autoConnect` (`chrome-devtools-user`) cannot use extension tools; use `chrome-devtools`. Example for `chrome-devtools`:
 >
 > ```json
 > {
@@ -25,4 +25,4 @@
 5. **Verify Page Behavior**: Navigate to a page where the extension operates and use `take_snapshot` to check if content scripts injected elements or modified the page correctly.
 
 
-Adapted from the official `chrome-devtools-mcp` skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for a headless-only setup.
+Adapted from the official `chrome-devtools-mcp` skill ([Apache-2.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/LICENSE), Copyright Google LLC). Modified for a headless + autoConnect setup.
