@@ -43,7 +43,7 @@ in
     uv
     sqld
     turso-cli
-    wrangler # Cloudflare CLI（AI Gateway / Workers）。Vercel CLI は nixpkgs 未収録なので flake.nix の homebrew.brews
+    (callPackage ./cf { }) # Cloudflare CLI（wrangler の後継）。nixpkgs 未収録なので nix/cf/ でビルドする。Vercel CLI は flake.nix の homebrew.brews
     zsh-abbr
 
     # Python + youtube-channels 自動化に必要なパッケージ
