@@ -24,12 +24,12 @@
 - **投入は order.md を上書きする**。`enqueueService.js` が
   `options.orderContent ?? taskContent` を `<task_dir>/order.md` へ書き込むため、事前に置いた
   内容は残らない。仕様は issue 本文の側で整える(SKILL.md の「投入条件」)
-- **内部 API は `dist/` の構造に依存する**。import パスや `SaveEnqueuedTaskFileOptions` の形は
-  takt のバージョン更新で変わり得る(CLI の互換保証の外側)。**更新後は最初の 1 件で
-  `branch` / `base_branch` / `draft_pr` が tasks.yaml に入ったかを必ず確認する**。
+- **MCP の入力の形は takt の更新で変わり得る**。**更新後は最初の 1 件で
+  `worktree` / `branch` / `base_branch` / `auto_pr` が tasks.yaml に入ったかを必ず確認する**。
   壊れていたら書き込まれた不完全なレコードを先に外し(残したまま fallback すると二重投入になる)、
   [fallbacks.md](fallbacks.md) へ落として、このスキルの修正が要るサインとして報告する。
-  `dist/` 内のモジュールの移動は起きる前提で扱う
+  下の積み直しで使う内部 API は `dist/` の構造に依存し(CLI の互換保証の外側)、モジュールの移動は
+  起きる前提で扱う
 - **takt 経由の run では Claude が自分のスキルを見ない**。
   `provider_options.claude.skills.enabled` の既定が `false` で、`claude-sdk` は `skills: []`、
   CLI 系(`claude` / `claude-terminal`)は `--disable-slash-commands` 付きで起動する
@@ -51,10 +51,10 @@
 - **run の report ディレクトリは `call-…` セグメント形式**(`.takt/runs/*/reports/` 配下)。
   0.55.0 より前の run は `iteration-N--step-X--workflow-Y` 形式で、takt から読む / resume する
   経路は無い。古い run のログはその形式で探す
-- **レーン名の実在確認は `determineWorkflow` に委ねる。省かない**。存在しない名前は
-  `Workflow not found` で止まる(積まれない)。ただしworkflow の選択条件を省くと、**存在はするが
+- **レーン名の実在確認は `takt workflow doctor` に委ねる。省かない**。MCP は名前を検証せずに積むので、
+  doctor を通さないと存在しない名前が積まれ、runner が拾うまで気付けない。ただしworkflow の選択条件を省くと、**存在はするが
   意図と違うレーン**を黙って渡すことになる。名前の実在と選択の妥当性は別物
-- **`determineWorkflow` は callable sub-workflow を弾かない**。callable な部品名を
+- **`takt workflow doctor` は callable sub-workflow を弾かない**(`Workflow OK` で exit 0)。callable な部品名を
   渡すと投入は成功し、runner が拾った瞬間に
   `callable workflow "<name>" must be started from a workflow_call` で failed になる。
   実在確認だけでは防げないので、[workflow-catalog.md](workflow-catalog.md) の callable 確認 を通す
