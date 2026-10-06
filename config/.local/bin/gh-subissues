@@ -146,7 +146,9 @@ def main() -> None:
         sys.exit(1)
 
     # 取り直して照合する
-    children = {c["number"] for c in gh_json("api", f"{api}/issues/{parent}/sub_issues", "--paginate")}
+    # --paginate はページごとに別の配列を出すので、--slurp で 1 つにまとめる
+    pages = gh_json("api", f"{api}/issues/{parent}/sub_issues", "--paginate", "--slurp")
+    children = {c["number"] for page in pages for c in page}
     ok = True
     print(f"親 #{parent}: https://github.com/{repo}/issues/{parent}")
     print("key\tnumber\tsub-issue\tblocked by\ttitle")
