@@ -23,7 +23,7 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run shellcheck, link, hook and agent-skill checks
-        run: bash scripts/check.sh shellcheck links hooks guard-main-commit agent-skills
+        run: bash scripts/check.sh shellcheck links hooks guard-main-commit guard-foreground-wait agent-skills
 
   cloud-evidence:
     name: Cloud evidence bootstrap and recording

@@ -133,6 +133,11 @@
             "type": "command",
             "command": "~/.claude/hooks/guard-rm.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/guard-foreground-wait.sh",
+            "timeout": 10
           }
         ]
       },

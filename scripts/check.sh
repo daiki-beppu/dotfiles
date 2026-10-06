@@ -12,7 +12,7 @@
 # defining check_<name> (dashes become underscores) and listing <name> there.
 set -euo pipefail
 
-DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
+DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit guard-foreground-wait agent-skills)
 # Opt-in: inspects this Mac, so it is not part of the default run.
 OPT_IN_CHECKS=(mas-declared)
 
@@ -308,6 +308,22 @@ check_guard_main_commit() {
   expect allow "$tmp_dir/not-a-repo" 'git commit -m x'
   expect allow "$main_repo" "cd $tmp_dir/missing && git commit -m x"
 
+  # The main checkout is shared with other sessions: moving its HEAD or
+  # discarding its changes is denied, returning it to main/master is not.
+  expect deny "$main_repo" 'git checkout --detach origin/main'
+  expect deny "$main_repo" 'git switch -c topic'
+  expect deny "$main_repo" 'git checkout -- README.md'
+  expect deny "$main_repo" 'git reset --hard HEAD~1'
+  expect deny "$worktree" "cd $main_repo && git checkout -b topic"
+  expect deny "$worktree" "git -C $main_repo switch --detach"
+  expect allow "$main_repo" 'git checkout main'
+  expect allow "$main_repo" 'git switch main'
+  expect allow "$master_repo" 'git checkout master'
+  expect allow "$main_repo" 'git reset -q HEAD README.md'
+  expect allow "$worktree" 'git checkout -b topic && git switch --detach'
+  expect allow "$worktree" 'git reset --hard origin/main'
+  expect allow "$main_repo" "git -C $worktree checkout --detach"
+
   local out
   out="$(jq -n '{cwd: "/", tool_name: "Read", tool_input: {file_path: "/etc/hosts"}}' | "$hook")"
   if [ -n "$out" ]; then
@@ -316,6 +332,56 @@ check_guard_main_commit() {
   else
     echo "ok: allow [non-Bash tool input]"
   fi
+
+  return "$status"
+}
+
+# ---------------------------------------------------------------------------
+# Check: guard-foreground-wait
+# Feeds PreToolUse inputs to config/.claude/hooks/guard-foreground-wait.sh:
+# commands that block until CI or a file appears must run with
+# run_in_background, everything else passes through with no output.
+# ---------------------------------------------------------------------------
+check_guard_foreground_wait() {
+  echo "== guard-foreground-wait =="
+  local hook="$REPO_ROOT/config/.claude/hooks/guard-foreground-wait.sh"
+  local status=0
+
+  # expect <deny|allow> <run_in_background> <command>
+  expect() {
+    local want="$1" background="$2" command="$3" out got
+    out="$(jq -n --arg command "$command" --argjson background "$background" \
+      '{hook_event_name: "PreToolUse", cwd: "/", tool_name: "Bash",
+        tool_input: ({command: $command} + (if $background then {run_in_background: true} else {} end))}' |
+      "$hook")" || {
+      echo "FAIL: hook exited non-zero for [$command]" >&2
+      status=1
+      return
+    }
+    if [ -z "$out" ]; then
+      got=allow
+    elif [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$out")" = deny ]; then
+      got=deny
+    else
+      got="unexpected output: $out"
+    fi
+    if [ "$got" = "$want" ]; then
+      echo "ok: $want [$command] background=$background"
+    else
+      echo "FAIL: expected $want, got $got for [$command] background=$background" >&2
+      status=1
+    fi
+  }
+
+  expect deny false 'gh pr checks 12 --watch'
+  expect deny false 'cd repo && gh pr checks 12 --watch --interval 20 >/dev/null 2>&1; gh pr view 12'
+  expect deny false 'gh run watch 123 --exit-status'
+  expect deny false 'until [ -e /tmp/x.exit ]; do sleep 30; done; cat /tmp/x.exit'
+  expect allow true 'gh pr checks 12 --watch'
+  expect allow true 'until [ -e /tmp/x.exit ]; do sleep 30; done'
+  expect allow false 'gh pr checks 12'
+  expect allow false 'gh run view 123 --log-failed'
+  expect allow false 'git log --oneline -3'
 
   return "$status"
 }
