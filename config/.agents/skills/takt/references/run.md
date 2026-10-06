@@ -1,29 +1,43 @@
 # 実行と完了回収
 
-実行を依頼された場合だけ読む。既存 runner がある場合は新しい runner を重ねず、その実行と対象タスクを追跡する。
+実行を依頼された場合だけ読む。runner は repo ごとに常駐させる `takt watch` 1 本で、積まれたタスクを順に拾う。
 
-## 起動
+## runner の確認と起動
 
-Orca の新しいターミナルタブで `takt run` を一度起動する。takt の出力はタブにそのまま表示され、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。
+まず、この repo を見張る watch が既にあるか確かめる。
 
 ```sh
-orca terminal create --worktree active --title "takt <slug>" --json \
-  --command "cd <repo_root> && script -q <scratchpad>/takt_<slug>.log takt run; echo \$? > <scratchpad>/takt_<slug>.exit"
+for p in $(pgrep -f '/bin/takt (watch|run)'); do lsof -a -p "$p" -d cwd -Fn | sed -n 's/^n//p'; done
 ```
 
-- `script` は TTY を保ったまま（色・進捗表示がタブに出る）ログを取り、takt の終了コードを返す。`-q`（takt の quiet）で AI 出力を消さない。ログは失敗箇所を探すためだけに使い、全文は読まない。
-- 結果の `terminal.handle` を控える。終了は `.exit` ファイルの出現で検知する。`--command` はログインシェルに打ち込まれるので takt が終わってもタブは残り、`orca terminal wait --for exit` は発火しない。Claude Code は `until [ -e <exit> ]; do sleep 30; done` を `run_in_background: true` と `timeout: 7200000` で流し、上限で止まったらループだけ張り直す。
-- Orca が無い環境では、継続可能な実行セッションで `cd <repo_root> && takt run > <log> 2>&1` を起動する。Claude Code は `nohup … < /dev/null & echo $! > <pid>; disown` で切り離し（バックグラウンド実行に直接載せると、その上限で takt も止まる）、Codex はセッション ID を返す exec/TTY を使う。
+出力に `<repo_root>` があれば、その runner が拾うので何も起動しない。takt は起動時に `running` のタスクを中断扱いで `failed` にするため、2 本目の runner は先の runner が実行中のタスクを潰す。
 
-複数タスクでも runner の起動は一回。worker pool が設定された concurrency で pending を消化する。全 pending が対象になり得るため、実行前に依頼外の pending が混じっていないか確認する。
+無ければ Orca の新しいターミナルタブで watch を起動する。出力はタブに出て、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。
+
+```sh
+orca terminal create --worktree active --title "takt watch <repo>" --json \
+  --command "cd <repo_root> && script -q ~/.takt/watch-<repo>.log takt watch"
+```
+
+- `script` は TTY を保ったまま（色・進捗表示がタブに出る）ログを取る。ログは起動のたびに上書きされ、失敗箇所を探すためだけに使う。全文は読まない。
+- watch は全タスクが終わっても常駐し続ける。タブは閉じず、次に積んだタスクもこの watch が拾う。止めるのはユーザーが Ctrl+C したとき（実行中のタスクの完了を待って止まる）。
+- Orca が無い環境では、継続可能な実行セッションで `cd <repo_root> && takt watch > <log> 2>&1` を起動する。Claude Code は `nohup … < /dev/null & echo $! > <pid>; disown` で切り離し（バックグラウンド実行に直接載せると、その上限で takt も止まる）、Codex はセッション ID を返す exec/TTY を使う。
+
+watch は設定された concurrency で全 pending を拾う。依頼外の pending が混じっていないか、積む前に確認する。
 
 ## 待機
 
-`.exit` ファイル（Orca が無い環境ではセッションの終了）を回収する。ホスト側の待機時間・進捗通知規約に従う。takt が実行中なら待機を続ける。応答待ち timeout は takt の終了・失敗の証拠ではなく、再起動の理由にしない。
+完了は対象タスクの状態で判定する（watch は終了しないので、プロセスの終了は待たない）。対象全件が `pending` / `running` を抜けるまで、repo root で回す。
 
-セッションを回収できないときはプロセスとタスク状態を確認する。古いログの存在だけで成功扱い・再起動しない。継続実行できる手段が無ければ、投入済み／実行未完了を分けて報告する。
+```sh
+until <skill>/scripts/takt-node.sh <skill>/scripts/takt-status.mjs <issue> | head -1 | grep -qvE 'status=(pending|running)'; do sleep 30; done
+```
 
-途中経過を聞かれたら、`scripts/takt-status.mjs` を流す（`<skill>/scripts/takt-node.sh <skill>/scripts/takt-status.mjs <issue> [起動時のログ]`）。状態・今の run・直近の工程・各レビューの判定・裁定で直す問題を数行で返す。足りなければ takt MCP を引く。`takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を、`takt_get_run`（`cwd` + `runSlug`）でその run の step log・レポートを取る。MCP ツールが見えない環境では下の「完了時の確認」の手作業経路を使う。
+Claude Code はこれを `run_in_background: true` と `timeout: 7200000` で流し、上限で止まったらループだけ張り直す。`failed` で抜けたら 1 分後にもう一度状態を見る。`auto_requeue_max_attempts` による自動の積み直しで `pending` に戻ることがあり、戻ったら待機を続ける。応答待ちの timeout は takt の失敗の証拠ではなく、runner を立て直す理由にしない。
+
+watch のタブが消えている・プロセスが無いのに `running` が残るときは、上の確認から起動し直す。起動時に `failed` へ書き換わったタスクは自動では積み直されないので、[gotchas.md](gotchas.md) の「外から止められたタスク」の手順で積み直す。
+
+途中経過を聞かれたら、`scripts/takt-status.mjs` を流す（`<skill>/scripts/takt-node.sh <skill>/scripts/takt-status.mjs <issue> ~/.takt/watch-<repo>.log`）。状態・今の run・直近の工程・各レビューの判定・裁定で直す問題を数行で返す。足りなければ takt MCP を引く。`takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を、`takt_get_run`（`cwd` + `runSlug`）でその run の step log・レポートを取る。MCP ツールが見えない環境では下の「完了時の確認」の手作業経路を使う。
 
 ## 実行中の追加指示
 
@@ -38,7 +52,7 @@ orca terminal create --worktree active --title "takt <slug>" --json \
 - `failed` / `exceeded`: 失敗原因と未完了部分を調べる。`exceeded` は step 予算切れで、続けるなら `--ignore-exceed`（[gotchas.md](gotchas.md)）。
 - `pending` / `running` 等が残る: 完了扱いせず、同じ実行の状態を確認する。
 
-実行ログは `takt_get_run` で取る。MCP が無ければ `.takt/clone-meta/<name>.json` の `clonePath` から辿り、そのクローンの `.takt/runs/<run_slug>/reports/` を使う。メイン checkout のログだけで判断しない。必要なら起動時ログの末尾を読めるが、trace や JSONL を全文表示せず、エラーや検証結果の周辺だけ読む。
+実行ログは `takt_get_run` で取る。MCP が無ければ `.takt/clone-meta/<name>.json` の `clonePath` から辿り、そのクローンの `.takt/runs/<run_slug>/reports/` を使う。メイン checkout のログだけで判断しない。必要なら watch のログの末尾を読めるが、trace や JSONL を全文表示せず、エラーや検証結果の周辺だけ読む。
 
 status、PR URL、テスト結果、review verdict と未完了の理由を報告する。
 

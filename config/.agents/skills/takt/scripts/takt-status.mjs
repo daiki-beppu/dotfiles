@@ -1,5 +1,5 @@
 // タスクの状態を数行で返す: 状態・今の run・現在の工程・最新のレビュー判定・裁定で直すことになった問題。
-// 使い方: takt-node.sh takt-status.mjs <issue番号|タスク名の一部> [takt run のログ]
+// 使い方: takt-node.sh takt-status.mjs <issue番号|タスク名の一部> [runner のログ]
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
