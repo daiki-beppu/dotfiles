@@ -231,6 +231,9 @@ in
     # takt-mcp をメインチェックアウトのルートで起動するラッパー（MCP 登録用）
     link_force "${dotfilesDir}/.local/bin/takt-mcp-root" "$HOME/.local/bin/takt-mcp-root"
 
+    # 親 issue に sub-issue をまとめて起票し、blocked by を張って確かめる
+    link_force "${dotfilesDir}/.local/bin/gh-subissues" "$HOME/.local/bin/gh-subissues"
+
     # zsh-abbr
     mkdir -p "$HOME/.config/zsh-abbr"
     link_force "${dotfilesDir}/.config/zsh-abbr/user-abbreviations" "$HOME/.config/zsh-abbr/user-abbreviations"

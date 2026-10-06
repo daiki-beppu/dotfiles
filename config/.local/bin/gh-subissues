@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""gh-subissues — 親 issue に sub-issue をまとめて起票し、blocked by を張って確かめる。
+
+usage:
+  gh-subissues MANIFEST.json [--repo OWNER/REPO] [--dry-run]
+
+MANIFEST.json:
+  {
+    "parent": 237,
+    "issues": [
+      {"key": "s0", "title": "...", "body_file": "s0.md", "labels": ["ready-for-agent"]},
+      {"key": "s1", "title": "...", "body_file": "s1.md", "blocked_by": ["s0", 170]}
+    ]
+  }
+
+- body_file は MANIFEST からの相対パス。本文の {{key}} は、起票後にその issue の #番号へ置き換える
+- blocked_by はキー（この起票の issue）か数（同じリポジトリの既存の issue）
+- 起票は issues の順。親の sub-issue もこの順に並ぶ
+- 起票の前に、キーの重複・未知のキー・本文ファイルの有無・未知の {{key}} をすべて検査する
+- 最後に親の sub-issue 一覧と各 issue の blocked by を取り直し、MANIFEST と照合した表を出す
+- 途中で失敗したら、それまでに作った issue のキーと番号を stderr に出す
+"""
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+PLACEHOLDER = re.compile(r"\{\{([A-Za-z0-9_-]+)\}\}")
+
+
+def gh(*args: str) -> str:
+    result = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args[:3])} …: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def gh_json(*args: str):
+    return json.loads(gh(*args))
+
+
+def load_manifest(path: Path) -> dict:
+    try:
+        manifest = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"MANIFEST を読めない: {e}")
+    errors = []
+    if not isinstance(manifest.get("parent"), int):
+        errors.append("parent は既存の親 issue の番号（数）にする")
+    issues = manifest.get("issues")
+    if not isinstance(issues, list) or not issues:
+        errors.append("issues が空")
+        issues = []
+    keys = [i.get("key") for i in issues]
+    for k in {k for k in keys if keys.count(k) > 1}:
+        errors.append(f"キーが重複: {k}")
+    known = set(keys)
+    for issue in issues:
+        key = issue.get("key")
+        if not key or not issue.get("title"):
+            errors.append(f"key と title は必須: {issue}")
+            continue
+        body = path.parent / issue.get("body_file", "")
+        if not issue.get("body_file") or not body.is_file():
+            errors.append(f"{key}: 本文ファイルが無い: {body}")
+        else:
+            issue["_body"] = body.read_text()
+            for ref in PLACEHOLDER.findall(issue["_body"]):
+                if ref not in known:
+                    errors.append(f"{key}: 本文の {{{{{ref}}}}} は未知のキー")
+        for dep in issue.get("blocked_by", []):
+            if isinstance(dep, str) and dep not in known:
+                errors.append(f"{key}: blocked_by の {dep} は未知のキー")
+            elif dep == key:
+                errors.append(f"{key}: 自分自身を blocked_by にしている")
+            elif not isinstance(dep, (str, int)):
+                errors.append(f"{key}: blocked_by はキーか issue 番号: {dep!r}")
+    if errors:
+        sys.exit("MANIFEST の誤り:\n  " + "\n  ".join(errors))
+    return manifest
+
+
+def resolve(dep, numbers: dict) -> int:
+    return numbers[dep] if isinstance(dep, str) else dep
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("manifest", type=Path)
+    parser.add_argument("--repo", help="OWNER/REPO（省略時は今のディレクトリのリポジトリ）")
+    parser.add_argument("--dry-run", action="store_true", help="検査と計画の表示だけ")
+    args = parser.parse_args()
+
+    manifest = load_manifest(args.manifest)
+    repo = args.repo or gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner")
+    parent = manifest["parent"]
+    issues = manifest["issues"]
+    api = f"repos/{repo}"
+
+    if args.dry_run:
+        print(f"{repo} #{parent} の下に {len(issues)} 件:")
+        for issue in issues:
+            deps = ", ".join(str(d) for d in issue.get("blocked_by", [])) or "-"
+            print(f"  {issue['key']}: {issue['title']}  (blocked by: {deps})")
+        return
+
+    gh("issue", "view", str(parent), "--repo", repo, "--json", "number")  # 親が無ければここで落ちる
+
+    numbers: dict = {}
+    try:
+        for issue in issues:
+            cmd = ["issue", "create", "--repo", repo, "--title", issue["title"], "--body", issue["_body"]]
+            for label in issue.get("labels", []):
+                cmd += ["--label", label]
+            url = gh(*cmd)
+            numbers[issue["key"]] = int(url.rstrip("/").rsplit("/", 1)[1])
+            print(f"created {issue['key']} #{numbers[issue['key']]}", file=sys.stderr)
+
+        for issue in issues:
+            body = PLACEHOLDER.sub(lambda m: f"#{numbers[m.group(1)]}", issue["_body"])
+            if body != issue["_body"]:
+                with tempfile.NamedTemporaryFile("w", suffix=".md") as f:
+                    f.write(body)
+                    f.flush()
+                    gh("issue", "edit", str(numbers[issue["key"]]), "--repo", repo, "--body-file", f.name)
+
+        db_ids: dict = {}
+
+        def db_id(number: int) -> str:
+            if number not in db_ids:
+                db_ids[number] = gh("api", f"{api}/issues/{number}", "--jq", ".id")
+            return db_ids[number]
+
+        for issue in issues:
+            gh("api", "--method", "POST", f"{api}/issues/{parent}/sub_issues",
+               "-F", f"sub_issue_id={db_id(numbers[issue['key']])}", "--silent")
+            for dep in issue.get("blocked_by", []):
+                gh("api", "--method", "POST", f"{api}/issues/{numbers[issue['key']]}/dependencies/blocked_by",
+                   "-F", f"issue_id={db_id(resolve(dep, numbers))}", "--silent")
+    except RuntimeError as e:
+        print(f"失敗: {e}\nここまでに作った issue: {json.dumps(numbers)}", file=sys.stderr)
+        sys.exit(1)
+
+    # 取り直して照合する
+    children = {c["number"] for c in gh_json("api", f"{api}/issues/{parent}/sub_issues", "--paginate")}
+    ok = True
+    print(f"親 #{parent}: https://github.com/{repo}/issues/{parent}")
+    print("key\tnumber\tsub-issue\tblocked by\ttitle")
+    for issue in issues:
+        number = numbers[issue["key"]]
+        want = sorted(resolve(d, numbers) for d in issue.get("blocked_by", []))
+        got = sorted(b["number"] for b in gh_json("api", f"{api}/issues/{number}/dependencies/blocked_by"))
+        linked = number in children
+        mark = "" if linked and want == got else "  <- MANIFEST と違う"
+        ok = ok and not mark
+        deps = ", ".join(f"#{n}" for n in got) or "-"
+        print(f"{issue['key']}\t#{number}\t{'yes' if linked else 'NO'}\t{deps}\t{issue['title']}{mark}")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
