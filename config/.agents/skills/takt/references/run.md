@@ -43,7 +43,12 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 
 聞かれたら `takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を返す。レビューの判定が要るときは、タスクの `worktreePath` 配下の `.takt/runs/<run_slug>/reports/` から `grep -rH -m1 '^## 結果'` で各レポートの判定行だけ読む。`takt_get_run`（`cwd` + `runSlug`）は指示書と全レポートを丸ごと返して数万トークンになるので、判定行で足りないときだけ使う。MCP ツールが見えない環境では `takt list --non-interactive --format json` で状態を読む。
 
-止まっているかは、ファイルの更新時刻ではなく watch のプロセスツリーの CPU 累計で判断する。`pnpm run check` のような長いコマンドの実行中は、ログもファイルも数分動かない。間を置いて 2 回流し、伸びていれば動いている（`<pid>` は上の runner の確認で見つけた watch）。
+止まっているかは、2 つの手がかりを順に見て判断する。
+
+1. 実行クローンの `.takt/runs/<run_slug>/logs/*.jsonl` の更新時刻と、`reports/` の増え方。エージェントが動いていれば、ログは数分おきに伸び、レポートは工程ごとに増える。エージェントはモデルの応答を待つあいだ CPU をほとんど使わないので、ここが第一の手がかりになる。
+2. ログが数分動かないときは、watch のプロセスツリーの CPU 累計を、間を置いて 2 回見る。`pnpm run check` のような手元のコマンドが走っているあいだは、ログは動かないが CPU 累計は伸びる（`<pid>` は上の runner の確認で見つけた watch）。
+
+ログが 10〜15 分以上動かず、CPU 累計も伸びていないときに初めて止まりを疑う。
 
 ```sh
 ps -ax -o pid=,ppid=,time= | awk -v r=<pid> '{p[$1]=$2;t[$1]=$3} END{for(i in p){j=i;while(j!=""&&j!=r&&j!=0)j=p[j];if(j==r){n=split(t[i],a,":");s+=(n==3?a[1]*3600+a[2]*60+a[3]:a[1]*60+a[2])}} printf "%d 秒\n",s}'
