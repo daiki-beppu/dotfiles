@@ -29,6 +29,16 @@ orca terminal create --worktree active --title "takt <slug>" --json \
 
 実行中のタスクに指示を足すよう頼まれたら、止めて積み直さず、次の step 境界で届ける `takt_tell_run`（`cwd` + `runSlug` + `content`）を使う。`runSlug` は送る直前に `tasks.yaml`（または takt-status）から読み直す。自動の積み直しで run が新しくなると、前に見た slug は「タスクにない」と断られる。送る前に対象 slug と指示文をユーザーに示して確認を取る。届くのは worktree クローンで running のタスクだけで、完了・slug 不一致なら書き込まず理由が返る。MCP が無ければ、人間が `takt list` → 対象の running タスク → **Interactive** → `/tell` で送る（TTY が要る）。
 
+## 直接実行の途中経過
+
+リポジトリの規約で `takt --pipeline` を worktree から直接実行する場合、そのタスクは `tasks.yaml` に載らない。`takt_list_tasks` は空を返し、`takt_tell_run` は届かない。takt-status は、その worktree を cwd にして同じ形で流す。タスクが見つからなければ cwd の `.takt/runs` の最新 run を読み、`meta.json` の工程と iteration、takt とその子プロセスの CPU 累計、レビュー判定、直近の step の応答を返す。`takt_get_run`（`cwd` = その worktree）も引けるが、指示書と全レポートを丸ごと返して大きいので、takt-status で足りないときだけ使う。
+
+止まっているかは CPU 累計で判断する。`pnpm run check` のような長いコマンドの実行中は、ファイルの更新時刻が数分動かない。takt-status を間を置いて 2 回流し、CPU 累計が伸びていれば動いている。
+
+## 打ち切り
+
+レビューと修正の周回は、収束しないまま step 予算を使い切ることがある。直近の周回の指摘が同じ受け入れ条件のすき間を言い換えて狭めるだけになったら、収束していない。修正の検証（fix-verifier など）の差し戻しが 2 周続き、2 周目の指摘が 1 周目と同じ箇所なら、ユーザーに打ち切りを提案する。打ち切ったら takt を止め、その時点の差分を引き取り、残った指摘を手で直す（リポジトリの fix の手順に従う）。issue 本文の受け入れ条件があいまいで周回が延びたなら、そのすき間を issue 本文に書き足しておく。
+
 ## 完了時の確認
 
 セッションの終了は runner の終了通知であり、タスク成功の証拠ではない。`tasks.yaml` で対象全件の最終 status を確認する。
