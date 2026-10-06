@@ -10,6 +10,10 @@
 
 language: ja
 
+# ── 通知 ──
+# 完了・中断・反復上限のデスクトップ通知と通知音を無効にする。
+notification_sound: false
+
 # ── 対話モードの形式仕様（v0.63 で構造化、v0.66 で /verify）──
 # 対話で固めた要件を Quint / Alloy でも書かせ、/verify で検証器にかける。
 # mode 'Y/n' = 毎回聞くが既定は有効（既定の 'y/N' は無効寄り）。
