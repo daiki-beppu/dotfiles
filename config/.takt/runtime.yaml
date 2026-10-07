@@ -7,9 +7,9 @@
 # .takt/config.yaml にも provider 系のキーを書かない。
 #
 # 構成方針: Claude 主体、レビューだけ Codex
-# 計画と裁定（planner / diagnoser / review-adjudicator / research-planner / research-supervisor）は
-# Claude opus、既定は Claude sonnet。coder と research の量産 step は auto_routing で、作業の重さに
-# 応じて sonnet-medium / sonnet / opus から選ぶ。
+# 計画（planner / diagnoser / research-planner / research-supervisor）は Claude opus、既定は Claude sonnet。
+# coder は auto_routing で作業の重さに応じて sonnet-medium / sonnet から、research の量産 step は
+# sonnet-medium / sonnet / opus から選ぶ。
 # reviewer / companion / supervisor は Codex gpt-6.1-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
 # loop monitor の supervisor judge は発火元 step の provider / model を継承する。
 #
@@ -31,6 +31,10 @@ provider:
       extends: sonnet
       options:
         effort: medium
+    # coder pool で tier high を受け持つ sonnet。auto_routing の tier は profile ごとに 1 つで、
+    # research pool の sonnet（medium）と分けるために別名にする
+    sonnet-coder:
+      extends: sonnet
     opus:
       provider: claude
       model: opus
@@ -52,9 +56,10 @@ provider:
         candidates:
           - profile: sonnet-medium
             tier: low
-          - profile: sonnet
-            tier: medium
-          - profile: opus
+          # opus は外す。high の見積もりが 4 割近くあり、opus の coder 工程が 1 回 10〜100 分かかって
+          # run 全体の時間を押し上げた（2026-10-06〜07、1 run 平均 19 分 → 86 分）。
+          # high の候補が 1 つも無いと見積もりが high のとき例外で止まるため、sonnet に high まで受けさせる
+          - profile: sonnet-coder
             tier: high
         fallback_profile: sonnet-medium
       # deep-research の dig / analyze。dig は 1 run で数十回並列に呼ばれる量産 step なので、
@@ -83,10 +88,10 @@ provider:
       # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
       diagnoser:
         profile: opus
-      # peer-review で reviewer（Codex）の指摘を採るか退けるかを裁く。書き手（Claude）と
-      # 査読者のどちらにも寄らない判断が要り、1 run に数回なので最強モデルを置く
+      # peer-review で reviewer の指摘を採るか退けるかを裁く。opus にすると 1 回 1 分 → 9 分になり、
+      # 1 run に数回走るため run 全体の 1 割を占めた（2026-10-06〜07）。sonnet に戻す
       review-adjudicator:
-        profile: opus
+        profile: sonnet
       # final-gate・完了判定・replan 要求。完了を判定する査読側なので reviewer と同じ系統にする
       supervisor:
         profile: sol
