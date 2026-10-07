@@ -30,6 +30,11 @@
     ]
   },
   "model": "opus[1m]",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "skillOverrides": {
     "empirical-prompt-tuning": "off"
   },
