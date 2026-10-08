@@ -178,7 +178,6 @@
                     "1password"
                     "1password-cli"
                     "antigravity-cli"
-                    "aqua-voice"
                     "azookey"
                     "cap"
                     "chatgpt"
