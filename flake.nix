@@ -127,6 +127,10 @@
                     "com.apple.finder" = {
                       ShowRecentTags = false;
                     };
+                    # 入力メニュー（azooKey の かな/英数 表示）をメニューバーに出す
+                    "com.apple.TextInputMenu" = {
+                      visible = true;
+                    };
                   };
                 };
 
