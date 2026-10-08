@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
 
+# 各ジョブの name は ruleset「main: CI を必須にする」の必須チェック名。変えるなら ruleset も直す
+# （古い名前のチェックは永遠に来ず、PR がマージできなくなる）。paths で絞ると対象外の PR で同じことが起きる。
 jobs:
   nix-eval:
     name: Nix flake evaluation
