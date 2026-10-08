@@ -91,10 +91,11 @@ provider:
       # 初手から最強モデルを置く（診断の誤りは自動 fix の誤りに直結する）
       diagnoser:
         profile: opus
-      # peer-review で reviewer の指摘を採るか退けるかを裁く。opus にすると 1 回 1 分 → 9 分になり、
-      # 1 run に数回走るため run 全体の 1 割を占めた（2026-10-06〜07）。sonnet に戻す
+      # peer-review で reviewer の指摘を採るか退けるかを裁く。裁定の誤りは reviewer の指摘の見落としか
+      # 余計な手戻りに直結するので opus にする。2026-10-06〜07 に 1 回 1 分 → 9 分と計測して sonnet に
+      # 戻したが、当時の opus は SDK 同梱 CLI 経由で Opus 5 に解決されていた（#254）。Opus 5.5 で測り直す
       review-adjudicator:
-        profile: sonnet
+        profile: opus
       # final-gate・完了判定・replan 要求。完了を判定する査読側なので reviewer と同じ系統にする
       supervisor:
         profile: sol
