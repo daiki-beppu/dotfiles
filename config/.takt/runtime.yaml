@@ -9,7 +9,7 @@
 # 構成方針: Claude 主体、レビューだけ Codex
 # 計画（planner / diagnoser / research-planner / research-supervisor）は Claude opus、既定は Claude sonnet。
 # coder は auto_routing で作業の重さに応じて sonnet-medium / sonnet から、research の量産 step は
-# sonnet-medium / sonnet / opus から選ぶ。
+# haiku / sonnet / opus から選ぶ。
 # reviewer / companion / supervisor は Codex gpt-6.1-sol（書き手と査読者を別系統のモデルにして盲点を補い合う）。
 # loop monitor の supervisor judge は発火元 step の provider / model を継承する。
 #
@@ -38,7 +38,8 @@ provider:
     opus:
       provider: claude
       model: opus
-    # auto_routing の router。作業の重さ（tier）を見積もるだけなので安いモデルで足りる
+    # auto_routing の router。作業の重さ（tier）を見積もるだけなので安いモデルで足りる。
+    # research pool の tier low も受け持つ
     haiku:
       provider: claude
       model: haiku
@@ -63,10 +64,12 @@ provider:
             tier: high
         fallback_profile: sonnet-medium
       # deep-research の dig / analyze。dig は 1 run で数十回並列に呼ばれる量産 step なので、
-      # 軽い調べ物は sonnet-medium に落として量を削る。見積もり失敗時は従来どおり sonnet
+      # 軽い調べ物は haiku に落として量を削る。Haiku 5.5 は抽出・調べ物の量産向けで、
+      # 推論（HLE ツールあり）は Sonnet 5.5 の 64.5% に対し 57.4% と差が小さい（2026-10-08）。
+      # 見積もり失敗時は従来どおり sonnet
       research:
         candidates:
-          - profile: sonnet-medium
+          - profile: haiku
             tier: low
           - profile: sonnet
             tier: medium
