@@ -12,13 +12,18 @@ const text = readFileSync(resolve(file), "utf8");
 const { runFormalSpecVerification } = await import(
   `${process.env.TAKT_ROOT}/dist/features/interactive/formalSpecVerifier.js`
 );
-if (typeof runFormalSpecVerification !== "function") {
-  console.error("takt の内部 API が変わった: runFormalSpecVerification が無い");
+const { DEFAULT_FORMAL_SPEC_MODEL_CHECK_TIMEOUT_SECONDS } = await import(
+  `${process.env.TAKT_ROOT}/dist/core/models/config-types.js`
+);
+if (typeof runFormalSpecVerification !== "function" || typeof DEFAULT_FORMAL_SPEC_MODEL_CHECK_TIMEOUT_SECONDS !== "number") {
+  console.error("takt の内部 API が変わった: runFormalSpecVerification か DEFAULT_FORMAL_SPEC_MODEL_CHECK_TIMEOUT_SECONDS が無い");
   process.exit(2);
 }
 
 const cwd = join(homedir(), ".cache", "formal-spec");
 mkdirSync(cwd, { recursive: true });
-const result = await runFormalSpecVerification(text, cwd, { modelCheckTimeoutSeconds: 300 });
+const result = await runFormalSpecVerification(text, cwd, {
+  modelCheckTimeoutSeconds: DEFAULT_FORMAL_SPEC_MODEL_CHECK_TIMEOUT_SECONDS,
+});
 console.log(JSON.stringify(result, null, 2));
 process.exit({ passed: 0, failed: 1 }[result.verdict] ?? 2);
