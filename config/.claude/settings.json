@@ -260,6 +260,7 @@
   "remoteControlAtStartup": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
+  "crossSessionInbound": "accept",
   "autoMode": {
     "allow": [
       "$defaults",
