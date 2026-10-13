@@ -91,4 +91,4 @@ status、PR URL、テスト結果、review verdict と未完了の理由を報�
 
 ## 後片付け
 
-マージした後のクローンは、開発ログ（`/knowledge`）を書き終えるまで残す。報告書（`.takt/runs/*/reports/`）が開発ログの素材になる。書き終えたら `scripts/takt-cleanup.mjs <issue>...` で片付ける。takt の削除の操作と同じく、クローン・worktree-session・タスクの記録をまとめて消す。クローンだけを `rm -rf` すると、記録が消えたクローンを指したまま残り、`takt_list_tasks` が `Worktree directory does not exist` で使えなくなる。そうなったら `takt-cleanup.mjs --missing` で記録を消す。
+マージした後のクローンは、開発ログ（`/knowledge`）を書き終えるまで残す。報告書（`.takt/runs/*/reports/`）が開発ログの素材になる。書き終えたら `<skill>/scripts/takt-node.sh <skill>/scripts/takt-cleanup.mjs <issue>...` で片付ける（takt の内部 API を読むので、`node` で直に流すと `ERR_MODULE_NOT_FOUND` で落ちる）。takt の削除の操作と同じく、クローン・worktree-session・タスクの記録をまとめて消す。クローンだけを `rm -rf` すると、記録が消えたクローンを指したまま残り、`takt_list_tasks` が `Worktree directory does not exist` で使えなくなる。そうなったら `takt-cleanup.mjs --missing` で、クローンが無いタスク（completed・failed・pr_failed・exceeded）の記録を消す。
