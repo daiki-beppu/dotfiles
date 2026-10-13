@@ -52,7 +52,13 @@ await client.connect(new StdioClientTransport({ command: process.execPath, args:
 // issue 1 件の今の段階を返す。done: マージ済みか issue が閉じた / waiting: 進行中 / stuck: 人の手が要る / new: 未投入
 function stage(n, tasks) {
   const t = tasksFor(tasks, n)[0];
-  if (!t) return gh(["issue", "view", n, "--json", "state"]).state === "CLOSED" ? "done" : "new";
+  // タスクが failed でも、差分を人が引き取って PR にし、マージで issue が閉じていれば終わっている（run.md の「打ち切り」）
+  if (gh(["issue", "view", n, "--json", "state"]).state === "CLOSED") {
+    const merged = t?.prUrl && gh(["pr", "view", t.prUrl, "--json", "state"]).state === "MERGED";
+    event(n, `${merged ? "マージ完了" : "issue クローズ"}: ${label(n)}`);
+    return "done";
+  }
+  if (!t) return "new";
   if (active(t)) return "waiting";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
