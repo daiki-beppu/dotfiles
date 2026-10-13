@@ -12,7 +12,7 @@
 # defining check_<name> (dashes become underscores) and listing <name> there.
 set -euo pipefail
 
-DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
+DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit guard-kill agent-skills)
 # Opt-in: inspects this Mac, so it is not part of the default run.
 OPT_IN_CHECKS=(mas-declared)
 
@@ -316,6 +316,55 @@ check_guard_main_commit() {
   else
     echo "ok: allow [non-Bash tool input]"
   fi
+
+  return "$status"
+}
+
+# ---------------------------------------------------------------------------
+# Check: guard-kill
+# Feeds PreToolUse inputs to the pkill/killall guard and asserts deny/allow.
+# ---------------------------------------------------------------------------
+check_guard_kill() {
+  echo "== guard-kill =="
+  local hook="$REPO_ROOT/config/.claude/hooks/guard-kill.sh"
+  local status=0
+
+  # expect <deny|allow> <command>
+  expect() {
+    local want="$1" command="$2" out got
+    out="$(jq -n --arg command "$command" \
+      '{hook_event_name: "PreToolUse", cwd: "/", tool_name: "Bash", tool_input: {command: $command}}' |
+      "$hook")" || {
+      echo "FAIL: hook exited non-zero for [$command]" >&2
+      status=1
+      return
+    }
+    if [ -z "$out" ]; then
+      got=allow
+    elif [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$out")" = deny ]; then
+      got=deny
+    else
+      got="unexpected output: $out"
+    fi
+    if [ "$got" = "$want" ]; then
+      echo "ok: $want [$command]"
+    else
+      echo "FAIL: expected $want, got $got for [$command]" >&2
+      status=1
+    fi
+  }
+
+  expect deny 'pkill -f "node src/server.ts" -P 1'
+  expect deny 'killall node'
+  expect deny '/usr/bin/pkill vite'
+  expect deny 'sudo pkill -9 Orca'
+  expect deny 'cd /tmp && pkill -f server'
+  expect deny 'pgrep -f vite | xargs pkill'
+  expect allow 'kill 4319'
+  expect allow 'kill -TERM "$PID" && wait "$PID"'
+  expect allow 'pgrep -fl vite'
+  expect allow 'grep -n "pkill" notes.md'
+  expect allow "echo 'do not use killall'"
 
   return "$status"
 }

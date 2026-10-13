@@ -140,6 +140,11 @@
             "type": "command",
             "command": "~/.claude/hooks/guard-rm.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/guard-kill.sh",
+            "timeout": 10
           }
         ]
       },
