@@ -82,7 +82,8 @@
   効いたかは、走っている `codex exec` の引数に `--sandbox` が無いことで確かめる。
   1 つのリポジトリだけ全工程を Codex にするなら、`.takt/runtime.yaml` に Codex の profile を書き、
   global の Claude 系の profile 名(`sonnet`・`opus`・`haiku` など)も同じ名前で Codex を継ぐように
-  上書きする(`profiles` は名前ごとに合成され、`auto_routing` は global のものが残るため)
+  上書きする(`profiles` は名前ごとに合成され、`auto_routing` は global のものが残るため)。
+  写して使える形は [codex-only-runtime.yaml](codex-only-runtime.yaml)
 - **重い run を他リポジトリの runner と同時に走らせない**。クローン置き場
   `<repo-parent>/takt-worktrees/` は同じ親を持つ別リポジトリと共有されており、外部リソースを
   実際に掴むテスト(実 ffmpeg・npm 実ダウンロード等)が並行負荷で落ちる

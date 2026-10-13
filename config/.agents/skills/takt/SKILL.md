@@ -41,4 +41,6 @@ MCP が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 投入だけなら slug と設定・pending 状態を報告する。実行を依頼された場合は対象全件の最終 status、PR URL、検証・review 結果まで回収し、failed / exceeded / pr_failed と未完了を区別する。ログは takt MCP の `takt_get_run`（無ければ実行クローンの `clonePath` 配下）から必要部分だけ読む。
 
+provider を切り替えるときは、repo の `.takt/runtime.yaml` だけに書く。全工程を Codex にするなら [codex-only-runtime.yaml](references/codex-only-runtime.yaml) を写す。
+
 未知のエラーは [gotchas.md](references/gotchas.md) を参照する。
