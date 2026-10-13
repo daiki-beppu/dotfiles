@@ -27,6 +27,10 @@ takt MCP の `takt_enqueue_task` で対話ゼロで積む。
   ```
 
 - **base の実在確認**。`taskContext.baseBranch` は書式しか見ない。渡す前に `git rev-parse --verify <base>` を通す
+- **ディスクとメモリの確認**。run ごとにクローンと依存を作るので、`df -g <repo_root>` の空きが 8GiB を切っていたら
+  積まずに `takt-cleanup` で片付けてから積む。`sysctl vm.swapusage` の used が total の半分を超えていたら、
+  並列数を上げずに 1 本ずつ流す。2026-10-11〜12 に live-mindmap を 3 本並列で回したとき、swap が 3.7/5GB に達して
+  Swift のビルドが SIGKILL で 3 回落ち、ディスクも空き 5.7GiB（97%）まで詰まった
 
 ### 投入
 
