@@ -209,8 +209,6 @@
                   # 入っている App Store アプリはすべてここに列挙する。
                   masApps = {
                     "Klack" = 6446206067;
-                    "Logic Pro" = 634148309;
-                    "MindNode" = 6446116532; # MindNode: Mind Map & Outline
                   };
                 };
               }
