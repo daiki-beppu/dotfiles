@@ -14,3 +14,8 @@
 
 # Bun global packages (bun add -g <pkg>)
 export PATH="$HOME/.bun/bin:$PATH"
+
+# `=cmd` をコマンドのパスに展開しない。既定では引用符の無い `echo ==== 見出し` が
+# `== not found` で落ちる（エージェントの Bash は .zshrc を読まない非対話シェルなのでここで設定する）。
+# `=(cmd)` のプロセス置換は EQUALS と無関係なので、このまま使える
+setopt noequals

@@ -39,6 +39,10 @@ Claude Code はこれを `run_in_background: true` と `timeout: 7200000` で流
 
 watch のタブが消えている・プロセスが無いのに `running` が残るときは、上の確認から起動し直す。起動時に `failed` へ書き換わったタスクは自動では積み直されないので、[gotchas.md](gotchas.md) の「外から止められたタスク」の手順で積み直す。
 
+待機は `node <skill>/scripts/takt-wait.mjs <issue>...` を repo root から `run_in_background: true` で流すのが早い（failed の猶予と、チェックが付かない PR の警告も含む）。クローンの場所は `takt-path.mjs <issue>`（`--push` で remote の無いクローンから push するコマンド）。
+
+区切りの見出しは `---` で書く（zsh は `echo ====` を EQUALS 展開して `== not found` で落ちる）。待つときは前景の `sleep` ではなく Monitor か `run_in_background` を使う。
+
 ## 途中経過
 
 聞かれたら `takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を返す。レビューの判定が要るときは、タスクの `worktreePath` 配下の `.takt/runs/<run_slug>/reports/` から `grep -rH -m1 '^## 結果'` で各レポートの判定行だけ読む。`takt_get_run`（`cwd` + `runSlug`）は指示書と全レポートを丸ごと返して数万トークンになるので、判定行で足りないときだけ使う。MCP ツールが見えない環境では `takt list --non-interactive --format json` で状態を読む。
