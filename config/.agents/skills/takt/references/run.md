@@ -12,11 +12,11 @@ for p in $(pgrep -f '/bin/takt (watch|run)'); do lsof -a -p "$p" -d cwd -Fn | se
 
 出力に `<repo_root>` があれば、その runner が拾うので何も起動しない。takt は起動時に `running` のタスクを中断扱いで `failed` にするため、2 本目の runner は先の runner が実行中のタスクを潰す。
 
-無ければ Orca の新しいターミナルタブで watch を起動する。出力はタブに出て、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。
+無ければ Orca の新しいターミナルタブで watch を起動する。出力はタブに出て、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。`--worktree` は `path:<repo_root>` で指す。`active` だと、その時点で前面にある別の worktree にタブができ、ユーザーが見つけられない。タブのシェルは指した worktree で始まるので `cd` は要らない。
 
 ```sh
-orca terminal create --worktree active --title "takt watch <repo>" --json \
-  --command "cd <repo_root> && takt watch"
+orca terminal create --worktree path:<repo_root> --title "takt watch <repo>" --json \
+  --command "takt watch"
 ```
 
 - 出力はタブに出すだけで、ファイルには取らない。途中経過と失敗箇所は takt MCP と実行クローンの reports から読む。
@@ -47,8 +47,8 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 複数の issue を 1 件ずつ積み、PR の自動マージまで見届けて次を積むよう頼まれたら、`takt-wait.mjs` の代わりに次を Orca の新しいターミナルタブで流す。watch は別に動いている前提。
 
 ```sh
-orca terminal create --worktree active --title "takt sequence <repo>" --json \
-  --command "cd <repo_root> && <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow <name>] [--base main]"
+orca terminal create --worktree path:<repo_root> --title "takt sequence <repo>" --json \
+  --command "<skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow <name>] [--base main]"
 ```
 
 出来事が起きたときだけ `2026/10/13 18:01:40 自動マージ予約: <PR URL>` の形で 1 行出す（投入・自動マージ予約・マージ完了・CI失敗・競合修正待ち・タスク失敗）。次に積むのは、並びの先頭から見て blocked_by が全部閉じ、`takt:manual` / `help wanted` の無い issue。CI 失敗や競合で進めなくなったら「停止」を出して 1 で終わるので、直してから同じコマンドを流し直す。状態は毎周 takt と GitHub から読み直すので、流し直しても二重には積まない。自動マージを予約するので、マージの許可を受けたときだけ使う。
