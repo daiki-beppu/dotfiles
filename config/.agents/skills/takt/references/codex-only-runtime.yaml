@@ -1,0 +1,81 @@
+# 1 つの repo だけ全工程を Codex にする上書き。<repo_root>/.takt/runtime.yaml に写して使う。
+# global（dotfiles の config/.takt/runtime.yaml）の targets はこのファイルで丸ごと置き換わるので、全量を書く。
+# global の targets に persona が増えたら、ここにも足す。Claude に戻すときはこのファイルを消す。
+# 元: live-mindmap/.takt/runtime.yaml（2026-10-13）。理由は gotchas.md の safety_net の項。
+version: 1
+
+provider:
+  profiles:
+    # takt の --sandbox workspace-write だと ~/.cache/uv・SwiftPM・Chromium が落ちる（#662）。
+    # permission_control: codex で ~/.codex/config.toml の権限に任せる
+    sol:
+      provider: codex
+      model: gpt-6.1-sol
+      options:
+        permission_control: codex
+    # global の Claude 系 profile 名と auto_routing は合成で残るので、同じ名前で Codex を継がせる
+    sonnet:
+      extends: sol
+    sonnet-medium:
+      extends: sol
+    sonnet-coder:
+      extends: sol
+    opus:
+      extends: sol
+    haiku:
+      extends: sol
+
+  defaults:
+    profile: sol
+
+  targets:
+    personas:
+      coder:
+        profile: sol
+      planner:
+        profile: sol
+      diagnoser:
+        profile: sol
+      review-adjudicator:
+        profile: sol
+      supervisor:
+        profile: sol
+      research-planner:
+        profile: sol
+      research-supervisor:
+        profile: sol
+      research-digger:
+        profile: sol
+      research-analyzer:
+        profile: sol
+      ai-antipattern-reviewer:
+        profile: sol
+      architecture-reviewer:
+        profile: sol
+      coding-reviewer:
+        profile: sol
+      cqrs-es-reviewer:
+        profile: sol
+      frontend-reviewer:
+        profile: sol
+      implementation-semantics-reviewer:
+        profile: sol
+      merge-readiness-reviewer:
+        profile: sol
+      qa-reviewer:
+        profile: sol
+      requirements-reviewer:
+        profile: sol
+      security-reviewer:
+        profile: sol
+      terraform-reviewer:
+        profile: sol
+      testing-reviewer:
+        profile: sol
+    companions:
+      ai-antipattern-review-companion:
+        profile: sol
+      testing-review-companion:
+        profile: sol
+      review-companion-moderator:
+        profile: sol
