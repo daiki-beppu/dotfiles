@@ -19,6 +19,7 @@ orca terminal create --worktree path:<repo_root> --title "takt watch <repo>" --j
   --command "takt watch"
 ```
 
+- タブの出力は `orca terminal read --terminal <handle> --json` で読む。handle は create の `.result.terminal.handle`。読んだ結果は `.result.terminal` の `tail[]`（行の配列）・`nextCursor`（次に `--cursor` へ渡すと新しい行だけ返る）・`status`（`running` など）。
 - 出力はタブに出すだけで、ファイルには取らない。途中経過と失敗箇所は takt MCP と実行クローンの reports から読む。
 - watch は並列数（`concurrency`・`TAKT_CONCURRENCY`）を起動時に一度だけ読む。途中で上げるには立て直すしかない。`kill -INT <watch の pid>` を外から送ると、実行中のタスクの完了を待たずに止まる（0.68.0、2026-10-10 に #663 が write_tests の途中で止まった）。立て直すときは、実行中のタスクが無いときに行うか、止まったタスクを [gotchas.md](gotchas.md) の「外から止められたタスク」の手順で `resume-checkpoint` から積み直す
 - watch は全タスクが終わっても常駐し続ける。タブは閉じず、次に積んだタスクもこの watch が拾う。止めるのはユーザーが Ctrl+C したとき（実行中のタスクの完了を待って止まる）。
