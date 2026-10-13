@@ -1,5 +1,6 @@
 // 指定した issue を順に 1 件ずつ takt に積み、PR の自動マージ予約からマージ完了までを見届けて、次の issue を積む。
-// 出力は出来事が起きたときだけ「日時（JST） 出来事: #issue か PR の URL」の 1 行。Orca のタブで流して人が追える形にする。
+// 出力は出来事が起きたときだけ「日時（JST） 出来事: #issue タイトル [PR の URL]」の 1 行。Orca のタブで流して人が追える形にする。
+// 起動直後に、対象の issue とタイトル・今の段階を 1 行ずつ出す（最初の出来事までタブが空にならないように）。
 // - 積むのは、対象のタスクが pending / running でなく、open で、blocked_by が全部閉じていて、
 //   takt:manual / help wanted の付いていない issue のうち、並びの先頭のもの。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
@@ -33,6 +34,8 @@ const gh = (args) => JSON.parse(sh("gh", args));
 const log = (s) => console.log(new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }), s);
 // 同じ出来事を毎周出さないよう、issue ごとに最後に出した出来事を覚える
 const last = new Map();
+const titles = new Map();
+const label = (n) => `#${n} ${titles.get(n) ?? ""}`.trim();
 const event = (n, s) => { if (last.get(n) !== s) log(s); last.set(n, s); };
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
@@ -51,16 +54,16 @@ function stage(n, tasks) {
   const t = tasksFor(tasks, n)[0];
   if (!t) return gh(["issue", "view", n, "--json", "state"]).state === "CLOSED" ? "done" : "new";
   if (active(t)) return "waiting";
-  if (t.kind !== "completed") { event(n, `タスク${t.kind}: #${n}`); return "stuck"; }
-  if (!t.prUrl) { event(n, `PR なし: #${n}`); return "stuck"; }
+  if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
+  if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
   const pr = gh(["pr", "view", t.prUrl, "--json", "state,mergeable,statusCheckRollup,autoMergeRequest"]);
-  if (pr.state === "MERGED") { event(n, `マージ完了: #${n}`); return "done"; }
-  if (pr.state === "CLOSED") { event(n, `PR クローズ: ${t.prUrl}`); return "stuck"; }
-  if (pr.statusCheckRollup.some((c) => FAILED_CHECK.includes(c.conclusion ?? c.state))) { event(n, `CI失敗: ${t.prUrl}`); return "stuck"; }
-  if (pr.mergeable === "CONFLICTING") { event(n, `競合修正待ち: ${t.prUrl}`); return "stuck"; }
+  if (pr.state === "MERGED") { event(n, `マージ完了: ${label(n)}`); return "done"; }
+  if (pr.state === "CLOSED") { event(n, `PR クローズ: ${label(n)} ${t.prUrl}`); return "stuck"; }
+  if (pr.statusCheckRollup.some((c) => FAILED_CHECK.includes(c.conclusion ?? c.state))) { event(n, `CI失敗: ${label(n)} ${t.prUrl}`); return "stuck"; }
+  if (pr.mergeable === "CONFLICTING") { event(n, `競合修正待ち: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (!pr.autoMergeRequest) {
     sh("gh", ["pr", "merge", t.prUrl, "--auto", "--squash"]);
-    event(n, `自動マージ予約: ${t.prUrl}`);
+    event(n, `自動マージ予約: ${label(n)} ${t.prUrl}`);
   }
   return "waiting";
 }
@@ -88,12 +91,19 @@ async function enqueue(n) {
   ].join("\n");
   const r = await client.callTool({ name: "takt_enqueue_task", arguments: { cwd, task, workflow: opts.workflow, worktree: true, autoPr: true, issue: { number: Number(n) }, taskContext: { baseBranch: opts.base } } });
   if (r.isError) throw new Error(`投入の応答がエラー（tasks.yaml を照合してから流し直す）: ${JSON.stringify(r.content)}`);
-  event(n, `投入: #${n}`);
+  event(n, `投入: ${label(n)}`);
 }
 
 let code = 1;
 let errors = 0;
 try {
+  const startTasks = listTasks(cwd);
+  for (const n of issues) {
+    const issue = gh(["issue", "view", n, "--json", "title,state"]);
+    titles.set(n, issue.title);
+    const t = tasksFor(startTasks, n)[0];
+    log(`対象: ${label(n)}（${t ? t.kind : issue.state === "CLOSED" ? "issue クローズ済み" : "未投入"}）`);
+  }
   for (;;) {
     try {
       const tasks = listTasks(cwd);
