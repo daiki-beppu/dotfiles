@@ -12,7 +12,7 @@
 # defining check_<name> (dashes become underscores) and listing <name> there.
 set -euo pipefail
 
-DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit agent-skills)
+DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit guard-pkill agent-skills)
 # Opt-in: inspects this Mac, so it is not part of the default run.
 OPT_IN_CHECKS=(mas-declared)
 
@@ -316,6 +316,59 @@ check_guard_main_commit() {
   else
     echo "ok: allow [non-Bash tool input]"
   fi
+
+  return "$status"
+}
+
+# ---------------------------------------------------------------------------
+# Check: guard-pkill
+# Feeds PreToolUse inputs to config/.claude/hooks/guard-pkill.sh: pkill and
+# killall (bare, by path, after sudo/env/assignments, in later segments) must
+# be denied, while pgrep, kill <PID> and quoted mentions pass with no output.
+# ---------------------------------------------------------------------------
+check_guard_pkill() {
+  echo "== guard-pkill =="
+  local hook="$REPO_ROOT/config/.claude/hooks/guard-pkill.sh"
+  local status=0 want command out got
+
+  while IFS=$'\t' read -r want command; do
+    out="$(jq -n --arg command "$command" \
+      '{hook_event_name: "PreToolUse", cwd: "/", tool_name: "Bash", tool_input: {command: $command}}' |
+      "$hook")" || {
+      echo "FAIL: hook exited non-zero for [$command]" >&2
+      status=1
+      continue
+    }
+    if [ -z "$out" ]; then
+      got=allow
+    elif [ "$(jq -r '.hookSpecificOutput.permissionDecision' <<<"$out")" = deny ]; then
+      got=deny
+    else
+      got="unexpected output: $out"
+    fi
+    if [ "$got" = "$want" ]; then
+      echo "ok: $want [$command]"
+    else
+      echo "FAIL: expected $want, got $got for [$command]" >&2
+      status=1
+    fi
+  done <<'CASES'
+deny	pkill -f "node src/server.ts" -P 1
+deny	killall node
+deny	/usr/bin/pkill node
+deny	/usr/bin/killall -9 Orca
+deny	sudo pkill -9 node
+deny	FOO=1 env pkill node
+deny	cd /tmp && pkill node
+deny	pgrep -f server | xargs pkill
+deny	( killall node )
+allow	pgrep -fl "node src/server.ts"
+allow	kill 12345 23456
+allow	ps -o pid,ppid,command -p 12345
+allow	grep -rn 'pkill|killall' config
+allow	echo "do not use pkill"
+allow	git commit -m "guard pkill"
+CASES
 
   return "$status"
 }
