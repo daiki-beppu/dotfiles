@@ -42,6 +42,17 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 
 区切りの見出しは `---` で書く（zsh は `echo ====` を EQUALS 展開して `== not found` で落ちる）。待つときは前景の `sleep` ではなく Monitor か `run_in_background` を使う。
 
+## 順に回してマージまで
+
+複数の issue を 1 件ずつ積み、PR の自動マージまで見届けて次を積むよう頼まれたら、`takt-wait.mjs` の代わりに次を Orca の新しいターミナルタブで流す。watch は別に動いている前提。
+
+```sh
+orca terminal create --worktree active --title "takt sequence <repo>" --json \
+  --command "cd <repo_root> && <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow <name>] [--base main]"
+```
+
+出来事が起きたときだけ `2026/10/13 18:01:40 自動マージ予約: <PR URL>` の形で 1 行出す（投入・自動マージ予約・マージ完了・CI失敗・競合修正待ち・タスク失敗）。次に積むのは、並びの先頭から見て blocked_by が全部閉じ、`takt:manual` / `help wanted` の無い issue。CI 失敗や競合で進めなくなったら「停止」を出して 1 で終わるので、直してから同じコマンドを流し直す。状態は毎周 takt と GitHub から読み直すので、流し直しても二重には積まない。自動マージを予約するので、マージの許可を受けたときだけ使う。
+
 ## 途中経過
 
 聞かれたら `takt_list_tasks`（`cwd` = repo root の絶対パス）で状態・run slug・現在 step を返す。レビューの判定が要るときは、タスクの `worktreePath` 配下の `.takt/runs/<run_slug>/reports/` から `grep -rH -m1 '^## 結果'` で各レポートの判定行だけ読む。`takt_get_run`（`cwd` + `runSlug`）は指示書と全レポートを丸ごと返して数万トークンになるので、判定行で足りないときだけ使う。MCP ツールが見えない環境では `takt list --non-interactive --format json` で状態を読む。このときは JSON を一度ファイル（セッションのスクラッチパッド）に書いてから jq に渡す。パイプに直接流すと、タスクが 100 件を超えたあたりで出力が途中で切れる（0.68.0 で 64KB 付近、`jq: parse error: Unfinished string`）。
