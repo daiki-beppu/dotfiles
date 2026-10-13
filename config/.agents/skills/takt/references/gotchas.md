@@ -72,7 +72,17 @@
 - **safety_net ABORT をエージェントの報告だけで信じない**。takt は codex を
   `--sandbox workspace-write` で起動するため、通常シェルでは green のテストが takt 環境でだけ落ちる
   ことがある(Mach lookup を要する処理など)。切り分けは
-  `sandbox-exec -p '(version 1)(allow default)(deny mach-lookup)'` で再現する
+  `sandbox-exec -p '(version 1)(allow default)(deny mach-lookup)'` で再現する。
+  書く側も含めて全工程を Codex にすると、検証のコマンドもこの中で走る。live-mindmap では
+  作業ディレクトリの外のキャッシュ(`~/.cache/uv`)、SwiftPM の入れ子の `sandbox-exec`、
+  Chromium の `bootstrap_check_in` が `Operation not permitted` で落ち、replan が「環境の制約で
+  検証できない」と abort した(#662、2026-10-10)。Codex の profile の `options` に
+  `permission_control: codex` を足すと、takt は `--sandbox` を付けずに起動し、Codex は
+  `~/.codex/config.toml` の権限に従う(読むだけの査読の工程にも同じ権限が渡る)。
+  効いたかは、走っている `codex exec` の引数に `--sandbox` が無いことで確かめる。
+  1 つのリポジトリだけ全工程を Codex にするなら、`.takt/runtime.yaml` に Codex の profile を書き、
+  global の Claude 系の profile 名(`sonnet`・`opus`・`haiku` など)も同じ名前で Codex を継ぐように
+  上書きする(`profiles` は名前ごとに合成され、`auto_routing` は global のものが残るため)
 - **重い run を他リポジトリの runner と同時に走らせない**。クローン置き場
   `<repo-parent>/takt-worktrees/` は同じ親を持つ別リポジトリと共有されており、外部リソースを
   実際に掴むテスト(実 ffmpeg・npm 実ダウンロード等)が並行負荷で落ちる
@@ -111,5 +121,6 @@
   開始位置を誤って積み直したら、pending のまま `new TaskRunner(cwd).requeueTask(name, ['pending'], {...})` に
   正しい `startStep` / `resumePoint` / `restartPoint` を渡して付け替える。watch が動いていればそのまま拾う。
   無ければ `run.md` の手順で起動する
+- **takt のクローンには git の remote が無い**（0.68.0、`git remote -v` が空）。本文に「`git fetch origin <branch>` して `git show` で読む」と書いても届かない。2026-10-10 に #664 が試作のブランチを読めず、計画の工程で abort した。試作のコードなど別ブランチの中身は、issue のコメントに全文を貼る（コメントも投入時の task に入る）。本文が大きくなって MCP の入力に載せにくいときは、`takt-node.sh` で `dist/features/mcp/operations.js` の `enqueueTaktTask` を、ファイルから読んだ本文で呼ぶ（MCP と同じ関数）
 - **takt のエージェントは issue 本文のリンク先を読めない**。order.md に写るのは本文だけで、計画の工程は
   `gh` を許可されていない(「仕様の issue は未確認」と書いて進む)。実装に要る仕様は投入前に本文へ書き写す
