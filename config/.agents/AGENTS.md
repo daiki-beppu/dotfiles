@@ -20,7 +20,14 @@ orca worktree create --repo name:<repo> --name <slug> --base-branch origin/main
 
 worktree には gitignore 済みの `.env` 等が無い。Orca の worktree へは repo の setup script でコピーする。エージェントが作る worktree（サブエージェントの isolation 等。Codex と共通）向けには、リポジトリルートの `.worktreeinclude`（`.gitignore` 構文）に列挙する。
 
-作業を終えた worktree は `orca worktree rm` で片付けるが、自分がいる worktree は消さない。そのターミナルごと止められて削除が途中で終わり、worktree とサイドバーの項目が残る（`nohup` で遅らせても止められる）。外の worktree にいるセッションから流すか、ユーザーに `!` の 1 行で渡す。
+作業を終えた worktree は `orca worktree rm` で片付ける。自分がいる worktree の中から直接は流さない。そのターミナルごと止められて削除が途中で終わり、worktree とサイドバーの項目が残る（`nohup` で遅らせても止められる）。自分がいる worktree を片付けるときは、ユーザーに渡さず、メインのチェックアウトにターミナルを立てて、そこで流す。
+
+```sh
+orca terminal create --worktree path:<メインのチェックアウト> --title cleanup \
+  --command 'sleep 5; orca worktree rm --worktree "id:<repoId>::<消す worktree のパス>" --force --json; exit'
+```
+
+片付けの前に、その worktree の変更がすべてマージ済み（または不要）であることを確かめ、結果の報告を済ませておく（流した後はこのセッションが止まる）。
 
 ## 起票の束ね方: 仕様 → 親 issue + sub-issue
 
