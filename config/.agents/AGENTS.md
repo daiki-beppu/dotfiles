@@ -20,6 +20,8 @@ orca worktree create --repo name:<repo> --name <slug> --base-branch origin/main
 
 worktree には gitignore 済みの `.env` 等が無い。Orca の worktree へは repo の setup script でコピーする。エージェントが作る worktree（サブエージェントの isolation 等。Codex と共通）向けには、リポジトリルートの `.worktreeinclude`（`.gitignore` 構文）に列挙する。
 
+作業を終えた worktree は `orca worktree rm` で片付けるが、自分がいる worktree は消さない。そのターミナルごと止められて削除が途中で終わり、worktree とサイドバーの項目が残る（`nohup` で遅らせても止められる）。外の worktree にいるセッションから流すか、ユーザーに `!` の 1 行で渡す。
+
 ## 起票の束ね方: 仕様 → 親 issue + sub-issue
 
 実装を複数 issue に分けて起票するときは、先に仕様を issue にまとめる（完成済みの仕様があればそれを使う）。次に仕様とは別の親 issue を作り、本文に目的・仕様への参照・完了条件を書く（同じ範囲の親があれば再利用）。全実装 issue を GitHub ネイティブの sub-issue として親に紐付け、親から sub-issue 一覧を取得して確認し、親と子の URL を報告する。子の起票・紐付け・blocked by・確認は `gh-subissues MANIFEST.json`（使い方は `--help`）でまとめて行う。
