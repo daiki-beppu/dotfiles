@@ -5,6 +5,8 @@
   "permissions": {
     "allow": [
       "Bash(gh pr merge:*)",
+      "Bash(gh issue edit:*)",
+      "Bash(gh issue close:*)",
       "Bash(sudo darwin-rebuild switch:*)",
       "Bash(orca worktree rm:*)",
       "Bash(git worktree remove:*)",
