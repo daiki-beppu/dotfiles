@@ -2,7 +2,9 @@
 // 出力は出来事が起きたときだけ「日時（JST） 出来事: #issue タイトル [PR の URL]」の 1 行。Orca のタブで流して人が追える形にする。
 // 起動直後に、対象の issue とタイトル・今の段階を 1 行ずつ出す（最初の出来事までタブが空にならないように）。
 // - 積むのは、対象のタスクが pending / running でなく、open で、blocked_by が全部閉じていて、
-//   takt:manual / help wanted の付いていない issue のうち、並びの先頭のもの。
+//   help wanted の付いていない issue のうち、並びの先頭のもの。
+// - タスクが無いか終わっていない issue に、閉じる予定の open な PR（closingIssuesReferences）があれば、
+//   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
@@ -39,7 +41,7 @@ const label = (n) => `#${n} ${titles.get(n) ?? ""}`.trim();
 const event = (n, s) => { if (last.get(n) !== s) log(s); last.set(n, s); };
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
-const SKIP_LABELS = ["takt:manual", "help wanted"];
+const SKIP_LABELS = ["help wanted"];
 const FAILED_CHECK = ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"];
 
 sh("takt", ["workflow", "doctor", opts.workflow]);
@@ -49,17 +51,23 @@ const { StdioClientTransport } = await import(join(process.env.TAKT_ROOT, "node_
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
 
-// issue 1 件の今の段階を返す。done: マージ済みか issue が閉じた / waiting: 進行中 / stuck: 人の手が要る / new: 未投入
+// issue 1 件の今の段階を返す。done: マージ済みか issue が閉じた / waiting: 進行中 / manual: 人が引き取った PR がある /
+// stuck: 人の手が要る / new: 未投入
 function stage(n, tasks) {
   const t = tasksFor(tasks, n)[0];
   // タスクが failed でも、差分を人が引き取って PR にし、マージで issue が閉じていれば終わっている（run.md の「打ち切り」）
-  if (gh(["issue", "view", n, "--json", "state"]).state === "CLOSED") {
+  const issue = gh(["issue", "view", n, "--json", "state,closedByPullRequestsReferences"]);
+  if (issue.state === "CLOSED") {
     const merged = t?.prUrl && gh(["pr", "view", t.prUrl, "--json", "state"]).state === "MERGED";
     event(n, `${merged ? "マージ完了" : "issue クローズ"}: ${label(n)}`);
     return "done";
   }
+  if (t && active(t)) return "waiting";
+  if (t?.kind !== "completed") {
+    const hand = issue.closedByPullRequestsReferences.map((r) => r.url).find((url) => gh(["pr", "view", url, "--json", "state"]).state === "OPEN");
+    if (hand) { event(n, `手で対応中: ${label(n)} ${hand}`); return "manual"; }
+  }
   if (!t) return "new";
-  if (active(t)) return "waiting";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
   const pr = gh(["pr", "view", t.prUrl, "--json", "state,mergeable,statusCheckRollup,autoMergeRequest"]);
@@ -119,7 +127,8 @@ try {
       if (!all.includes("waiting")) {
         const next = issues.find((n) => stages.get(n) === "new" && ready(n));
         if (next) await enqueue(next);
-        else { log(all.includes("stuck") ? "停止: 人の手が要る issue がある" : "停止: 積める issue が無い（依存が未解除か takt:manual）"); break; }
+        else if (all.includes("manual") && !all.includes("stuck")) { /* 手で対応中の PR のマージを待つ */ }
+        else { log(all.includes("stuck") ? "停止: 人の手が要る issue がある" : "停止: 積める issue が無い（依存が未解除か help wanted）"); break; }
       }
       errors = 0;
     } catch (e) {

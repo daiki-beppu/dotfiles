@@ -27,7 +27,7 @@ pending / running と既存 branch を確認して重複・競合を避ける。
 
 ## Workflow と投入
 
-明示指定 → リポジトリの運用文書 → issue のラベル → 内容の順で選ぶ。選択前に実在と直接実行可能かを確認する。step fragment や `subworkflow.callable: true` は投入対象にしない。`takt:manual` は手動の意思表示なので、今回の明示指示と食い違う場合は意図を確認する。古いラベルを理由に存在しない workflow を選ばない。
+明示指定 → リポジトリの運用文書 → issue のラベル → 内容の順で選ぶ。選択前に実在と直接実行可能かを確認する。step fragment や `subworkflow.callable: true` は投入対象にしない。古いラベルを理由に存在しない workflow を選ばない。
 
 builtin から選ぶ場合は [workflow-catalog.md](references/workflow-catalog.md)、投入する場合は [enqueue.md](references/enqueue.md) を読む。投入は takt MCP の `takt_enqueue_task` を使い、`worktree: true`・issue 本文・workflow 検証・base 実在確認を保持する。`tasks.yaml` は MCP 経由で更新し、手書きしない。現ブランチを書き換える直接実行経路は使わない。
 
