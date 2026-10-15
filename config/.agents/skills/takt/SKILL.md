@@ -14,7 +14,7 @@ description: GitHub issue を takt に投入・実行する依頼に使う。「
 - `--workflow <name>`: 実在する実行用 workflow を指定。
 - `--branch <name>` / `--pr <N>`: 既存ブランチ／PR への積み増し。
 - `--base <name>`: 実在する base を指定。
-- `--draft` / `--no-auto-pr`: draft にする（repo の `draft_pr` 次第）／PR を自動作成しない。
+- `--draft` / `--no-auto-pr`: draft にする／PR を自動作成しない。
 - `--dry-run`: workflow・branch・base・auto_pr・draft の予定を示すだけ。投入・起動・issue 編集をしない。
 
 ## 投入条件

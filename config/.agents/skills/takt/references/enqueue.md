@@ -1,6 +1,6 @@
 # 非対話の投入
 
-起票済み issue を投入するときに読む。以下は takt 0.68.0 で確認したもの。現行版の MCP の入力と CLI を照合し、互換性を確認できない場合は fallback を使う。
+起票済み issue を投入するときに読む。以下は takt 0.71.0 で確認したもの。現行版の MCP の入力と CLI を照合し、互換性を確認できない場合は fallback を使う。
 
 **`takt add` は使わない**。ユーザーに 6 問のプロンプトを手入力させる代わりに、
 takt MCP の `takt_enqueue_task` で対話ゼロで積む。
@@ -31,6 +31,8 @@ takt MCP の `takt_enqueue_task` で対話ゼロで積む。
   積まずに `takt-cleanup` で片付けてから積む。`sysctl vm.swapusage` の used が total の半分を超えていたら、
   並列数を上げずに 1 本ずつ流す。2026-10-11〜12 に live-mindmap を 3 本並列で回したとき、swap が 3.7/5GB に達して
   Swift のビルドが SIGKILL で 3 回落ち、ディスクも空き 5.7GiB（97%）まで詰まった
+- **issue の画像は付かない**。`takt add` と pipeline は本文・コメントの GitHub の画像を添付するが、MCP の投入は
+  本文をそのまま積むだけで画像を取らない。実装に画像の中身が要るなら、要点を本文に文章で書く
 
 ### 投入
 
@@ -43,6 +45,7 @@ takt MCP の `takt_enqueue_task` で対話ゼロで積む。
   "workflow": "<doctor を通した workflow>",
   "worktree": true,
   "autoPr": true,
+  "draftPr": false,
   "issue": { "number": <N> },
   "taskContext": { "branch": "<branch>", "baseBranch": "<base>" }
 }
@@ -50,21 +53,18 @@ takt MCP の `takt_enqueue_task` で対話ゼロで積む。
 
 - **`worktree: true` は省略時の既定だが明示する**。落とすと run が隔離クローンを作らず、worktree 必須の規約が崩れる
 - `autoPr` は必須。`--no-auto-pr` のときだけ `false`
+- `draftPr` は通常 `false`、`--draft` のときだけ `true`。省くと repo の `.takt/config.yaml` の `draft_pr` に従う。
+  明示した値は repo と global の設定より優先され、そのタスクの `draft_pr` に入る
 - `taskContext` は branch / base を指定するときだけ入れる。空なら takt が自動で決める
 - **`cwd` は MCP を起動したリポジトリの配下に限られる**(`takt-mcp-root` がメインチェックアウトを
   許可範囲にする)。別リポジトリの issue は、そのリポジトリで動くセッションから積む
 
-### draft は repo の設定で決まる
-
-MCP の入力に draft の指定は無く、repo の `.takt/config.yaml` の `draft_pr` に従う。`--draft` を
-受けたら、その repo の `draft_pr` を確認する。`false` なら 1 件だけ draft にはできないので、
-投入前にその旨を伝え、通常 PR で積むか、PR 作成後に `gh pr ready --undo` で draft に戻すかを確認する。
-
 ### 書かれたレコードの確認
 
 投入後は `<repo_root>/.takt/tasks.yaml` の該当レコードを読み(書き換えない)、issue・workflow・
-`worktree`・`branch`・`base_branch`・`auto_pr` が意図どおりか確認する。`takt_list_tasks` は name・
-status・workflow しか返さないので、branch と base の確認には使えない。応答が不明なときもまず
+`branch`・`base_branch` が意図どおりか確認する。`worktree`・`autoPr`・`draftPr` は投入の応答にも
+保存した値が返るので、そこで照合してよい。`takt_list_tasks` は name・status・workflow しか返さないので、
+branch と base の確認には使えない。応答が不明なときもまず
 このレコードを照合し、二重投入を避ける。
 
 ### MCP が使えないとき

@@ -30,6 +30,12 @@
   [fallbacks.md](fallbacks.md) へ落として、このスキルの修正が要るサインとして報告する。
   下の積み直しで使う内部 API は `dist/` の構造に依存し(CLI の互換保証の外側)、モジュールの移動は
   起きる前提で扱う
+- **provider の SDK は takt に同梱されない**（0.71.0 から）。`takt install claude-sdk`・`takt install codex` で
+  `~/.takt/<provider>/` に入れる。無いと `takt watch` などの非対話の実行は ``Run `takt install <provider>` `` で止まる。
+  takt を上げたら `takt update` で、その版が固定する SDK に揃える。Claude の工程は PATH の `claude` ではなくこの SDK に入った
+  Claude Code で動き、`sonnet` / `opus` の別名はその版で解決される（0.71.0 の SDK 0.3.300 = Claude Code 2.1.300 で
+  Sonnet 5.5 / Opus 5.5）。古い版で一世代前のモデルに解決されていないかは、セッションログの応答のモデル ID で確かめる:
+  `jq -r 'select(.type=="assistant") | "\(.message.model) \(.version)"' <session>.jsonl | sort | uniq -c`
 - **takt 経由の run では Claude が自分のスキルを見ない**。
   `provider_options.claude.skills.enabled` の既定が `false` で、`claude-sdk` は `skills: []`、
   CLI 系(`claude` / `claude-terminal`)は `--disable-slash-commands` 付きで起動する
@@ -113,7 +119,7 @@
   const ctx = buildFailedTaskRetryStartContext(prep, cwd, prep.previousWorkflow);
   const sel = resolveTaskRetryStartOption(ctx.workflowConfig, ctx.options, 'resume-checkpoint');
   const own = resolveTaskRetryStartOwnership(sel.selection, ctx.workflowConfig);
-  persistFailedTaskRetry({ task, projectDir: cwd, worktreePath: prep.worktreePath, startStep: own.startStep,
+  await persistFailedTaskRetry({ task, projectDir: cwd, worktreePath: prep.worktreePath, startStep: own.startStep,
     retryNote: appendRetryNote(task.data?.retry_note, buildAutoRequeueNote({ ...prep.failure, step: prep.failedStep })),
     resumePoint: own.resumePoint, workflow: ctx.workflowOverride, taskDir: undefined,
     sourceRunSlug: prep.matchedRunSlug, restartPoint: own.restartPoint });

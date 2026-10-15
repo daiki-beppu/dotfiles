@@ -81,7 +81,7 @@ dotfiles/
 | CLI ツール追加 | `nix/packages.nix` の `home.packages` に追加 |
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
 | nixpkgs にないツール追加 | upstream が flake を提供するなら `flake.nix` の `inputs` に、なければ `brews` に追加 |
-| takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch |
+| takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch → `takt update`（provider の SDK を揃える。初回は `takt install claude-sdk` と `takt install codex`） |
 | vp を更新 | `nix/vite-plus.nix` の `version` と npm tarball の `hash` を更新 → switch（ネットワーク接続が必要） |
 | 変更を適用 | `sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
