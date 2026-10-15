@@ -7,7 +7,7 @@
 //   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
 // - タスクが PR を作ったら、`takt merge <PR>` を workflows/merge-review-automerge.yaml で流す（base との同期・AI の競合解消・
 //   査読と修正・push）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
-//   「TAKT evaluation failed」とコメントしたか、例外で 2 回落ちたら止める。止まったあとに PR へ push すれば、流し直したときにレビューからやり直す。
+//   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたか、現在の head で例外により 2 回落ちたら止める。止まったあとに PR の head が変われば、流し直したときにレビューからやり直す。
 //   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
@@ -99,7 +99,7 @@ function stage(n, tasks) {
   if (!t) return "new";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
-  const pr = gh(["pr", "view", t.prUrl, "--json", "number,state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest,comments,commits,headRefOid"]);
+  const pr = gh(["pr", "view", t.prUrl, "--json", "number,state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest,comments,headRefOid"]);
   if (pr.state === "MERGED") { event(n, `マージ完了: ${label(n)}`); return "done"; }
   if (pr.state === "CLOSED") { event(n, `PR クローズ: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (!pr.autoMergeRequest) {
@@ -130,18 +130,19 @@ const attempts = new Map();
 function reviewStage(n, pr, url, tasks) {
   const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
   if (pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEWED} for head ${pr.headRefOid};`))) {
-    // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので片付ける（報告書は repo の .takt/runs に残る）
-    if (!reviewing.has(pr.number)) for (const m of merges.filter((x) => !active(x))) {
+    // 子プロセスが生きている間と merge タスクが running の間は、片付けも自動マージ予約も先送りする
+    if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
+    // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので、予約の前に片付ける（報告書は repo の .takt/runs に残る）
+    for (const m of merges) {
       if (m.worktreePath) deleteBranch(cwd, m);
       new TaskRunner(cwd, {}).deleteTask(m.name, m.kind);
     }
     return "reviewed";
   }
   if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
-  // 最後の push より後の失敗だけを数える。止まったあとに人が直して push すれば、レビューからやり直す
-  const pushedAt = Date.parse(pr.commits.at(-1)?.committedDate ?? 0);
-  const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(REVIEW_FAILED) && Date.parse(c.createdAt) > pushedAt).at(-1);
-  const crashes = Math.max(merges.filter((x) => x.kind === "failed" && Date.parse(x.createdAt) > pushedAt).length, attempts.get(pr.number) ?? 0);
+  // 現在の head に対する失敗だけを数える。止まったあとに PR の head が変われば、レビューからやり直す
+  const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`)).at(-1);
+  const crashes = Math.max(merges.filter((x) => x.kind === "failed" && (x.data?.merge_initial_head_sha === pr.headRefOid || x.data?.merge_pushed_head_sha === pr.headRefOid)).length, attempts.get(pr.number) ?? 0);
   if (failure || crashes >= 2) {
     event(n, `レビュー失敗: ${label(n)} ${url} ${failure ? failure.body.split("\n")[0] : "（takt merge が 2 回落ちた。takt list の merge タスクを見る）"}`);
     return "stuck";

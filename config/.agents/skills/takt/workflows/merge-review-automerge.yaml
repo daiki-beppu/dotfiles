@@ -2,7 +2,7 @@
 # builtin の merge-review-fix-simple から、CI 待ちとマージを外したもの。査読と修正を push したら、
 # 完了の印を PR にコメントして終わる。マージは takt-sequence が GitHub の自動マージ予約で行う。
 # takt はマージされていない PR の merge タスクを failed と記録するので、成否はコメントの印で判断する:
-#   成功: "TAKT review completed" で始まるコメント / 失敗: "TAKT evaluation failed" で始まるコメント
+#   成功: "TAKT review completed for head <sha>;" で始まるコメント / 失敗: "TAKT evaluation failed for head <sha>:" で始まるコメント（<sha> は評価した PR の head）
 name: merge-review-automerge
 description: Sync, review, and fix a PR, then hand it back for GitHub auto-merge
 max_steps: 51
@@ -73,7 +73,7 @@ steps:
     effects:
       - type: comment_pr
         pr: "{context:identify.pr.number}"
-        body: "TAKT evaluation failed: child review workflow aborted."
+        body: "TAKT evaluation failed for head {context:identify.pr.headSha}: child review workflow aborted."
     rules:
       - condition: when(effect.review_failed.comment_pr.success == true)
         next: COMPLETE
@@ -84,7 +84,7 @@ steps:
     effects:
       - type: comment_pr
         pr: "{context:identify.pr.number}"
-        body: "TAKT evaluation failed: sync_with_root: {effect:sync.sync_with_root.error}"
+        body: "TAKT evaluation failed for head {context:identify.pr.headSha}: sync_with_root: {effect:sync.sync_with_root.error}"
     rules:
       - condition: when(effect.sync_failed.comment_pr.success == true)
         next: COMPLETE
@@ -95,7 +95,7 @@ steps:
     effects:
       - type: comment_pr
         pr: "{context:identify.pr.number}"
-        body: "TAKT evaluation failed: resolve_conflicts_with_ai: {effect:resolve_conflicts.resolve_conflicts_with_ai.error}"
+        body: "TAKT evaluation failed for head {context:identify.pr.headSha}: resolve_conflicts_with_ai: {effect:resolve_conflicts.resolve_conflicts_with_ai.error}"
     rules:
       - condition: when(effect.conflict_failed.comment_pr.success == true)
         next: COMPLETE
@@ -106,7 +106,7 @@ steps:
     effects:
       - type: comment_pr
         pr: "{context:identify.pr.number}"
-        body: "TAKT evaluation failed: commit_and_push: {effect:push.commit_and_push.error}"
+        body: "TAKT evaluation failed for head {context:identify.pr.headSha}: commit_and_push: {effect:push.commit_and_push.error}"
     rules:
       - condition: when(effect.push_failed.comment_pr.success == true)
         next: COMPLETE
