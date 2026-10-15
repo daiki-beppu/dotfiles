@@ -16,9 +16,9 @@
 //   <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30]
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
 import { execFileSync, spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { closeSync, openSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { listTasks, tasksFor, issueOf } from "./takt-list.mjs";
@@ -56,6 +56,18 @@ const FAILED_CHECK = ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "S
 
 sh("takt", ["workflow", "doctor", opts.workflow]);
 sh("takt", ["workflow", "doctor", REVIEW_WORKFLOW]);
+// `takt merge --workflow` はグローバルの -w/--workflow に吸われて届かない（0.71.0）。takt merge は config の merge.workflow を使うので、
+// それがこの workflow を指していなければ止める（builtin のままだと、takt が CI を待ってそのままマージする）
+{
+  const { resolveConfigValue } = await import(join(process.env.TAKT_ROOT, "dist/infra/config/index.js"));
+  const wf = resolveConfigValue(cwd, "merge")?.workflow ?? "";
+  const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+  const configured = wf.startsWith("~") ? resolve(homedir(), wf.slice(1).replace(/^\//, "")) : resolve(cwd, wf);
+  if (!wf || real(configured) !== real(REVIEW_WORKFLOW)) {
+    console.error(`merge.workflow が ${REVIEW_WORKFLOW} を指していない（今: ${wf || "未設定"}）。~/.takt/config.yaml を確かめる`);
+    process.exit(2);
+  }
+}
 const repo = gh(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
 const { Client } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js"));
 const { StdioClientTransport } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js"));
@@ -130,7 +142,7 @@ function reviewStage(n, pr, url, tasks) {
   }
   const logFile = join(tmpdir(), `takt-sequence-review-${pr.number}.log`);
   const fd = openSync(logFile, "a");
-  const child = spawn("takt", ["merge", String(pr.number), "--workflow", REVIEW_WORKFLOW], { cwd, stdio: ["ignore", fd, fd] });
+  const child = spawn("takt", ["merge", String(pr.number)], { cwd, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   reviewing.set(pr.number, child);
   const done = () => reviewing.delete(pr.number);

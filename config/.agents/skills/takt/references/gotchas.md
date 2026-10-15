@@ -68,6 +68,10 @@
   足す。割り込ませたいときは先行 pending を
   `takt list --non-interactive --action delete --branch <name>` で外し、割り込みを積んでから
   先行を積み直す(`--branch` は省略不可)
+- **`takt merge --workflow <wf>` は効かない**（0.71.0）。help には出るが、グローバルの `-w, --workflow` が値を取り、
+  `takt merge` の action に届かない。黙って `merge.workflow`（既定は `merge-review-fix-simple`）で走り、CI のあとそのままマージする。
+  workflow を変えるなら config の `merge.workflow` に書く（global は takt-sequence 用の workflow を指している）。
+  効いたかは `.takt/tasks.yaml` の merge タスクの `workflow` で確かめる
 - **`--branch` は `takt list --help` に出ないが効く**。グローバル option (`-b, --branch`) を
   サブコマンド側が `optsWithGlobals()` で拾う構造なので、ローカル option 一覧
   (`--non-interactive` / `--action` / `--format` / `--yes`)には現れない。
