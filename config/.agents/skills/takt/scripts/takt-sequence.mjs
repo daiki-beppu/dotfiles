@@ -70,7 +70,7 @@ function stage(n, tasks) {
   if (!t) return "new";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
-  const pr = gh(["pr", "view", t.prUrl, "--json", "state,mergeable,statusCheckRollup,autoMergeRequest"]);
+  const pr = gh(["pr", "view", t.prUrl, "--json", "state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest"]);
   if (pr.state === "MERGED") { event(n, `マージ完了: ${label(n)}`); return "done"; }
   if (pr.state === "CLOSED") { event(n, `PR クローズ: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (pr.statusCheckRollup.some((c) => FAILED_CHECK.includes(c.conclusion ?? c.state))) { event(n, `CI失敗: ${label(n)} ${t.prUrl}`); return "stuck"; }
@@ -78,6 +78,12 @@ function stage(n, tasks) {
   if (!pr.autoMergeRequest) {
     sh("gh", ["pr", "merge", t.prUrl, "--auto", "--squash"]);
     event(n, `自動マージ予約: ${label(n)} ${t.prUrl}`);
+  } else if (pr.mergeStateStatus === "BEHIND") {
+    // main の ruleset が「最新にしてから」だと、予約済みの PR は main が進むたびに BEHIND で止まり、GitHub は自動では揃えない。
+    // 揃えるたびに出したいので event でなく log
+    try { sh("gh", ["pr", "update-branch", t.prUrl]); }
+    catch { event(n, `競合修正待ち: ${label(n)} ${t.prUrl}`); return "stuck"; }
+    log(`main に揃えた: ${label(n)} ${t.prUrl}`);
   }
   return "waiting";
 }
