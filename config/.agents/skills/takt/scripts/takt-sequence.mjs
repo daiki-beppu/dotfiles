@@ -5,16 +5,23 @@
 //   help wanted の付いていない issue のうち、並びの先頭のもの。
 // - タスクが無いか終わっていない issue に、閉じる予定の open な PR（closingIssuesReferences）があれば、
 //   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
+// - タスクが PR を作ったら、`takt merge <PR>` を workflows/merge-review-automerge.yaml で流す（base との同期・AI の競合解消・
+//   査読と修正・push）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
+//   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたか、現在の head で例外により 2 回落ちたら止める。止まったあとに PR の head が変われば、流し直したときにレビューからやり直す。
+//   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
 // 使い方（repo root で、watch が動いている状態で）:
 //   <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30]
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
-import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { execFileSync, spawn } from "node:child_process";
+import { closeSync, openSync, realpathSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { listTasks, tasksFor, issueOf } from "./takt-list.mjs";
+import { tasksFor, issueOf } from "./takt-list.mjs";
 
 const opts = { workflow: "default", base: "main", interval: "30" };
 const issues = [];
@@ -42,12 +49,34 @@ const event = (n, s) => { if (last.get(n) !== s) log(s); last.set(n, s); };
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
 const SKIP_LABELS = ["help wanted"];
+const REVIEW_WORKFLOW = fileURLToPath(new URL("../workflows/merge-review-automerge.yaml", import.meta.url));
+const REVIEWED = "TAKT review completed";
+const REVIEW_FAILED = "TAKT evaluation failed";
 const FAILED_CHECK = ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"];
 
 sh("takt", ["workflow", "doctor", opts.workflow]);
+sh("takt", ["workflow", "doctor", REVIEW_WORKFLOW]);
+// `takt merge --workflow` はグローバルの -w/--workflow に吸われて届かない（0.71.0）。takt merge は config の merge.workflow を使うので、
+// それがこの workflow を指していなければ止める（builtin のままだと、takt が CI を待ってそのままマージする）
+{
+  const { resolveConfigValue } = await import(join(process.env.TAKT_ROOT, "dist/infra/config/index.js"));
+  const wf = resolveConfigValue(cwd, "merge")?.workflow ?? "";
+  const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+  const configured = wf.startsWith("~") ? resolve(homedir(), wf.slice(1).replace(/^\//, "")) : resolve(cwd, wf);
+  if (!wf || real(configured) !== real(REVIEW_WORKFLOW)) {
+    console.error(`merge.workflow が ${REVIEW_WORKFLOW} を指していない（今: ${wf || "未設定"}）。~/.takt/config.yaml を確かめる`);
+    process.exit(2);
+  }
+}
 const repo = gh(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
+// レビュー結果のコメントは、takt merge が gh の認証ユーザーとして投稿する。第三者のコメントで判定が動かないよう、その login を起点で 1 回だけ解決する
+const viewer = gh(["api", "user"]).login;
 const { Client } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js"));
 const { StdioClientTransport } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js"));
+const { TaskRunner } = await import(join(process.env.TAKT_ROOT, "dist/infra/task/index.js"));
+const { deleteBranch } = await import(join(process.env.TAKT_ROOT, "dist/features/tasks/list/taskBranchLifecycleActions.js"));
+// merge タスクの merge_task・pr_number は `takt list --format json` に出ないので、TaskRunner から直接読む
+const listTasks = () => new TaskRunner(cwd).listAllTaskItems();
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
 
@@ -70,9 +99,13 @@ function stage(n, tasks) {
   if (!t) return "new";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
-  const pr = gh(["pr", "view", t.prUrl, "--json", "state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest"]);
+  const pr = gh(["pr", "view", t.prUrl, "--json", "number,state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest,comments,headRefOid"]);
   if (pr.state === "MERGED") { event(n, `マージ完了: ${label(n)}`); return "done"; }
   if (pr.state === "CLOSED") { event(n, `PR クローズ: ${label(n)} ${t.prUrl}`); return "stuck"; }
+  if (!pr.autoMergeRequest) {
+    const review = reviewStage(n, pr, t.prUrl, tasks);
+    if (review !== "reviewed") return review;
+  }
   if (pr.statusCheckRollup.some((c) => FAILED_CHECK.includes(c.conclusion ?? c.state))) { event(n, `CI失敗: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (pr.mergeable === "CONFLICTING") { event(n, `競合修正待ち: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (!pr.autoMergeRequest) {
@@ -85,6 +118,45 @@ function stage(n, tasks) {
     catch { event(n, `競合修正待ち: ${label(n)} ${t.prUrl}`); return "stuck"; }
     log(`main に揃えた: ${label(n)} ${t.prUrl}`);
   }
+  return "waiting";
+}
+
+// takt merge が走らせているレビューの子プロセス（PR 番号 → プロセス）
+const reviewing = new Map();
+// この実行で起動したレビューの回数（PR 番号 → 回数）。merge タスクを作る前に落ちると takt list に残らないので、ここでも数える
+const attempts = new Map();
+
+// PR のレビューの段階を返す。reviewed: 済み / waiting: 実行中か今起動した / stuck: 失敗して人の手が要る
+function reviewStage(n, pr, url, tasks) {
+  const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
+  if (pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEWED} for head ${pr.headRefOid};`))) {
+    // 子プロセスが生きている間と merge タスクが running の間は、片付けも自動マージ予約も先送りする
+    if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
+    // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので、予約の前に片付ける（報告書は repo の .takt/runs に残る）
+    for (const m of merges) {
+      if (m.worktreePath) deleteBranch(cwd, m);
+      new TaskRunner(cwd, {}).deleteTask(m.name, m.kind);
+    }
+    return "reviewed";
+  }
+  if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
+  // 現在の head に対する失敗だけを数える。止まったあとに PR の head が変われば、レビューからやり直す
+  const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`)).at(-1);
+  const crashes = Math.max(merges.filter((x) => x.kind === "failed" && (x.data?.merge_initial_head_sha === pr.headRefOid || x.data?.merge_pushed_head_sha === pr.headRefOid)).length, attempts.get(pr.number) ?? 0);
+  if (failure || crashes >= 2) {
+    event(n, `レビュー失敗: ${label(n)} ${url} ${failure ? failure.body.split("\n")[0] : "（takt merge が 2 回落ちた。takt list の merge タスクを見る）"}`);
+    return "stuck";
+  }
+  const logFile = join(tmpdir(), `takt-sequence-review-${pr.number}.log`);
+  const fd = openSync(logFile, "a");
+  const child = spawn("takt", ["merge", String(pr.number)], { cwd, stdio: ["ignore", fd, fd] });
+  closeSync(fd);
+  reviewing.set(pr.number, child);
+  attempts.set(pr.number, (attempts.get(pr.number) ?? 0) + 1);
+  const done = () => reviewing.delete(pr.number);
+  child.on("exit", done);
+  child.on("error", done);
+  log(`レビュー開始: ${label(n)} ${url}（ログ: ${logFile}）`);
   return "waiting";
 }
 
@@ -117,7 +189,7 @@ async function enqueue(n) {
 let code = 1;
 let errors = 0;
 try {
-  const startTasks = listTasks(cwd);
+  const startTasks = listTasks();
   for (const n of issues) {
     const issue = gh(["issue", "view", n, "--json", "title,state"]);
     titles.set(n, issue.title);
@@ -126,7 +198,7 @@ try {
   }
   for (;;) {
     try {
-      const tasks = listTasks(cwd);
+      const tasks = listTasks();
       const stages = new Map(issues.map((n) => [n, stage(n, tasks)]));
       const all = [...stages.values()];
       if (all.every((s) => s === "done")) { log("全件マージ完了"); code = 0; break; }
