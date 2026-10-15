@@ -1,4 +1,4 @@
-# takt-sequence.mjs が `takt merge <PR> --workflow <このファイル>` で流す。
+# takt-sequence.mjs が `takt merge <PR>` で流す。global の ~/.takt/config.yaml の merge.workflow でこのファイルを指す（takt merge --workflow は効かない）。
 # builtin の merge-review-fix-simple から、CI 待ちとマージを外したもの。査読と修正を push したら、
 # 完了の印を PR にコメントして終わる。マージは takt-sequence が GitHub の自動マージ予約で行う。
 # takt はマージされていない PR の merge タスクを failed と記録するので、成否はコメントの印で判断する:

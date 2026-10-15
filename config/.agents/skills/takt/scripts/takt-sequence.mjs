@@ -21,7 +21,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { listTasks, tasksFor, issueOf } from "./takt-list.mjs";
+import { tasksFor, issueOf } from "./takt-list.mjs";
 
 const opts = { workflow: "default", base: "main", interval: "30" };
 const issues = [];
@@ -69,10 +69,14 @@ sh("takt", ["workflow", "doctor", REVIEW_WORKFLOW]);
   }
 }
 const repo = gh(["repo", "view", "--json", "nameWithOwner"]).nameWithOwner;
+// レビュー結果のコメントは、takt merge が gh の認証ユーザーとして投稿する。第三者のコメントで判定が動かないよう、その login を起点で 1 回だけ解決する
+const viewer = gh(["api", "user"]).login;
 const { Client } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js"));
 const { StdioClientTransport } = await import(join(process.env.TAKT_ROOT, "node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js"));
 const { TaskRunner } = await import(join(process.env.TAKT_ROOT, "dist/infra/task/index.js"));
 const { deleteBranch } = await import(join(process.env.TAKT_ROOT, "dist/features/tasks/list/taskBranchLifecycleActions.js"));
+// merge タスクの merge_task・pr_number は `takt list --format json` に出ないので、TaskRunner から直接読む
+const listTasks = () => new TaskRunner(cwd).listAllTaskItems();
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
 
@@ -95,7 +99,7 @@ function stage(n, tasks) {
   if (!t) return "new";
   if (t.kind !== "completed") { event(n, `タスク${t.kind}: ${label(n)}`); return "stuck"; }
   if (!t.prUrl) { event(n, `PR なし: ${label(n)}`); return "stuck"; }
-  const pr = gh(["pr", "view", t.prUrl, "--json", "number,state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest,comments,commits"]);
+  const pr = gh(["pr", "view", t.prUrl, "--json", "number,state,mergeable,mergeStateStatus,statusCheckRollup,autoMergeRequest,comments,commits,headRefOid"]);
   if (pr.state === "MERGED") { event(n, `マージ完了: ${label(n)}`); return "done"; }
   if (pr.state === "CLOSED") { event(n, `PR クローズ: ${label(n)} ${t.prUrl}`); return "stuck"; }
   if (!pr.autoMergeRequest) {
@@ -123,7 +127,7 @@ const reviewing = new Map();
 // PR のレビューの段階を返す。reviewed: 済み / waiting: 実行中か今起動した / stuck: 失敗して人の手が要る
 function reviewStage(n, pr, url, tasks) {
   const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
-  if (pr.comments.some((c) => c.body.startsWith(REVIEWED))) {
+  if (pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEWED} for head ${pr.headRefOid};`))) {
     // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので片付ける（報告書は repo の .takt/runs に残る）
     if (!reviewing.has(pr.number)) for (const m of merges.filter((x) => !active(x))) {
       if (m.worktreePath) deleteBranch(cwd, m);
@@ -134,7 +138,7 @@ function reviewStage(n, pr, url, tasks) {
   if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
   // 最後の push より後の失敗だけを数える。止まったあとに人が直して push すれば、レビューからやり直す
   const pushedAt = Date.parse(pr.commits.at(-1)?.committedDate ?? 0);
-  const failure = pr.comments.filter((c) => c.body.startsWith(REVIEW_FAILED) && Date.parse(c.createdAt) > pushedAt).at(-1);
+  const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(REVIEW_FAILED) && Date.parse(c.createdAt) > pushedAt).at(-1);
   const crashes = merges.filter((x) => x.kind === "failed" && Date.parse(x.createdAt) > pushedAt).length;
   if (failure || crashes >= 2) {
     event(n, `レビュー失敗: ${label(n)} ${url} ${failure ? failure.body.split("\n")[0] : "（takt merge が 2 回落ちた。takt list の merge タスクを見る）"}`);
@@ -181,7 +185,7 @@ async function enqueue(n) {
 let code = 1;
 let errors = 0;
 try {
-  const startTasks = listTasks(cwd);
+  const startTasks = listTasks();
   for (const n of issues) {
     const issue = gh(["issue", "view", n, "--json", "title,state"]);
     titles.set(n, issue.title);
@@ -190,7 +194,7 @@ try {
   }
   for (;;) {
     try {
-      const tasks = listTasks(cwd);
+      const tasks = listTasks();
       const stages = new Map(issues.map((n) => [n, stage(n, tasks)]));
       const all = [...stages.values()];
       if (all.every((s) => s === "done")) { log("全件マージ完了"); code = 0; break; }
