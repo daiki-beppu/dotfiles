@@ -10,7 +10,7 @@
 for p in $(pgrep -f '/bin/takt (watch|run)'); do lsof -a -p "$p" -d cwd -Fn | sed -n 's/^n//p'; done
 ```
 
-出力に `<repo_root>` があれば、その runner が拾うので何も起動しない。takt は起動時に `running` のタスクを中断扱いで `failed` にするため、2 本目の runner は先の runner が実行中のタスクを潰す。
+出力に `<repo_root>` があれば、その runner が拾うので何も起動しない。同じ repo に 2 本目を起動しても `TAKT run is already running for this project (PID N)` で断られる（0.71.0）。
 
 無ければ Orca の新しいターミナルタブで watch を起動する。出力はタブに出て、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。`--worktree` は `path:<repo_root>` で指す。`active` だと、その時点で前面にある別の worktree にタブができ、ユーザーが見つけられない。タブのシェルは指した worktree で始まるので `cd` は要らない。
 

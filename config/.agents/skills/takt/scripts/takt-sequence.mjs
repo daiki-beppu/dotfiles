@@ -109,7 +109,7 @@ async function enqueue(n) {
     ...(issue.labels.length ? ["", "### Labels", issue.labels.map((l) => l.name).join(", ")] : []),
     ...(issue.comments.length ? ["", "### Comments", ...issue.comments.map((c) => `**${c.author.login}**: ${c.body}`)] : []),
   ].join("\n");
-  const r = await client.callTool({ name: "takt_enqueue_task", arguments: { cwd, task, workflow: opts.workflow, worktree: true, autoPr: true, issue: { number: Number(n) }, taskContext: { baseBranch: opts.base } } });
+  const r = await client.callTool({ name: "takt_enqueue_task", arguments: { cwd, task, workflow: opts.workflow, worktree: true, autoPr: true, draftPr: false, issue: { number: Number(n) }, taskContext: { baseBranch: opts.base } } });
   if (r.isError) throw new Error(`投入の応答がエラー（tasks.yaml を照合してから流し直す）: ${JSON.stringify(r.content)}`);
   event(n, `投入: ${label(n)}`);
 }
