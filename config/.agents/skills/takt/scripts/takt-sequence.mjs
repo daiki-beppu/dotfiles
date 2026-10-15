@@ -123,6 +123,8 @@ function stage(n, tasks) {
 
 // takt merge が走らせているレビューの子プロセス（PR 番号 → プロセス）
 const reviewing = new Map();
+// この実行で起動したレビューの回数（PR 番号 → 回数）。merge タスクを作る前に落ちると takt list に残らないので、ここでも数える
+const attempts = new Map();
 
 // PR のレビューの段階を返す。reviewed: 済み / waiting: 実行中か今起動した / stuck: 失敗して人の手が要る
 function reviewStage(n, pr, url, tasks) {
@@ -139,7 +141,7 @@ function reviewStage(n, pr, url, tasks) {
   // 最後の push より後の失敗だけを数える。止まったあとに人が直して push すれば、レビューからやり直す
   const pushedAt = Date.parse(pr.commits.at(-1)?.committedDate ?? 0);
   const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(REVIEW_FAILED) && Date.parse(c.createdAt) > pushedAt).at(-1);
-  const crashes = merges.filter((x) => x.kind === "failed" && Date.parse(x.createdAt) > pushedAt).length;
+  const crashes = Math.max(merges.filter((x) => x.kind === "failed" && Date.parse(x.createdAt) > pushedAt).length, attempts.get(pr.number) ?? 0);
   if (failure || crashes >= 2) {
     event(n, `レビュー失敗: ${label(n)} ${url} ${failure ? failure.body.split("\n")[0] : "（takt merge が 2 回落ちた。takt list の merge タスクを見る）"}`);
     return "stuck";
@@ -149,6 +151,7 @@ function reviewStage(n, pr, url, tasks) {
   const child = spawn("takt", ["merge", String(pr.number)], { cwd, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   reviewing.set(pr.number, child);
+  attempts.set(pr.number, (attempts.get(pr.number) ?? 0) + 1);
   const done = () => reviewing.delete(pr.number);
   child.on("exit", done);
   child.on("error", done);
