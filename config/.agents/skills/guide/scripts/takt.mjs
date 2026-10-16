@@ -1,4 +1,4 @@
-// takt アダプタ。タスクのある issue 番号を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たない）。
+// takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たない）。
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -8,11 +8,18 @@ import { listTasks } from "../../takt/scripts/takt-list.mjs";
 const TAKT_SCRIPTS = fileURLToPath(new URL("../../takt/scripts/", import.meta.url));
 const q = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
-// takt list にタスクがある issue の番号。takt-list.mjs と同じく issueNumber か data.issue で対応づける。
-export function taktIssueNumbers(cwd) {
-  return listTasks(cwd)
-    .map((t) => Number(t.issueNumber ?? t.data?.issue))
-    .filter(Number.isInteger);
+// takt list のタスクを、issue との対応づけ（takt-list.mjs と同じく issueNumber か data.issue）つきで正規化する。issue が整数にならないものは除く。
+export function taktTasks(cwd, list = listTasks) {
+  return list(cwd)
+    .map((t) => ({
+      issue: Number(t.issueNumber ?? t.data?.issue),
+      kind: t.kind,
+      createdAt: t.createdAt,
+      step: t.failure?.step,
+      error: t.failure?.error,
+      worktreePath: t.worktreePath,
+    }))
+    .filter((t) => Number.isInteger(t.issue));
 }
 
 export function startTaktSequence({ cwd, repo, issues }) {

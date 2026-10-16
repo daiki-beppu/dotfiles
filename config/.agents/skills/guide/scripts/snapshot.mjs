@@ -2,7 +2,7 @@
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
 import { awaitsReaction, sentApprovalRequest } from "./decide.mjs";
 
-export function createReadSnapshot({ repo, viewer, discordUserId, github, discord, taktIssueNumbers }) {
+export function createReadSnapshot({ repo, viewer, discordUserId, github, discord, taktTasks }) {
   return async () => {
     const issues = await Promise.all(
       github.readIssues().map(async (issue) => {
@@ -11,6 +11,7 @@ export function createReadSnapshot({ repo, viewer, discordUserId, github, discor
         return { ...issue, reactions };
       }),
     );
-    return { repo, viewer, discordUserId, issues, taktIssues: taktIssueNumbers(), pullRequests: github.readPullRequests() };
+    const tasks = taktTasks();
+    return { repo, viewer, discordUserId, issues, taktIssues: tasks.map((t) => t.issue), taktTasks: tasks, pullRequests: github.readPullRequests() };
   };
 }

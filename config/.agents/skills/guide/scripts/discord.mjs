@@ -3,6 +3,7 @@
 const BASE = "https://discord.com/api/v10";
 const TEXT_CHANNEL = 0;
 const PUBLIC_THREAD = 11;
+const MAX_CONTENT = 2000;
 const EMOJIS = ["✅", "❌"];
 
 export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch, warn = console.error }) {
@@ -42,6 +43,19 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         );
       }
       return { threadId: thread.id, messageId: message.id };
+    },
+
+    // 承認依頼のスレッドに判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
+    async sendDecisionRequest({ threadId, spec, issue, title, url, reason, reports }) {
+      const head = `判断依頼: 仕様 #${spec} の #${issue} ${title ?? ""} が止まった\n${url}\n`;
+      const tail = `\ntakt のレポート: ${reports}`;
+      // 2000 文字の上限で切れるのは理由だけにする（レポートの場所を必ず残す）。
+      const room = Math.max(0, MAX_CONTENT - head.length - tail.length - "理由: ".length);
+      const shown = reason.length > room ? `${reason.slice(0, Math.max(0, room - 1))}…` : reason;
+      await call("POST", `/channels/${threadId}/messages`, {
+        content: `${head}理由: ${shown}${tail}`,
+        allowed_mentions: { parse: [] },
+      });
     },
 
     // ✅ / ❌ のリアクションのうち本人の分だけを返す。

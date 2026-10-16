@@ -247,3 +247,11 @@ test("dry-run: merge-auto の行動も例外にせず、key を含めて log に
   );
   assert.match(logs.join("\n"), /merge-auto:50/);
 });
+
+test("dry-run: 判断依頼の行動を説明つきで表示し、例外にならない", async () => {
+  const logs = [];
+  const readSnapshot = async () => ({ repo: "o/r", viewer: "me", issues: [{ number: 12, title: "t", state: "OPEN", labels: ["spec", "spec-approved"], body: "", comments: [{ author: "me", body: "案内役: Discord に承認依頼を送る" }, { author: "me", body: "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）" }, { author: "me", body: "案内役: to-tickets が終わった（exit 0）" }], subIssues: [] }, { number: 20, state: "OPEN", labels: [], body: "仕様: #12", comments: [], subIssues: [{ number: 21, state: "OPEN" }] }, { number: 21, title: "x", state: "OPEN", labels: [], body: "", comments: [], subIssues: [] }], taktIssues: [21], taktTasks: [{ issue: 21, kind: "failed", createdAt: "2026-10-16T10:00:00Z", step: "s", error: "e", worktreePath: "/w" }] });
+  const actions = await runRound({ readSnapshot, execute: async () => assert.fail("dry-run は実行しない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.ok(actions.some((a) => a.kind === "request-decision" && a.spec === 12 && a.issue === 21));
+  assert.ok(logs.some((l) => l.includes("#12") && l.includes("#21")), logs.join("\n"));
+});

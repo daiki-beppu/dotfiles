@@ -10,6 +10,7 @@ const DESCRIBE = {
   "to-tickets": (a) => `${a.key}: 仕様 #${a.spec} を to-tickets で親 issue と sub-issue にする`,
   "takt-sequence": (a) => `${a.key}: 親 #${a.parent} の sub-issue ${a.issues.map((n) => `#${n}`).join(" ")} を takt-sequence に渡す`,
   "merge-auto": (a) => `${a.key}: 仕様 #${a.spec} の学びの PR #${a.pr} に自動マージを予約する`,
+  "request-decision": (a) => `${a.key}: 仕様 #${a.spec} のスレッドに #${a.issue} の判断依頼を送る`,
   knowledge: (a) => `${a.key}: 仕様 #${a.spec} の学びを knowledge でまとめ、PR の自動マージを予約する`,
 };
 const describe = (a) => DESCRIBE[a.kind](a);

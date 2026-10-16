@@ -9,13 +9,18 @@ const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 
 const issue = (number, over = {}) => ({ number, title: "t", state: "OPEN", labels: ["spec"], body: "", comments: [], subIssues: [], ...over });
 const sent = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: SENT }];
 
+const TASKS = [
+  { issue: 3, kind: "failed", createdAt: "2026-10-16T10:00:00Z", step: "implement", error: "blocked", worktreePath: "/w/3" },
+  { issue: 4, kind: "running", createdAt: "2026-10-16T10:00:00Z" },
+];
+
 const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }], pullRequests = []) => {
   const reads = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
     github: { readIssues: () => issues, readPullRequests: () => pullRequests },
     discord: { readReactions: async (ref) => { reads.push(ref); return reactions; } },
-    taktIssueNumbers: () => [3],
+    taktTasks: () => TASKS,
   });
   return { read, reads };
 };
@@ -36,7 +41,8 @@ test("送り済みの OPEN な仕様（承認済みでも）だけ、マーカ�
   assert.deepEqual(snap.issues.find((i) => i.number === 15).reactions, [{ emoji: "✅", userId: "U1" }]);
   for (const n of [13, 14, 16, 17, 18]) assert.equal(snap.issues.find((i) => i.number === n).reactions, undefined);
   assert.equal(snap.discordUserId, "U1");
-  assert.deepEqual(snap.taktIssues, [3]);
+  assert.deepEqual(snap.taktIssues, [3, 4]);
+  assert.deepEqual(snap.taktTasks, TASKS);
 });
 
 test("リアクションの取得が失敗したら例外にする", async () => {
@@ -44,7 +50,7 @@ test("リアクションの取得が失敗したら例外にする", async () =>
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
     github: { readIssues: () => [issue(12, { comments: sent })], readPullRequests: () => [] },
     discord: { readReactions: async () => { throw new Error("Discord GET が 404"); } },
-    taktIssueNumbers: () => [],
+    taktTasks: () => [],
   });
   await assert.rejects(read(), /404/);
 });

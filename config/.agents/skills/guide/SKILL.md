@@ -1,6 +1,6 @@
 ---
 name: guide
-description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流す常駐スクリプト「案内役」を動かす依頼に使う。
+description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、または formal-spec の検証失敗）仕様のスレッドへ判断依頼を送る常駐スクリプト「案内役」を動かす依頼に使う。
 ---
 
 # 案内役
@@ -16,6 +16,7 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 親 issue と sub-issue がそろい、まだ takt に渡していない | open な sub-issue を `takt-sequence` に渡す（Orca の新しいタブ） |
 | 承認済みの open な仕様の親 issue の sub-issue がすべて closed で、学びの PR（viewer が作り、本文に `学びの元の仕様: #n` だけの行がある PR。状態は問わない）がまだない | `claude -p` で `knowledge` だけを実行し（devlog は起動しない）、できた PR に `gh pr merge <N> --auto --squash` で自動マージを予約する |
 | 同じ条件で、学びの PR が OPEN で自動マージが未予約（起動マーカーの有無は問わない。予約の前に止まった後の流し直し） | knowledge は起動せず、`gh pr merge <N> --auto --squash` だけを実行する |
+| 承認依頼を送り済みの open な仕様で、承認済みなら親の open な sub-issue の最新の takt タスク（`createdAt` が最も新しいもの）が `failed`（ABORT）、または仕様の最後の Formal Spec コメントが failed | 承認依頼のスレッドに、止まった issue・理由・takt のレポートの場所（`<worktreePath>/.takt/runs`、検証失敗なら検証器の作業ディレクトリ）を送る。原因ごとに 1 度だけ |
 
 ## 使い方
 
@@ -40,6 +41,8 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: Discord で差し戻された` | 仕様 | 差し戻しを記録した。これがある仕様には繰り返さない |
 | `案内役: to-tickets を起動した` | 仕様 | to-tickets を起動した。これがある仕様には to-tickets を出さない |
 | `案内役: to-tickets が終わった（exit N）` | 仕様 | 終了。exit 0 になるまで、その仕様の親は takt に渡さない（一部だけの sub-issue を渡さないため） |
+| `案内役: Discord に判断依頼を送る（#N 原因）` | 仕様 | 判断依頼を送る前に書く。原因は `takt の ABORT` か `formal-spec の検証失敗`。N は止まった issue。これがあれば同じ組は再送しない |
+| `## Formal Spec（takt <版> の検証器で failed）` で始まる 1 行目のコメント | 仕様 | formal-spec が失敗で止まるときに書く。viewer の最後の Formal Spec コメントが failed なら検証失敗とみなす。`検証器の作業ディレクトリ: <path>` の行をレポートの場所に使う |
 | `案内役: takt-sequence に渡した #a #b` | 親 | 渡した。これがある親は渡さない |
 | `案内役: knowledge を起動した` | 仕様 | knowledge を起動した。これがある仕様には knowledge を出さない |
 | PR 本文の `学びの元の仕様: #n` だけの行 | 学びの PR | knowledge に書かせる。viewer の PR にこの行があれば学びの PR ありとして、二度作らない |
@@ -54,6 +57,8 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 ## 確認が取れていない点
 
 - アーカイブされた公開スレッドのメッセージのリアクションを REST で読めるか。実 Discord で確かめていない（スレッドは 7 日で自動アーカイブ）。
+- アーカイブされた公開スレッドへ判断依頼を Bot が送信できるか。実 Discord で確かめていない。
+- 検証器の作業ディレクトリは、takt が 1 時間以上使われていないものを次の検証で消す。判断依頼を読む時点で残っていないことがある。
 - `claude -p "/to-tickets #<spec> …"` が `disable-model-invocation: true` のスキルを headless で起動でき、確認待ちにならず起票まで進むか。実起動で確かめていない。
 - headless 実行の許可は `--allowedTools`（`gh`、`gh-subissues`、Read、Grep、Glob）で絞っている。足りなければ `scripts/to-tickets.mjs` を直す。
 - `claude -p "/knowledge …"` が headless で PR 作成まで進むか、許可（`git`、`gh`、`orca`、Read、Grep、Glob、Edit、Write）で足りるか。実起動で確かめていない。足りなければ `scripts/knowledge.mjs` を直す。

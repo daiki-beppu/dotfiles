@@ -221,3 +221,43 @@ test("依存なし: import は node:* と同じディレクトリのモジュー
   for (const s of specs) assert.ok(s.startsWith("node:") || s.startsWith("./"), `外部パッケージの import: ${s}`);
   assert.ok(!/WebSocket|gateway/i.test(src.replace(/\/\/.*$/gm, "")));
 });
+
+// ---- 判断依頼（既存スレッドへ送る） ----
+
+test("判断依頼: 新しいスレッドは作らず、承認依頼のスレッドに送り、止まった issue・理由・レポートの場所を本文に含める", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", spec: 12, issue: 21, title: "実装A", url: "https://github.com/o/live-mindmap/issues/21",
+    reason: "takt の run が ABORT で終わった（step: implement）: blocked", reports: "/w/21/.takt/runs",
+  });
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["#12", "#21", "実装A", "https://github.com/o/live-mindmap/issues/21", "ABORT", "blocked", "/w/21/.takt/runs"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(content.length <= 2000);
+});
+
+test("判断依頼: 題名の @everyone でメンション通知が飛ばない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({ threadId: "T1", spec: 12, issue: 21, title: "@everyone", url: "u", reason: "r", reports: "p" });
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+});
+
+test("判断依頼: 送信が失敗したら例外にする", async () => {
+  const { discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ message: "x" }, 403) });
+  await assert.rejects(discord.sendDecisionRequest({ threadId: "T1", spec: 12, issue: 21, title: "t", url: "u", reason: "r", reports: "p" }), /403/);
+});
+
+test("判断依頼: 理由が長くても 2000 文字以内に収め、止まった issue とレポートの場所は切り落とさない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", spec: 12, issue: 21, title: "実装A", url: "https://github.com/o/r/issues/21",
+    reason: `ABORT ${"x".repeat(5000)}`, reports: "/w/21/.takt/runs",
+  });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000);
+  assert.ok(content.includes("#21") && content.includes("実装A") && content.includes("https://github.com/o/r/issues/21"));
+  assert.ok(content.endsWith("takt のレポート: /w/21/.takt/runs"));
+  assert.ok(content.includes("ABORT"));
+});

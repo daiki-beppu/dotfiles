@@ -275,3 +275,63 @@ test("knowledge: 学びの PR が既にあれば、起動も予約もしない",
   await round();
   assert.deepEqual(calls, []);
 });
+
+// ---- 判断依頼: マーカーを送信より先に仕様へ書き、送信は既存スレッドへ。再起動しても二度送らない ----
+
+const DECISION_MARKER = "案内役: Discord に判断依頼を送る（#21 takt の ABORT）";
+const ABORT_TASK = { issue: 21, kind: "failed", createdAt: "2026-10-16T10:00:00Z", step: "implement", error: "blocked", worktreePath: "/w/21" };
+
+const decisionWorld = (sendOver) => {
+  const calls = [];
+  const issues = [
+    issue(12, { title: "仕様A", labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS, { author: VIEWER, body: "案内役: to-tickets を起動した" }, { author: VIEWER, body: "案内役: to-tickets が終わった（exit 0）" }] }),
+    issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] , comments: [{ author: VIEWER, body: "案内役: takt-sequence に渡した #21" }] }),
+    issue(21, { title: "実装A" }),
+  ];
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); } };
+  const discord = {
+    sendDecisionRequest: sendOver ?? (async (req) => { calls.push(`decision ${JSON.stringify(req)}`); }),
+    ensureChannel: async () => assert.fail("新しいチャンネルは確保しない"),
+    sendApprovalRequest: async () => assert.fail("承認依頼は送らない"),
+  };
+  const deps = {
+    github, discord, cwd: "/x", repo: REPO,
+    runToTickets: async () => assert.fail("to-tickets は起動しない"),
+    startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
+  };
+  const round = (dispatched = new Set()) =>
+    runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, discordUserId: "U", issues, taktIssues: [21], taktTasks: [ABORT_TASK] }), execute: createExecute(deps), log: () => {} }, dispatched);
+  return { calls, round };
+};
+
+test("判断依頼: 仕様に送信マーカーを書いてから、既存スレッドに止まった issue・理由・レポートの場所つきで送る", async () => {
+  const { calls, round } = decisionWorld();
+  await round();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `comment #12 ${DECISION_MARKER}`);
+  const req = JSON.parse(calls[1].replace(/^decision /, ""));
+  assert.equal(req.threadId, "555");
+  assert.equal(req.spec, 12);
+  assert.equal(req.issue, 21);
+  assert.equal(req.title, "実装A");
+  assert.equal(req.url, "https://github.com/o/r/issues/21");
+  assert.match(req.reason, /ABORT/);
+  assert.ok(req.reason.includes("blocked"));
+  assert.equal(req.reports, "/w/21/.takt/runs");
+});
+
+test("判断依頼: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = decisionWorld();
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("判断依頼: 送信が失敗してもマーカーは残り、再起動で二重に送らない（成否不明のまま再送しない）", async () => {
+  const { calls, round } = decisionWorld(async () => { throw new Error("discord down"); });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, [`comment #12 ${DECISION_MARKER}`]);
+  await round(new Set());
+  assert.equal(calls.length, 1);
+});
