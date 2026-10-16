@@ -37,9 +37,6 @@
     "pr": "",
     "sessionUrl": false
   },
-  "skillOverrides": {
-    "empirical-prompt-tuning": "off"
-  },
   "hooks": {
     "SessionStart": [
       {
