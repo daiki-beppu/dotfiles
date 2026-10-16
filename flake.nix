@@ -131,8 +131,26 @@
                     "com.apple.TextInputMenu" = {
                       visible = true;
                     };
+                    # Raycast の呼び出しを ⌘Space にする（Spotlight 側は下の postActivation で外す）
+                    "com.raycast.macos" = {
+                      raycastGlobalHotkey = "Command-49";
+                    };
                   };
                 };
+
+                # ── Spotlight の ⌘Space を無効化 ──
+                # ショートカットは AppleSymbolicHotKeys 1 つの辞書にまとまっている。
+                # CustomUserPreferences は辞書を丸ごと書き換えてほかのショートカットを消すため、
+                # -dict-add で 64（Spotlight 検索を表示）だけ差し替える。
+                # activateSettings -u でログアウトせずに反映する。
+                system.activationScripts.postActivation.text = ''
+                  echo >&2 "disabling Spotlight shortcut..."
+                  launchctl asuser "$(id -u -- ${username})" sudo --user=${username} -- \
+                    /usr/bin/defaults write com.apple.symbolichotkeys AppleSymbolicHotKeys -dict-add 64 \
+                    '<dict><key>enabled</key><false/><key>value</key><dict><key>parameters</key><array><integer>65535</integer><integer>49</integer><integer>1048576</integer></array><key>type</key><string>standard</string></dict></dict>'
+                  launchctl asuser "$(id -u -- ${username})" sudo --user=${username} -- \
+                    /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+                '';
 
                 # ── Nix ストアの週次自動クリーン（nh） ──
                 # Determinate Nix（nix.enable = false）のため nix.gc / nix.optimise が

@@ -146,6 +146,7 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 - Finder（拡張子の常時表示、カラム表示等）
 - Dock（自動非表示、最近使ったアプリの非表示等）
 - 入力メニューのメニューバー表示（azooKey）
+- Raycast を ⌘Space に割り当て、Spotlight の ⌘Space を無効化
 
 ## 自動クリーン (launchd)
 
@@ -161,7 +162,6 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 詳細は [`docs/manual-setup.md`](docs/manual-setup.md) を参照。
 
 - ディスプレイ解像度を「スペースを拡大」に変更
-- Raycast の設定（Spotlight ショートカットの変更）
 - Vite+ の確認
 - アプリの初期設定（1Password・Google Drive・Cap 等）
 - takt MCP の登録

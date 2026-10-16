@@ -8,23 +8,14 @@
 2. 「ディスプレイ」をクリック
 3. 「スペースを拡大」を選択
 
-## 2. Raycast の設定
-
-1. Raycast を起動
-2. 設定を開く（`Cmd + ,`）
-3. 「Hotkey」タブで、Raycast のショートカットを設定
-4. Spotlight のショートカットを無効化：
-   - システム設定 → キーボード → キーボードショートカット
-   - Spotlight → 「Spotlight 検索を表示」のチェックを外す
-
-## 3. Vite+ の確認
+## 2. Vite+ の確認
 
 `darwin-rebuild switch` がグローバル CLI を自動導入する。新しいシェルで
 `command -v vp` と `vp --version` を確認する。`node` / `npm` などの shim は
 system-first に設定し、既存の Node.js／パッケージマネージャーを継続使用する。
 導入方法と更新手順は README の「PATH 優先順位」「よくある操作」を参照。
 
-## 4. アプリの初期設定
+## 3. アプリの初期設定
 
 | アプリ | 設定内容 |
 |-------|---------|
@@ -32,7 +23,7 @@ system-first に設定し、既存の Node.js／パッケージマネージャ�
 | Google Drive | ログインして同期フォルダを設定 |
 | Cap | 画面収録の権限許可とショートカット設定（クラウド共有を使うならサインイン） |
 
-## 5. takt MCP の登録
+## 4. takt MCP の登録
 
 MCP サーバーの登録先（`~/.claude.json` / `~/.codex/config.toml`）は実行時データと同居しており dotfiles 管理外。
 darwin-rebuild で `~/.local/bin/takt-mcp-root` が張られた後に 1 回だけ登録する。
