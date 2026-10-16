@@ -48,7 +48,7 @@ try {
   console.error(String(e.message));
   process.exit(2);
 }
-const discord = createDiscord({ token: secrets.botToken, guildId: secrets.guildId, userId: secrets.userId });
+const discord = createDiscord({ token: secrets.botToken, guildId: secrets.guildId, userId: secrets.userId, warn: log });
 
 const readSnapshot = createReadSnapshot({
   repo,

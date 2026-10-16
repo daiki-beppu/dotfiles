@@ -5,7 +5,7 @@ const TEXT_CHANNEL = 0;
 const PUBLIC_THREAD = 11;
 const EMOJIS = ["✅", "❌"];
 
-export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch }) {
+export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch, warn = console.error }) {
   async function call(method, path, body) {
     const res = await fetch(`${BASE}${path}`, {
       method,
@@ -35,9 +35,11 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         allowed_mentions: { parse: [] },
       });
       // 押すだけで済むよう Bot が ✅ / ❌ を先に付けておく。判定は本人の分だけを見るので、Bot の分は数えない。
-      // 送信は済んでいるので、付け損ねても例外にしない（本人が手で付ければ同じに動く）。
+      // 送信は済んでいるので、付け損ねても例外にしない（本人が手で付ければ同じに動く）。黙って失敗しないよう 1 行残す。
       for (const emoji of EMOJIS) {
-        await call("PUT", `/channels/${thread.id}/messages/${message.id}/reactions/${encodeURIComponent(emoji)}/@me`).catch(() => {});
+        await call("PUT", `/channels/${thread.id}/messages/${message.id}/reactions/${encodeURIComponent(emoji)}/@me`).catch((e) =>
+          warn(`仕様 #${spec} の承認依頼に ${emoji} を先付けできなかった: ${e.message}`),
+        );
       }
       return { threadId: thread.id, messageId: message.id };
     },

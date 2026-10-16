@@ -122,13 +122,19 @@ test("承認依頼: 送ったメッセージに Bot が ✅・❌ の順でリ�
   ]);
 });
 
-test("承認依頼: 先付けのリアクションが失敗しても、送信は済んでいるので ID を返す", async () => {
-  const { discord } = adapter({
+test("承認依頼: 先付けのリアクションが失敗しても ID を返し、失敗を warn に 1 行残す（トークンは含めない）", async () => {
+  const api = fakeApi({
     ...sendRoutes(),
     [`PUT /api/v10/channels/T1/messages/M1/reactions/${CHECK}/@me`]: json({ message: "Missing Permissions" }, 403),
   });
+  const warned = [];
+  const discord = createDiscord({ token: TOKEN, guildId: GUILD, userId: OWNER, fetch: api.fetch, warn: (s) => warned.push(s) });
   const result = await discord.sendApprovalRequest({ channelId: "c1", spec: 12, title: "仕様A", url: issueUrl });
   assert.deepEqual(result, { threadId: "T1", messageId: "M1" });
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /#12/);
+  assert.match(warned[0], /403/);
+  assert.ok(!warned[0].includes(TOKEN));
 });
 
 test("リアクション: Bot が先に付けた ✅・❌ は本人の操作として数えない", async () => {
