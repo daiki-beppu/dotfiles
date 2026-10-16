@@ -14,10 +14,10 @@ const TASKS = [
   { issue: 4, kind: "running", createdAt: "2026-10-16T10:00:00Z" },
 ];
 
-const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }], pullRequests = []) => {
+const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }], pullRequests = [], fromSpec) => {
   const reads = [];
   const read = createReadSnapshot({
-    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1", fromSpec,
     github: { readIssues: () => issues, readPullRequests: () => pullRequests },
     discord: { readReactions: async (ref) => { reads.push(ref); return reactions; } },
     taktTasks: () => TASKS,
@@ -60,4 +60,9 @@ test("pullRequests: github.readPullRequests の結果をそのままスナップ
   const { read } = build([issue(12)], undefined, prs);
   const snap = await read();
   assert.deepEqual(snap.pullRequests, prs);
+});
+
+test("fromSpec: 指定した番号をそのままスナップショットに入れ、無ければ undefined", async () => {
+  assert.equal((await build([issue(12)], undefined, [], 30).read()).fromSpec, 30);
+  assert.equal((await build([issue(12)]).read()).fromSpec, undefined);
 });

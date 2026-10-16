@@ -772,3 +772,40 @@ test("判断依頼: 止まっていない仕様の流れ（takt-sequence など�
   assert.deepEqual(decisions(decide(s)), []);
   assert.deepEqual(flow(decide(s)), [taktSequence(20, [21, 22])]);
 });
+
+// ---- 扱う仕様の範囲（fromSpec）: 既存の仕様が多い repo に向けるとき、番号がそれ以上の仕様だけを流す ----
+
+test("fromSpec: 範囲の外の仕様には、承認依頼・to-tickets・takt-sequence・学び・判断依頼のどれも出さない", () => {
+  const from = { fromSpec: 13, discordUserId: OWNER };
+  assert.deepEqual(decide(withOwner([pending(12)], from)), []);
+  assert.deepEqual(decide(snapshot([spec(12, { comments: sentComments })], from)), []);
+  assert.deepEqual(decide(withParent({ ...from })), []);
+  assert.deepEqual(decide(abortWorld([task()], { over: from })), []);
+  const allClosed = snapshot(
+    [spec(12, { comments: [...sentComments, byViewer(STARTED), byViewer(FINISHED(0))] }), issue(20, { body: "仕様: #12", subIssues: closedSubs(21) })],
+    from,
+  );
+  assert.deepEqual(decide(allClosed), []);
+});
+
+test("fromSpec: 境界の番号の仕様は扱い、範囲の内と外が混ざれば内だけに出す", () => {
+  const s = withOwner([pending(12), pending(13), pending(14)], { fromSpec: 13 });
+  assert.deepEqual(decide(s), [requestApproval(13), requestApproval(14)]);
+});
+
+test("fromSpec: 範囲の外の仕様の親も takt に渡さず、範囲の内の仕様の流れは変えない", () => {
+  const s = snapshot(
+    [
+      spec(12),
+      issue(20, { body: "仕様: #12", subIssues: openSubs(21) }),
+      spec(30, { comments: [byViewer(STARTED), byViewer(FINISHED(0))] }),
+      issue(40, { body: "仕様: #30", subIssues: openSubs(41) }),
+    ],
+    { fromSpec: 30 },
+  );
+  assert.deepEqual(flow(decide(s)), [taktSequence(40, [41])]);
+});
+
+test("fromSpec: 指定が無ければ、すべての OPEN な仕様を扱う", () => {
+  assert.deepEqual(decide(withOwner([pending(12), pending(13)])), [requestApproval(12), requestApproval(13)]);
+});
