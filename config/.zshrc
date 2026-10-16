@@ -7,8 +7,9 @@ export PATH=$HOME/bin:$HOME/.local/bin:/usr/local/bin:$PATH
 # 先頭に置くと macOS 標準の /usr/bin/open を覆い隠す。
 export PATH=$PATH:/Applications/cmux.app/Contents/Resources/bin
 
-# Oh My Zsh installation
+# Oh My Zsh（Nix 管理。~/.oh-my-zsh はストアへのリンクなので自動更新はしない）
 export ZSH="$HOME/.oh-my-zsh"
+zstyle ':omz:update' mode disabled
 
 # Theme
 ZSH_THEME="eastwood"
@@ -19,7 +20,7 @@ plugins=(git)
 if [ -f "$ZSH/oh-my-zsh.sh" ]; then
   source "$ZSH/oh-my-zsh.sh"
 else
-  echo "warning: oh-my-zsh 未インストール（docs/manual-setup.md 参照）" >&2
+  echo "warning: oh-my-zsh が見つからない（darwin-rebuild switch で ~/.oh-my-zsh を張る）" >&2
 fi
 
 # zsh-abbr（Nix 管理。旧 brew 環境のパスはフォールバック）

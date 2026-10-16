@@ -221,6 +221,11 @@ in
     link_force "${dotfilesDir}/.zshrc" "$HOME/.zshrc"
     link_force "${dotfilesDir}/.zprofile" "$HOME/.zprofile"
 
+    # oh-my-zsh: ストアの読み取り専用ツリーへ直接リンクする。.zshrc は ~/.oh-my-zsh を読む。
+    # 更新は nixpkgs 側で行うので、.zshrc で oh-my-zsh 自身の自動更新を止めている。
+    # キャッシュは書き込めない $ZSH/cache を避けて ~/.cache/oh-my-zsh に書かれる。
+    link_force "${pkgs.oh-my-zsh}/share/oh-my-zsh" "$HOME/.oh-my-zsh"
+
     # ブラウザ振り分けスクリプト
     mkdir -p "$HOME/.local/bin"
     link_force "${dotfilesDir}/.local/bin/open-browser" "$HOME/.local/bin/open-browser"
