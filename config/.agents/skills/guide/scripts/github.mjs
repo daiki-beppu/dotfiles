@@ -1,4 +1,4 @@
-// GitHub アダプタ。issue・コメント・sub-issue を読んで判定用のスナップショットの形にそろえ、マーカーのコメントを書く。
+// GitHub アダプタ。issue・コメント・sub-issue を読んで判定用のスナップショットの形にそろえ、マーカーのコメントとラベルを書く。
 // 参照の解析やマーカーの判定は decide.mjs の責務で、ここでは取得対象を絞るだけにする。
 import { execFileSync } from "node:child_process";
 
@@ -37,6 +37,10 @@ export function createGithub({ repo, cwd }) {
 
     comment(number, body) {
       gh(["api", `repos/${repo}/issues/${number}/comments`, "-f", `body=${body}`]);
+    },
+
+    addLabel(number, label) {
+      gh(["issue", "edit", String(number), "--repo", repo, "--add-label", label]);
     },
   };
 }

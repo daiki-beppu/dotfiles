@@ -1,10 +1,13 @@
-// 案内役の入口。承認済みの仕様を to-tickets から takt-sequence まで流す。
+// 案内役の入口。仕様の承認依頼を Discord に送り、承認済みの仕様を to-tickets から takt-sequence まで流す。
 // 使い方（対象 repo の root で）: node guide.mjs <owner/repo> [--interval 60] [--dry-run]
 // 状態は GitHub の issue（マーカーのコメント）に持つ。止めて流し直しても続きから動く。
 import { setTimeout as sleep } from "node:timers/promises";
+import { createDiscord } from "./discord.mjs";
 import { createExecute } from "./execute.mjs";
 import { createGithub } from "./github.mjs";
+import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
+import { createReadSnapshot } from "./snapshot.mjs";
 import { startTaktSequence, taktIssueNumbers } from "./takt.mjs";
 import { runToTickets } from "./to-tickets.mjs";
 
@@ -38,14 +41,25 @@ if (actual.toLowerCase() !== repo.toLowerCase()) {
 // マーカーのコメントは gh の認証ユーザーが書く。第三者のコメントで判定が動かないよう、その login を起点で 1 回だけ解決する
 const viewer = github.viewer();
 
-const readSnapshot = async () => ({
+let secrets;
+try {
+  secrets = readDiscordSecrets({ account: process.env.USER });
+} catch (e) {
+  console.error(String(e.message));
+  process.exit(2);
+}
+const discord = createDiscord({ token: secrets.botToken, guildId: secrets.guildId, userId: secrets.userId });
+
+const readSnapshot = createReadSnapshot({
   repo,
   viewer,
-  issues: github.readIssues(),
-  taktIssues: taktIssueNumbers(cwd),
+  discordUserId: secrets.userId,
+  github,
+  discord,
+  taktIssueNumbers: () => taktIssueNumbers(cwd),
 });
 
-const execute = createExecute({ github, cwd, repo, runToTickets, startTaktSequence });
+const execute = createExecute({ github, discord, cwd, repo, runToTickets, startTaktSequence });
 
 const deps = { readSnapshot, execute, log };
 try {

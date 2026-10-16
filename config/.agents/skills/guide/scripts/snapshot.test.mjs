@@ -1,0 +1,50 @@
+// snapshot.mjs のテスト。GitHub・Discord は偽物。
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createReadSnapshot } from "./snapshot.mjs";
+
+const VIEWER = "me";
+const SENDING = "案内役: Discord に承認依頼を送る";
+const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
+const issue = (number, over = {}) => ({ number, title: "t", state: "OPEN", labels: ["spec"], body: "", comments: [], subIssues: [], ...over });
+const sent = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: SENT }];
+
+const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }]) => {
+  const reads = [];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => issues },
+    discord: { readReactions: async (ref) => { reads.push(ref); return reactions; } },
+    taktIssueNumbers: () => [3],
+  });
+  return { read, reads };
+};
+
+test("送り済みの OPEN な仕様（承認済みでも）だけ、マーカーの ID でリアクションを読んで reactions に入れる", async () => {
+  const { read, reads } = build([
+    issue(12, { comments: sent }),
+    issue(13),
+    issue(14, { comments: [{ author: VIEWER, body: SENDING }] }),
+    issue(15, { comments: sent, labels: ["spec", "spec-approved"] }),
+    issue(16, { comments: sent, state: "CLOSED" }),
+    issue(17, { comments: sent, labels: [] }),
+    issue(18, { comments: [{ author: "someone", body: SENT }] }),
+  ]);
+  const snap = await read();
+  assert.deepEqual(reads, [{ threadId: "555", messageId: "777" }, { threadId: "555", messageId: "777" }]);
+  assert.deepEqual(snap.issues.find((i) => i.number === 12).reactions, [{ emoji: "✅", userId: "U1" }]);
+  assert.deepEqual(snap.issues.find((i) => i.number === 15).reactions, [{ emoji: "✅", userId: "U1" }]);
+  for (const n of [13, 14, 16, 17, 18]) assert.equal(snap.issues.find((i) => i.number === n).reactions, undefined);
+  assert.equal(snap.discordUserId, "U1");
+  assert.deepEqual(snap.taktIssues, [3]);
+});
+
+test("リアクションの取得が失敗したら例外にする", async () => {
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => [issue(12, { comments: sent })] },
+    discord: { readReactions: async () => { throw new Error("Discord GET が 404"); } },
+    taktIssueNumbers: () => [],
+  });
+  await assert.rejects(read(), /404/);
+});

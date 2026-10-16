@@ -3,10 +3,14 @@ import { decide } from "./decide.mjs";
 
 const MAX_READ_ERRORS = 3;
 
-const describe = (a) =>
-  a.kind === "to-tickets"
-    ? `${a.key}: 仕様 #${a.spec} を to-tickets で親 issue と sub-issue にする`
-    : `${a.key}: 親 #${a.parent} の sub-issue ${a.issues.map((n) => `#${n}`).join(" ")} を takt-sequence に渡す`;
+const DESCRIBE = {
+  "request-approval": (a) => `${a.key}: 仕様 #${a.spec} の承認依頼を Discord に送る`,
+  "approve-spec": (a) => `${a.key}: 仕様 #${a.spec} に spec-approved を付ける`,
+  "reject-spec": (a) => `${a.key}: 仕様 #${a.spec} に差し戻しのコメントを書く`,
+  "to-tickets": (a) => `${a.key}: 仕様 #${a.spec} を to-tickets で親 issue と sub-issue にする`,
+  "takt-sequence": (a) => `${a.key}: 親 #${a.parent} の sub-issue ${a.issues.map((n) => `#${n}`).join(" ")} を takt-sequence に渡す`,
+};
+const describe = (a) => DESCRIBE[a.kind](a);
 
 export async function runRound({ readSnapshot, execute, log, dryRun = false }, dispatched) {
   const snapshot = { ...(await readSnapshot()), dispatched: [...dispatched] };

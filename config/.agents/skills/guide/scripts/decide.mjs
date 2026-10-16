@@ -1,13 +1,23 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
 // I/O・時刻・環境変数は読まない（import も持たない）。LLM も使わず、ラベルと状態だけで決める。
 //
-// snapshot: { repo, viewer, issues: [{ number, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }] }],
-//             taktIssues: [number], dispatched: [key] }
-// 行動: { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
+// snapshot: { repo, viewer, discordUserId, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
+//             reactions: [{ emoji, userId }] }], taktIssues: [number], dispatched: [key] }
+// 行動: { kind: "request-approval", key, spec, title } | { kind: "approve-spec", key, spec } | { kind: "reject-spec", key, spec }
+//     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
 
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
 export const MARKER_FINISHED_PREFIX = "案内役: to-tickets が終わった（exit ";
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
+
+// 承認依頼: 送る前（二重送信の防止）と送った後（スレッドとメッセージの ID を GitHub に残す）の 2 つ。差し戻しは 1 つ。
+export const MARKER_APPROVAL_SENDING = "案内役: Discord に承認依頼を送る";
+export const MARKER_APPROVAL_SENT_PREFIX = "案内役: Discord に承認依頼を送った";
+export const MARKER_REJECTED = "案内役: Discord で差し戻された";
+
+const APPROVAL_SENT = /^案内役: Discord に承認依頼を送った（スレッド (\d+) \/ メッセージ (\d+)）/;
+const APPROVE_EMOJI = "✅";
+const REJECT_EMOJI = "❌";
 
 const FINISHED = /^案内役: to-tickets が終わった（exit (\d+)）/;
 
@@ -26,6 +36,49 @@ const markers = (issue, viewer) =>
 const hasLabel = (issue, name) => (issue.labels ?? []).includes(name);
 const isSpec = (issue) => hasLabel(issue, "spec");
 
+// 送り済みの承認依頼（viewer の「送った」マーカー）のスレッドとメッセージの ID。無ければ null。
+export function sentApprovalRequest(issue, viewer) {
+  for (const body of markers(issue, viewer)) {
+    const m = APPROVAL_SENT.exec(body);
+    if (m) return { threadId: m[1], messageId: m[2] };
+  }
+  return null;
+}
+
+// リアクションを読むべき仕様か。OPEN で spec、承認依頼が送り済み。承認済みでも差し戻し（❌）を読むため、承認ラベルは問わない。
+export const awaitsReaction = (issue, viewer) =>
+  issue.state === "OPEN" && isSpec(issue) && sentApprovalRequest(issue, viewer) !== null;
+
+// OPEN な仕様ごとの、承認依頼の送信・承認・差し戻し。送信は承認ラベルを問わない。承認は未承認の仕様だけ、差し戻しは承認済みの仕様も対象にする。
+function decideApproval(snapshot, dispatched) {
+  const { viewer, discordUserId } = snapshot;
+  const actions = [];
+  const specs = snapshot.issues.filter((i) => i.state === "OPEN" && isSpec(i)).sort((a, b) => a.number - b.number);
+  for (const spec of specs) {
+    const approved = hasLabel(spec, "spec-approved");
+    const own = markers(spec, viewer);
+    if (!own.some((b) => b.startsWith(MARKER_APPROVAL_SENDING))) {
+      const key = `request-approval:${spec.number}`;
+      if (!dispatched.has(key)) actions.push({ kind: "request-approval", key, spec: spec.number, title: spec.title });
+      continue;
+    }
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    const mine = (spec.reactions ?? []).filter((r) => r.userId === discordUserId).map((r) => r.emoji);
+    const approve = mine.includes(APPROVE_EMOJI);
+    const reject = mine.includes(REJECT_EMOJI);
+    if (approve === reject) continue;
+    if (approve) {
+      if (approved) continue;
+      const key = `approve-spec:${spec.number}`;
+      if (!dispatched.has(key)) actions.push({ kind: "approve-spec", key, spec: spec.number });
+    } else if (!own.some((b) => b.startsWith(MARKER_REJECTED))) {
+      const key = `reject-spec:${spec.number}`;
+      if (!dispatched.has(key)) actions.push({ kind: "reject-spec", key, spec: spec.number });
+    }
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -35,7 +88,7 @@ export function decide(snapshot) {
     .filter((i) => i.state === "OPEN" && isSpec(i) && hasLabel(i, "spec-approved"))
     .sort((a, b) => a.number - b.number);
 
-  const actions = [];
+  const actions = decideApproval(snapshot, dispatched);
   const handedParents = new Set();
 
   for (const spec of approved) {
