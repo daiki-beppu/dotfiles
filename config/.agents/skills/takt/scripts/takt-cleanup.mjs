@@ -1,6 +1,6 @@
 // 完了したタスクを、takt の削除の操作と同じ手順で片付ける: クローン・worktree-session を消し、タスクの記録を消す。
 // rm -rf でクローンだけ消すと、記録が消えたクローンを指したまま残り、takt_list_tasks が
-// "Worktree directory does not exist" で使えなくなる。開発ログ（/knowledge）を書き終えてから使う。
+// "Worktree directory does not exist" で使えなくなる。開発ログ（/devlog）を書き終えてから使う。
 // 使い方: takt-node.sh takt-cleanup.mjs <issue番号|タスク名の一部>... | --missing（クローンが無いタスクの記録だけ消す）
 // 番号・名前の指定は completed だけを消す（failed のクローンは積み直しに使うので残す）。--missing は pending / running 以外の全部が対象。
 import { existsSync } from "node:fs";
