@@ -8,7 +8,7 @@ import { createGithub } from "./github.mjs";
 import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
-import { startTaktSequence, taktIssueNumbers, taktRunDirs } from "./takt.mjs";
+import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { runKnowledge } from "./knowledge.mjs";
 import { runToTickets } from "./to-tickets.mjs";
 
@@ -57,7 +57,7 @@ const readSnapshot = createReadSnapshot({
   discordUserId: secrets.userId,
   github,
   discord,
-  taktIssueNumbers: () => taktIssueNumbers(cwd),
+  taktTasks: () => taktTasks(cwd),
 });
 
 const execute = createExecute({ github, discord, cwd, repo, viewer, runToTickets, startTaktSequence, runKnowledge, taktRunDirs });

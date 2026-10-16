@@ -610,3 +610,165 @@ test("純粋性: knowledge の遷移でも入力を変更せず、同じ入力�
   assert.deepEqual(knowledgeActions(first), [knowledge(12, [20], [21, 22])]);
   assert.deepEqual(decide(s), first);
 });
+
+// ---- 判断依頼: takt の run が ABORT、または formal-spec の検証が失敗 → 仕様の Discord スレッドへ ----
+
+const APPROVAL_SENDING = "案内役: Discord に承認依頼を送る";
+const APPROVAL_SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
+const ABORT_MARKER = (n) => `案内役: Discord に判断依頼を送る（#${n} takt の ABORT）`;
+const FSPEC_MARKER = (n) => `案内役: Discord に判断依頼を送る（#${n} formal-spec の検証失敗）`;
+const FSPEC_FAILED = "## Formal Spec（takt 0.71.0 の検証器で failed）\n破れた性質: P1\n検証器の作業ディレクトリ: /c/run1";
+const FSPEC_PASSED = "## Formal Spec（takt 0.71.0 の検証器で passed）";
+const decisions = (actions) => actions.filter((a) => a.kind === "request-decision");
+const sentComments = [byViewer(APPROVAL_SENDING), byViewer(APPROVAL_SENT)];
+const task = (over = {}) => ({
+  issue: 21,
+  kind: "failed",
+  createdAt: "2026-10-16T10:00:00Z",
+  step: "implement",
+  error: "blocked",
+  worktreePath: "/w/21",
+  ...over,
+});
+// 承認済み・承認依頼送り済み（スレッド 555）の仕様 #12、親 #20、OPEN な sub-issue #21 #22。
+const abortWorld = (tasks, { specComments = [], over = {} } = {}) =>
+  snapshot(
+    [
+      spec(12, { comments: [...sentComments, byViewer(STARTED), byViewer(FINISHED(0)), ...specComments] }),
+      issue(20, { body: "仕様: #12", subIssues: openSubs(21, 22) }),
+      issue(21, { title: "実装A" }),
+      issue(22),
+    ],
+    { taktTasks: tasks, taktIssues: tasks.map((t) => t.issue), ...over },
+  );
+
+test("判断依頼(ABORT): 最新のタスクが failed の sub-issue について、仕様のスレッドへ理由とレポートの場所つきで 1 件出す", () => {
+  const [a, ...rest] = decisions(decide(abortWorld([task()])));
+  assert.equal(rest.length, 0);
+  assert.equal(a.kind, "request-decision");
+  assert.equal(a.spec, 12);
+  assert.equal(a.issue, 21);
+  assert.equal(a.title, "実装A");
+  assert.equal(a.threadId, "555");
+  assert.equal(a.reports, "/w/21/.takt/runs");
+  assert.match(a.reason, /ABORT/);
+  assert.ok(a.reason.includes("blocked"));
+  assert.ok(a.reason.includes("implement"));
+  assert.equal(typeof a.key, "string");
+});
+
+test("判断依頼(ABORT): 古い failed の後に新しいタスクがあれば出さない。exceeded / pr_failed / running / completed も出さない", () => {
+  assert.deepEqual(
+    decisions(decide(abortWorld([task(), task({ kind: "running", createdAt: "2026-10-16T11:00:00Z" })]))),
+    [],
+  );
+  for (const kind of ["exceeded", "pr_failed", "running", "completed", "pending"]) {
+    assert.deepEqual(decisions(decide(abortWorld([task({ kind, issue: 22 })]))), [], kind);
+  }
+});
+
+test("判断依頼(ABORT): タスクの並び順に依らず createdAt が最も新しいもので判定する", () => {
+  const newestFailed = [task({ kind: "running", createdAt: "2026-10-16T09:00:00Z" }), task({ createdAt: "2026-10-16T12:00:00Z" })];
+  assert.equal(decisions(decide(abortWorld(newestFailed))).length, 1);
+  assert.equal(decisions(decide(abortWorld([...newestFailed].reverse()))).length, 1);
+});
+
+test("判断依頼(ABORT): 閉じた sub-issue・仕様の sub-issue でない issue のタスクでは出さない", () => {
+  const w = abortWorld([task({ issue: 99 })]);
+  assert.deepEqual(decisions(decide(w)), []);
+  const closed = abortWorld([task()]);
+  closed.issues.find((i) => i.number === 21).state = "CLOSED";
+  closed.issues.find((i) => i.number === 20).subIssues = [{ number: 21, state: "CLOSED" }, { number: 22, state: "OPEN" }];
+  assert.deepEqual(decisions(decide(closed)), []);
+});
+
+test("判断依頼(ABORT): 未承認の仕様、承認依頼のスレッドが無い仕様、閉じた仕様には出さない", () => {
+  const unapproved = abortWorld([task()]);
+  unapproved.issues.find((i) => i.number === 12).labels = ["spec"];
+  assert.deepEqual(decisions(decide(unapproved)), []);
+  const noThread = abortWorld([task()]);
+  noThread.issues.find((i) => i.number === 12).comments = [byViewer(STARTED), byViewer(FINISHED(0))];
+  assert.deepEqual(decisions(decide(noThread)), []);
+  const closed = abortWorld([task()]);
+  closed.issues.find((i) => i.number === 12).state = "CLOSED";
+  assert.deepEqual(decisions(decide(closed)), []);
+});
+
+test("判断依頼(ABORT): step・error・worktree の記録が無くても出し、無い項目で壊れない", () => {
+  const [a] = decisions(decide(abortWorld([task({ step: undefined, error: undefined, worktreePath: undefined })])));
+  assert.equal(a.issue, 21);
+  assert.match(a.reason, /ABORT/);
+  assert.ok(!a.reason.includes("undefined"));
+  assert.equal(typeof a.reports, "string");
+  assert.ok(a.reports.length > 0 && !a.reports.includes("undefined"));
+});
+
+test("判断依頼(ABORT): 複数の sub-issue が止まっていれば番号の昇順で 1 件ずつ出し、key は互いに異なる", () => {
+  const as = decisions(decide(abortWorld([task({ issue: 22, worktreePath: "/w/22" }), task()])));
+  assert.deepEqual(as.map((a) => a.issue), [21, 22]);
+  assert.equal(new Set(as.map((a) => a.key)).size, 2);
+});
+
+test("判断依頼(検証失敗): 最後の Formal Spec 見出しが failed なら仕様自身について出し、レポートの場所は検証器の作業ディレクトリ", () => {
+  const s = snapshot([issue(12, { labels: ["spec"], comments: [...sentComments, byViewer(FSPEC_FAILED)] })]);
+  const [a, ...rest] = decisions(decide(s));
+  assert.equal(rest.length, 0);
+  assert.equal(a.spec, 12);
+  assert.equal(a.issue, 12);
+  assert.equal(a.threadId, "555");
+  assert.equal(a.reports, "/c/run1");
+  assert.match(a.reason, /formal-spec|Formal Spec|検証/);
+});
+
+test("判断依頼(検証失敗): 承認済みの仕様でも出す", () => {
+  const s = snapshot([spec(12, { comments: [...sentComments, byViewer(STARTED), byViewer(FINISHED(0)), byViewer(FSPEC_FAILED)] })]);
+  assert.equal(decisions(decide(s)).filter((a) => a.issue === 12).length, 1);
+});
+
+test("判断依頼(検証失敗): 1 行目が見出しでない・他人が書いた・passed で上書きされた場合は出さない", () => {
+  const withComments = (...comments) => decide(snapshot([issue(12, { labels: ["spec"], comments: [...sentComments, ...comments] })]));
+  assert.deepEqual(decisions(withComments(byViewer("前回は\n## Formal Spec（takt 0.71.0 の検証器で failed）"))), []);
+  assert.deepEqual(decisions(withComments({ author: "someone", body: FSPEC_FAILED })), []);
+  assert.deepEqual(decisions(withComments(byViewer(FSPEC_FAILED), byViewer(FSPEC_PASSED))), []);
+  assert.equal(decisions(withComments(byViewer(FSPEC_PASSED), byViewer(FSPEC_FAILED))).length, 1);
+});
+
+test("判断依頼(検証失敗): 承認依頼のスレッドが無い仕様、閉じた仕様には出さない", () => {
+  const noThread = snapshot([issue(12, { labels: ["spec"], comments: [byViewer(FSPEC_FAILED)] })]);
+  assert.deepEqual(decisions(decide(noThread)), []);
+  const closed = snapshot([issue(12, { labels: ["spec"], state: "CLOSED", comments: [...sentComments, byViewer(FSPEC_FAILED)] })]);
+  assert.deepEqual(decisions(decide(closed)), []);
+});
+
+test("判断依頼: 送り済みのマーカーが仕様にあれば、空の dispatched でも二度出さない（ABORT）", () => {
+  const w = abortWorld([task()], { specComments: [byViewer(ABORT_MARKER(21))] });
+  assert.deepEqual(decisions(decide(w)), []);
+});
+
+test("判断依頼: 送り済みのマーカーが仕様にあれば、空の dispatched でも二度出さない（検証失敗）", () => {
+  const s = snapshot([issue(12, { labels: ["spec"], comments: [...sentComments, byViewer(FSPEC_FAILED), byViewer(FSPEC_MARKER(12))] })]);
+  assert.deepEqual(decisions(decide(s)), []);
+});
+
+test("判断依頼: 同じ周の dispatched に key があれば出さない", () => {
+  const [a] = decisions(decide(abortWorld([task()])));
+  assert.deepEqual(decisions(decide(abortWorld([task()], { over: { dispatched: [a.key] } }))), []);
+});
+
+test("判断依頼: マーカーは番号の前方一致で別の issue と混同しない（#2 のマーカーで #21 を止めない）", () => {
+  const w = abortWorld([task()], { specComments: [byViewer(ABORT_MARKER(2))] });
+  assert.deepEqual(decisions(decide(w)).map((a) => a.issue), [21]);
+});
+
+test("判断依頼: マーカーは原因ごとに別で、viewer 以外が書いたマーカーでは止まらない", () => {
+  const otherCause = abortWorld([task()], { specComments: [byViewer(FSPEC_MARKER(21))] });
+  assert.deepEqual(decisions(decide(otherCause)).map((a) => a.issue), [21]);
+  const stranger = abortWorld([task()], { specComments: [{ author: "someone", body: ABORT_MARKER(21) }] });
+  assert.deepEqual(decisions(decide(stranger)).map((a) => a.issue), [21]);
+});
+
+test("判断依頼: 止まっていない仕様の流れ（takt-sequence など）の判定は変えない", () => {
+  const s = withParent({ taktTasks: [] });
+  assert.deepEqual(decisions(decide(s)), []);
+  assert.deepEqual(flow(decide(s)), [taktSequence(20, [21, 22])]);
+});

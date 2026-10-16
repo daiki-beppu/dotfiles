@@ -8,6 +8,7 @@ import {
   MARKER_KNOWLEDGE_STARTED,
   MARKER_REJECTED,
   MARKER_STARTED,
+  decisionMarker,
   knowledgePrOf,
 } from "./decide.mjs";
 
@@ -39,6 +40,18 @@ export function createExecute({ github, discord, cwd, repo, viewer, runToTickets
       github.mergeAuto(pr.number);
     } else if (action.kind === "merge-auto") {
       github.mergeAuto(action.pr);
+    } else if (action.kind === "request-decision") {
+      // マーカーは送信より先に書く（送信の成否が不明なまま流し直しても二度送らないため）。
+      github.comment(action.spec, decisionMarker(action.issue, action.cause));
+      await discord.sendDecisionRequest({
+        threadId: action.threadId,
+        spec: action.spec,
+        issue: action.issue,
+        title: action.title,
+        url: `https://github.com/${repo}/issues/${action.issue}`,
+        reason: action.reason,
+        reports: action.reports,
+      });
     } else if (action.kind === "takt-sequence") {
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);
       startTaktSequence({ cwd, repo, issues: action.issues });
