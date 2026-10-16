@@ -14,6 +14,8 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 承認依頼を送り済みで、本人の ❌ だけが付いている（差し戻しコメントなし。`spec-approved` の有無は問わない） | 差し戻しのコメントを書く |
 | `spec` と `spec-approved` が付いた open な仕様があり、その親 issue（本文に `仕様: #n` だけの行があり、sub-issue を持つ）がない | `claude -p` で `to-tickets` を実行する（親 issue と sub-issue を起こす） |
 | 親 issue と sub-issue がそろい、まだ takt に渡していない | open な sub-issue を `takt-sequence` に渡す（Orca の新しいタブ） |
+| 承認済みの open な仕様の親 issue の sub-issue がすべて closed で、学びの PR（viewer が作り、本文に `学びの元の仕様: #n` だけの行がある PR。状態は問わない）がまだない | `claude -p` で `knowledge` だけを実行し（devlog は起動しない）、できた PR に `gh pr merge <N> --auto --squash` で自動マージを予約する |
+| 同じ条件で、学びの PR が OPEN で自動マージが未予約（起動マーカーの有無は問わない。予約の前に止まった後の流し直し） | knowledge は起動せず、`gh pr merge <N> --auto --squash` だけを実行する |
 
 ## 使い方
 
@@ -39,6 +41,9 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: to-tickets を起動した` | 仕様 | to-tickets を起動した。これがある仕様には to-tickets を出さない |
 | `案内役: to-tickets が終わった（exit N）` | 仕様 | 終了。exit 0 になるまで、その仕様の親は takt に渡さない（一部だけの sub-issue を渡さないため） |
 | `案内役: takt-sequence に渡した #a #b` | 親 | 渡した。これがある親は渡さない |
+| `案内役: knowledge を起動した` | 仕様 | knowledge を起動した。これがある仕様には knowledge を出さない |
+| PR 本文の `学びの元の仕様: #n` だけの行 | 学びの PR | knowledge に書かせる。viewer の PR にこの行があれば学びの PR ありとして、二度作らない |
+| PR の `auto_merge`（REST。予約済みなら object、未予約なら null） | 学びの PR | 予約済みかどうかの判定に使う。state ファイルは持たず GitHub から読む |
 
 マーカーは起動より先に書く。起動が失敗しても二重に起動しないための順序で、失敗したら案内役は止まる。やり直すときは、該当のマーカーのコメントを消してから流し直す。
 
@@ -51,3 +56,6 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 - アーカイブされた公開スレッドのメッセージのリアクションを REST で読めるか。実 Discord で確かめていない（スレッドは 7 日で自動アーカイブ）。
 - `claude -p "/to-tickets #<spec> …"` が `disable-model-invocation: true` のスキルを headless で起動でき、確認待ちにならず起票まで進むか。実起動で確かめていない。
 - headless 実行の許可は `--allowedTools`（`gh`、`gh-subissues`、Read、Grep、Glob）で絞っている。足りなければ `scripts/to-tickets.mjs` を直す。
+- `claude -p "/knowledge …"` が headless で PR 作成まで進むか、許可（`git`、`gh`、`orca`、Read、Grep、Glob、Edit、Write）で足りるか。実起動で確かめていない。足りなければ `scripts/knowledge.mjs` を直す。
+- knowledge への素材は、仕様・親・閉じた sub-issue の番号と、takt list の `worktreePath` 配下の `.takt/runs`。worktree を片付けた後の run は渡せない（issue と PR だけが素材になる）。
+- 対象は open な仕様だけ。sub-issue がすべて閉じる前に人が仕様を閉じると、学びの PR は作られない。

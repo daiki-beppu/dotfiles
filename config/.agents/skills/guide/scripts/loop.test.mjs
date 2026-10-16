@@ -201,3 +201,49 @@ test("承認の行動も同じスナップショットで 2 周しても、行�
   await runRound(deps, dispatched);
   assert.deepEqual(calls.executed, ["request-approval:12", "approve-spec:13", "reject-spec:14"]);
 });
+
+test("dry-run: knowledge の行動も例外にせず、key を含めて log に表示する", async () => {
+  const closed = (number) => issue(number, { state: "CLOSED" });
+  const deps = {
+    readSnapshot: async () => ({
+      repo: REPO,
+      viewer: VIEWER,
+      issues: [
+        issue(12, { labels: ["spec", "spec-approved"], comments: sentComments }),
+        issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "CLOSED" }] }),
+        closed(21),
+      ],
+      taktIssues: [],
+      pullRequests: [],
+    }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+    log: (m) => logs.push(m),
+  };
+  const logs = [];
+  await runRound({ ...deps, dryRun: true }, new Set());
+  assert.match(logs.join("\n"), /knowledge:12/);
+});
+
+test("dry-run: merge-auto の行動も例外にせず、key を含めて log に表示する", async () => {
+  const logs = [];
+  await runRound(
+    {
+      readSnapshot: async () => ({
+        repo: REPO,
+        viewer: VIEWER,
+        issues: [
+          issue(12, { labels: ["spec", "spec-approved"], comments: sentComments }),
+          issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "CLOSED" }] }),
+          issue(21, { state: "CLOSED" }),
+        ],
+        taktIssues: [],
+        pullRequests: [{ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #12", autoMerge: false }],
+      }),
+      execute: async () => assert.fail("dry-run では execute を呼ばない"),
+      log: (m) => logs.push(m),
+      dryRun: true,
+    },
+    new Set(),
+  );
+  assert.match(logs.join("\n"), /merge-auto:50/);
+});

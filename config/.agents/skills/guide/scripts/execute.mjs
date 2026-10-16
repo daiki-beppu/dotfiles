@@ -5,11 +5,13 @@ import {
   MARKER_APPROVAL_SENT_PREFIX,
   MARKER_FINISHED_PREFIX,
   MARKER_HANDED_PREFIX,
+  MARKER_KNOWLEDGE_STARTED,
   MARKER_REJECTED,
   MARKER_STARTED,
+  knowledgePrOf,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, runToTickets, startTaktSequence }) {
+export function createExecute({ github, discord, cwd, repo, viewer, runToTickets, startTaktSequence, runKnowledge, taktRunDirs }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -27,7 +29,17 @@ export function createExecute({ github, discord, cwd, repo, runToTickets, startT
       const { code, logFile } = await runToTickets({ cwd, spec: action.spec });
       github.comment(action.spec, `${MARKER_FINISHED_PREFIX}${code}）`);
       if (code !== 0) throw new Error(`to-tickets (#${action.spec}) が exit ${code} で終了（ログ: ${logFile}）`);
-    } else {
+    } else if (action.kind === "knowledge") {
+      github.comment(action.spec, MARKER_KNOWLEDGE_STARTED);
+      const runDirs = taktRunDirs(cwd, [...action.subIssues]);
+      const { code, logFile } = await runKnowledge({ cwd, repo, spec: action.spec, parents: action.parents, subIssues: action.subIssues, runDirs });
+      if (code !== 0) throw new Error(`knowledge (#${action.spec}) が exit ${code} で終了（ログ: ${logFile}）`);
+      const pr = knowledgePrOf(github.readPullRequests(), viewer, action.spec);
+      if (pr === null) throw new Error(`knowledge (#${action.spec}) の後に学びの PR が見つからない（ログ: ${logFile}）`);
+      github.mergeAuto(pr.number);
+    } else if (action.kind === "merge-auto") {
+      github.mergeAuto(action.pr);
+    } else if (action.kind === "takt-sequence") {
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);
       startTaktSequence({ cwd, repo, issues: action.issues });
     }

@@ -2,9 +2,9 @@
 // 参照の解析やマーカーの判定は decide.mjs の責務で、ここでは取得対象を絞るだけにする。
 import { execFileSync } from "node:child_process";
 
-export function createGithub({ repo, cwd }) {
+export function createGithub({ repo, cwd, execFile = execFileSync }) {
   const gh = (args) =>
-    execFileSync("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, timeout: 120_000 });
+    execFile("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, timeout: 120_000 });
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
 
   return {
@@ -33,6 +33,21 @@ export function createGithub({ repo, cwd }) {
               : [],
           };
         });
+    },
+
+    // 全状態の PR。学びの PR の照合（decide.mjs の knowledgePrOf）に使う。
+    readPullRequests() {
+      return paged(`repos/${repo}/pulls?state=all&per_page=100`).map((p) => ({
+        number: p.number,
+        state: p.merged_at ? "MERGED" : p.state.toUpperCase(),
+        author: p.user?.login,
+        body: p.body ?? "",
+        autoMerge: p.auto_merge != null,
+      }));
+    },
+
+    mergeAuto(number) {
+      gh(["pr", "merge", String(number), "--repo", repo, "--auto", "--squash"]);
     },
 
     comment(number, body) {
