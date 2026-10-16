@@ -138,9 +138,11 @@
                 # Determinate Nix（nix.enable = false）のため nix.gc / nix.optimise が
                 # 使えない。代わりに nh clean all を root の launchd daemon で週次実行し、
                 # 古い世代・orphan gcroot の削除とストアの重複排除を行う。
-                # 保持ポリシー: 直近 30 日の世代はすべて保持 + それ以前は最低 1 世代。
+                # 保持ポリシー: 最新 3 世代だけ保持（rollback 先を 2 つ残す）。
+                # --keep-since は既定の 0h のため、direnv の gcroot も実行時点で
+                # 消え、次に入ったときに再評価される。
                 launchd.daemons.nh-clean = {
-                  command = "${pkgs.nh}/bin/nh clean all --keep 1 --keep-since 30d --optimise";
+                  command = "${pkgs.nh}/bin/nh clean all --keep 3 --optimise";
                   serviceConfig = {
                     # 月曜 12:00（スリープ中に時刻を跨ぐと launchd はその回を
                     # スキップするため、稼働している可能性が高い日中に設定）
@@ -153,6 +155,39 @@
                     ];
                     StandardOutPath = "/var/log/nh-clean.log";
                     StandardErrorPath = "/var/log/nh-clean.err.log";
+                  };
+                };
+
+                # ── Codex セッションの週次削除 ──
+                # Orca 経由の Codex は自動実行で 1 日 1G 近いセッションを書くため、
+                # 最終更新から 7 日を過ぎた rollout を消す。日付ディレクトリではなく
+                # mtime で判定し、何日も続いているセッションは残す。
+                # Orca は runtime-home・各アカウント・~/.codex の sessions を
+                # ハードリンクで共有し、欠けた側を作り直すため、3 か所とも消す。
+                launchd.user.agents.codex-sessions-clean = {
+                  command = "${pkgs.writeShellScript "codex-sessions-clean" ''
+                    shopt -s nullglob
+                    for dir in \
+                      "/Users/${username}"/Library/Application\ Support/orca/codex-runtime-home/home/sessions \
+                      "/Users/${username}"/Library/Application\ Support/orca/codex-accounts/*/home/sessions \
+                      "/Users/${username}"/.codex/sessions \
+                      "/Users/${username}"/.codex/archived_sessions; do
+                      [ -d "$dir" ] || continue
+                      /usr/bin/find "$dir" -type f -name 'rollout-*.jsonl' -mtime +7 -print -delete
+                      /usr/bin/find "$dir" -mindepth 1 -type d -empty -delete
+                    done
+                  ''}";
+                  serviceConfig = {
+                    # nh-clean と同じ月曜 12:00
+                    StartCalendarInterval = [
+                      {
+                        Weekday = 1;
+                        Hour = 12;
+                        Minute = 0;
+                      }
+                    ];
+                    StandardOutPath = "/tmp/codex-sessions-clean.log";
+                    StandardErrorPath = "/tmp/codex-sessions-clean.err.log";
                   };
                 };
 
