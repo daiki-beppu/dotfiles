@@ -88,7 +88,8 @@ dotfiles/
 ├── docs/
 │   ├── manual-setup.md         # 手動設定ガイド
 │   ├── takt-usage-baseline.md  # takt 運用状況のベースライン記録
-│   └── knowledge/              # 作業の学びに関する開発ログ
+│   ├── devlog/                 # 作業の学びを記事にした開発ログ（公開前提）
+│   └── knowledge/              # GLOSSARY・ADR を補うトピック別の知識文書
 └── plans/                 # improve 監査に基づく実装プラン群
 ```
 
