@@ -13,14 +13,17 @@ description: macOS のメモリ（RAM）の計測と解放に使う。孤児プ�
 memory_pressure -Q
 sysctl vm.swapusage
 top -l 1 -o mem -n 30 -stats pid,ppid,command,mem
-ps -axo pid=,ppid=,etime=,command= | awk '$2==1'
+ps -U "$USER" -o pid=,ppid=,etime=,rss=,command= | awk '$2==1' \
+  | grep -vE ' (/System|/usr/(libexec|sbin|bin)|/Applications/[^ ]*\.app|/Library/)'
 ```
+
+launchd が直接起動したデーモンも PPID 1 になるため、孤児の候補はユーザー権限のプロセスに限り、システムやアプリ本体のパスを除いて絞る。
 
 上位のプロセスを持ち主ごとにまとめる。持ち主は親をたどるか、`lsof -a -p <pid> -d cwd` で作業ディレクトリを見て決める。同じ名前の `node` でも、MCP サーバー・dev server・`tsc --watch` などが混ざっている。
 
 次の 3 つに分ける。
 
-- **孤児**: PPID が 1 で、起動元のセッションやエディタがもう無いもの。終了したエージェントのセッションが残した MCP サーバー（`chrome-devtools-mcp`、`chrome-headless-shell` など）、閉じた worktree の dev server や watcher が典型。
+- **孤児**: PPID が 1 で、起動元のセッションやエディタがもう無いもの。終了したエージェントのセッションが残した MCP サーバー（`chrome-devtools-mcp`、`chrome-headless-shell` など）、閉じた worktree の dev server や watcher が典型。エージェントのバックグラウンドのシェル（`zsh -c source …/shell-snapshots/…`）も、待ち合わせのループが終わらずに残る。`pgrep -f "<パターン>"` で待つループは、自分のコマンドラインに一致して永久に回る。
 - **使っていないアプリ**: 起動しているが、今の作業で使っていない GUI アプリ。
 - **報告のみ**: 使用中のもの、または判断がつかないもの。
 
