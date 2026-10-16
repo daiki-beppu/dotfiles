@@ -1,9 +1,10 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
 // I/O・時刻・環境変数は読まない（import も持たない）。LLM も使わず、ラベルと状態だけで決める。
 //
-// snapshot: { repo, viewer, discordUserId, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
+// snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
 //             reactions: [{ emoji, userId }] }], taktIssues: [number], dispatched: [key],
 //             taktTasks: [{ issue, kind, createdAt, step, error, worktreePath }] }
+//   fromSpec: 指定があれば、番号がそれ以上の仕様だけを扱う（既存の仕様が多い repo に向けるとき、新しい仕様だけを流すため）
 // 行動: { kind: "request-approval", key, spec, title } | { kind: "approve-spec", key, spec } | { kind: "reject-spec", key, spec }
 //     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
 //     | { kind: "knowledge", key, spec, parents, subIssues }   （snapshot.pullRequests: [{ number, state, author, body, autoMerge }]）
@@ -68,6 +69,13 @@ const markers = (issue, viewer) =>
 const hasLabel = (issue, name) => (issue.labels ?? []).includes(name);
 const isSpec = (issue) => hasLabel(issue, "spec");
 
+// 扱う仕様: OPEN で spec、fromSpec の指定があれば番号がそれ以上。番号の昇順。
+// 範囲の外の仕様は、承認依頼・to-tickets・takt-sequence・学び・判断依頼のどれにも出さない。
+const openSpecs = (snapshot) =>
+  snapshot.issues
+    .filter((i) => i.state === "OPEN" && isSpec(i) && (snapshot.fromSpec === undefined || i.number >= snapshot.fromSpec))
+    .sort((a, b) => a.number - b.number);
+
 // 送り済みの承認依頼（viewer の「送った」マーカー）のスレッドとメッセージの ID。無ければ null。
 export function sentApprovalRequest(issue, viewer) {
   for (const body of markers(issue, viewer)) {
@@ -85,8 +93,7 @@ export const awaitsReaction = (issue, viewer) =>
 function decideApproval(snapshot, dispatched) {
   const { viewer, discordUserId } = snapshot;
   const actions = [];
-  const specs = snapshot.issues.filter((i) => i.state === "OPEN" && isSpec(i)).sort((a, b) => a.number - b.number);
-  for (const spec of specs) {
+  for (const spec of openSpecs(snapshot)) {
     const approved = hasLabel(spec, "spec-approved");
     const own = markers(spec, viewer);
     if (!own.some((b) => b.startsWith(MARKER_APPROVAL_SENDING))) {
@@ -136,8 +143,7 @@ function decideDecisionRequests(snapshot, dispatched) {
   const { viewer, issues } = snapshot;
   const tasks = snapshot.taktTasks ?? [];
   const actions = [];
-  const specs = issues.filter((i) => i.state === "OPEN" && isSpec(i)).sort((a, b) => a.number - b.number);
-  for (const spec of specs) {
+  for (const spec of openSpecs(snapshot)) {
     const sent = sentApprovalRequest(spec, viewer);
     if (sent === null) continue;
     const own = markers(spec, viewer);
@@ -172,9 +178,7 @@ export function decide(snapshot) {
   const dispatched = new Set(snapshot.dispatched ?? []);
   const takt = new Set((snapshot.taktIssues ?? []).map(Number));
 
-  const approved = issues
-    .filter((i) => i.state === "OPEN" && isSpec(i) && hasLabel(i, "spec-approved"))
-    .sort((a, b) => a.number - b.number);
+  const approved = openSpecs(snapshot).filter((i) => hasLabel(i, "spec-approved"));
 
   const actions = decideApproval(snapshot, dispatched);
   const handedParents = new Set();
