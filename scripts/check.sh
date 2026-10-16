@@ -260,7 +260,10 @@ check_guide() {
   PATH="$(dirname "$node_bin"):/usr/bin:/bin" node --test \
     config/.agents/skills/guide/scripts/decide.test.mjs \
     config/.agents/skills/guide/scripts/loop.test.mjs \
-    config/.agents/skills/guide/scripts/execute.test.mjs
+    config/.agents/skills/guide/scripts/execute.test.mjs \
+    config/.agents/skills/guide/scripts/discord.test.mjs \
+    config/.agents/skills/guide/scripts/keychain.test.mjs \
+    config/.agents/skills/guide/scripts/snapshot.test.mjs
 }
 
 # ---------------------------------------------------------------------------

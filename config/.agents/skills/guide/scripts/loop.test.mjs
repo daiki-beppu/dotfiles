@@ -16,7 +16,11 @@ const issue = (number, over = {}) => ({
   subIssues: [],
   ...over,
 });
-const spec = (number) => issue(number, { labels: ["spec", "spec-approved"] });
+// 承認依頼は送り済み（承認依頼の行動を出さず、to-tickets の流れだけを見る）
+const SENDING = "案内役: Discord に承認依頼を送る";
+const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
+const sentComments = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: SENT }];
+const spec = (number) => issue(number, { labels: ["spec", "spec-approved"], comments: sentComments });
 
 // GitHub 上の状態が周をまたいで変わらない固定のスナップショット（dispatched はループが足す）。
 const fixed = () => ({
@@ -162,4 +166,38 @@ test("ループ: execute の失敗は再試行せず即座に止まる", async (
     /orca failed/,
   );
   assert.equal(executes, 1);
+});
+
+// ---- 承認の行動（Discord）----
+
+const approvalSnapshot = async () => ({
+  repo: REPO,
+  viewer: VIEWER,
+  discordUserId: "U1",
+  taktIssues: [],
+  issues: [
+    issue(12, { labels: ["spec"] }),
+    issue(13, { labels: ["spec"], comments: sentComments, reactions: [{ emoji: "✅", userId: "U1" }] }),
+    issue(14, { labels: ["spec"], comments: sentComments, reactions: [{ emoji: "❌", userId: "U1" }] }),
+  ],
+});
+
+test("dry-run: 承認の 3 種類の行動も execute を呼ばず、key を含めて log に表示する（例外にしない）", async () => {
+  const { calls, deps } = fakes({ readSnapshot: approvalSnapshot });
+  const dispatched = new Set();
+  await runRound({ ...deps, dryRun: true }, dispatched);
+  assert.deepEqual(calls.executed, []);
+  assert.equal(dispatched.size, 0);
+  const out = calls.logs.join("\n");
+  assert.match(out, /request-approval:12/);
+  assert.match(out, /approve-spec:13/);
+  assert.match(out, /reject-spec:14/);
+});
+
+test("承認の行動も同じスナップショットで 2 周しても、行動ごとに execute は 1 回だけ", async () => {
+  const { calls, deps } = fakes({ readSnapshot: approvalSnapshot });
+  const dispatched = new Set();
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  assert.deepEqual(calls.executed, ["request-approval:12", "approve-spec:13", "reject-spec:14"]);
 });
