@@ -12,7 +12,7 @@
 # defining check_<name> (dashes become underscores) and listing <name> there.
 set -euo pipefail
 
-DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit guard-pkill agent-skills)
+DEFAULT_CHECKS=(nix-eval shellcheck links hooks guard-main-commit guard-pkill agent-skills guide)
 # Opt-in: inspects this Mac, so it is not part of the default run.
 OPT_IN_CHECKS=(mas-declared)
 
@@ -243,6 +243,24 @@ check_agent_skills() {
   fi
   [ -z "$(ls -A "$tmp_dir/shared")" ] || return 1
 
+}
+
+# ---------------------------------------------------------------------------
+# Check: guide
+# Runs the pure decision and loop tests of the guide skill. They inject fakes and
+# must pass without gh, takt, claude or orca on PATH.
+# ---------------------------------------------------------------------------
+check_guide() {
+  echo "== guide =="
+  local node_bin
+  node_bin="$(command -v node)" || {
+    echo "node is required for the guide check" >&2
+    return 1
+  }
+  PATH="$(dirname "$node_bin"):/usr/bin:/bin" node --test \
+    config/.agents/skills/guide/scripts/decide.test.mjs \
+    config/.agents/skills/guide/scripts/loop.test.mjs \
+    config/.agents/skills/guide/scripts/execute.test.mjs
 }
 
 # ---------------------------------------------------------------------------
