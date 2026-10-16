@@ -31,3 +31,17 @@ Claude Code は user-level の AGENTS.md を読まないため、
 
 Codex Cloud で公開するサブセットは `config/codex-cloud/skills.txt` を正とし、
 `scripts/sync-agent-skills.sh --manifest` で対象のみリンクする。
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (daiki-beppu/dotfiles) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
