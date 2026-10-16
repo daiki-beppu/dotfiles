@@ -5,7 +5,7 @@
 - JS/TS のツールチェーンとパッケージ管理は vite-plus（`vp`）。
 - Node は 24 以上（LTS）を前提にする。
 - 開発環境は各言語の標準ツールで用意する。Nix はこの Mac のホスト管理専用で、プロジェクトには flake.nix を置かない。
-- PR は `gh stack` で積む。
+- PR を `gh stack` で積むのは、takt を通さない手作業のときだけ。takt は Stacked PR に対応していないため、1 ticket = 1 ユーザーストーリー = main 向けの 1 PR にして、1 つずつマージする。
 
 ## 作業場所: Orca の worktree
 
