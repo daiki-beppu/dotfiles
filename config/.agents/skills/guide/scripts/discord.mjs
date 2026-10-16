@@ -13,7 +13,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`Discord ${method} ${path.split("?")[0]} が ${res.status}`);
-    return res.json();
+    return res.status === 204 ? undefined : res.json();
   }
 
   return {
@@ -31,9 +31,14 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         auto_archive_duration: 10080,
       });
       const message = await call("POST", `/channels/${thread.id}/messages`, {
-        content: `仕様 #${spec}: ${title}\n${url}\n承認は ✅、差し戻しは ❌ をこのメッセージに付けてください。`,
+        content: `仕様 #${spec}: ${title}\n${url}\n承認は ✅、差し戻しは ❌ を押してください。`,
         allowed_mentions: { parse: [] },
       });
+      // 押すだけで済むよう Bot が ✅ / ❌ を先に付けておく。判定は本人の分だけを見るので、Bot の分は数えない。
+      // 送信は済んでいるので、付け損ねても例外にしない（本人が手で付ければ同じに動く）。
+      for (const emoji of EMOJIS) {
+        await call("PUT", `/channels/${thread.id}/messages/${message.id}/reactions/${encodeURIComponent(emoji)}/@me`).catch(() => {});
+      }
       return { threadId: thread.id, messageId: message.id };
     },
 
