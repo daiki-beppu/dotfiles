@@ -75,9 +75,12 @@ test("チャンネル: 呼ぶたびに Discord から探し直し、前回の結
 
 // ---- スレッドと承認依頼 ----
 
+const noContent = () => new Response(null, { status: 204 });
 const sendRoutes = () => ({
   "POST /api/v10/channels/c1/threads": json({ id: "T1" }),
   "POST /api/v10/channels/T1/messages": json({ id: "M1" }),
+  [`PUT /api/v10/channels/T1/messages/M1/reactions/${CHECK}/@me`]: noContent(),
+  [`PUT /api/v10/channels/T1/messages/M1/reactions/${CROSS}/@me`]: noContent(),
 });
 const issueUrl = "https://github.com/o/live-mindmap/issues/12";
 
@@ -85,7 +88,7 @@ test("承認依頼: スレッド（公開, type 11）を立て、その中に題
   const { calls, discord } = adapter(sendRoutes());
   const result = await discord.sendApprovalRequest({ channelId: "c1", spec: 12, title: "仕様A", url: issueUrl });
   assert.deepEqual(result, { threadId: "T1", messageId: "M1" });
-  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/c1/threads", "POST /api/v10/channels/T1/messages"]);
+  assert.deepEqual(calls.slice(0, 2).map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/c1/threads", "POST /api/v10/channels/T1/messages"]);
   assert.equal(calls[0].body.type, 11);
   assert.ok(calls[0].body.name.length > 0 && calls[0].body.name.length <= 100);
   assert.ok(calls[1].body.content.includes("仕様A"));
@@ -107,7 +110,30 @@ test("承認依頼: 題名の @everyone でメンション通知が飛ばない�
 test("承認依頼: 書き込みの body は JSON で、Content-Type を付ける", async () => {
   const { calls, discord } = adapter(sendRoutes());
   await discord.sendApprovalRequest({ channelId: "c1", spec: 12, title: "仕様A", url: issueUrl });
-  for (const c of calls) assert.match(c.headers.get("content-type"), /application\/json/);
+  for (const c of calls.filter((c) => c.body !== undefined)) assert.match(c.headers.get("content-type"), /application\/json/);
+});
+
+test("承認依頼: 送ったメッセージに Bot が ✅・❌ の順でリアクションを先に付ける", async () => {
+  const { calls, discord } = adapter(sendRoutes());
+  await discord.sendApprovalRequest({ channelId: "c1", spec: 12, title: "仕様A", url: issueUrl });
+  assert.deepEqual(calls.slice(2).map((c) => `${c.method} ${c.path}`), [
+    `PUT /api/v10/channels/T1/messages/M1/reactions/${CHECK}/@me`,
+    `PUT /api/v10/channels/T1/messages/M1/reactions/${CROSS}/@me`,
+  ]);
+});
+
+test("承認依頼: 先付けのリアクションが失敗しても、送信は済んでいるので ID を返す", async () => {
+  const { discord } = adapter({
+    ...sendRoutes(),
+    [`PUT /api/v10/channels/T1/messages/M1/reactions/${CHECK}/@me`]: json({ message: "Missing Permissions" }, 403),
+  });
+  const result = await discord.sendApprovalRequest({ channelId: "c1", spec: 12, title: "仕様A", url: issueUrl });
+  assert.deepEqual(result, { threadId: "T1", messageId: "M1" });
+});
+
+test("リアクション: Bot が先に付けた ✅・❌ は本人の操作として数えない", async () => {
+  const { discord } = adapter(reactionRoutes(["BOT"], ["BOT"]));
+  assert.deepEqual(await discord.readReactions({ threadId: "T1", messageId: "M1" }), []);
 });
 
 // ---- リアクション: 本人だけ、✅ / ❌ の語彙だけ ----
