@@ -5,6 +5,8 @@
 //             reactions: [{ emoji, userId }] }], taktIssues: [number], dispatched: [key] }
 // 行動: { kind: "request-approval", key, spec, title } | { kind: "approve-spec", key, spec } | { kind: "reject-spec", key, spec }
 //     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
+//     | { kind: "knowledge", key, spec, parents, subIssues }   （snapshot.pullRequests: [{ number, state, author, body, autoMerge }]）
+//     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
 export const MARKER_FINISHED_PREFIX = "案内役: to-tickets が終わった（exit ";
@@ -21,6 +23,10 @@ const REJECT_EMOJI = "❌";
 
 const FINISHED = /^案内役: to-tickets が終わった（exit (\d+)）/;
 
+// 学び（knowledge）: 起動前に仕様の issue へ書くマーカーと、学びの PR 本文に書く記録の行の接頭辞。
+export const MARKER_KNOWLEDGE_STARTED = "案内役: knowledge を起動した";
+export const KNOWLEDGE_SPEC_PREFIX = "学びの元の仕様: #";
+
 // 親 issue の本文に書く記録の行の接頭辞。`仕様: #n` だけの行を、仕様 n の親の印として数える。
 export const PARENT_SPEC_PREFIX = "仕様: #";
 
@@ -28,6 +34,18 @@ const isParentOf = (issue, n) =>
   (issue.subIssues ?? []).length > 0 &&
   typeof issue.body === "string" &&
   issue.body.split(/\r?\n/).some((line) => line.trim() === `${PARENT_SPEC_PREFIX}${n}`);
+
+// viewer が作り、本文に `学びの元の仕様: #spec` だけの行がある PR（状態は問わない）。無ければ null。
+export function knowledgePrOf(pullRequests, viewer, spec) {
+  return (
+    (pullRequests ?? []).find(
+      (pr) =>
+        pr.author === viewer &&
+        typeof pr.body === "string" &&
+        pr.body.split(/\r?\n/).some((line) => line.trim() === `${KNOWLEDGE_SPEC_PREFIX}${spec}`),
+    ) ?? null
+  );
+}
 
 // viewer が書き、本文が接頭辞で始まるコメントだけをマーカーとして数える
 const markers = (issue, viewer) =>
@@ -119,6 +137,27 @@ export function decide(snapshot) {
       if (handed || open.length === 0 || open.some((n) => takt.has(n)) || dispatched.has(pkey)) continue;
       handedParents.add(parent.number);
       actions.push({ kind: "takt-sequence", key: pkey, parent: parent.number, issues: open });
+    }
+
+    // 遷移 3: 仕様を指す親の sub-issue がすべて閉じている。学びの PR も起動マーカーも無ければ knowledge、
+    // 学びの PR が OPEN で自動マージが未予約なら（マーカーの有無によらず）予約だけを出す
+    const kkey = `knowledge:${spec.number}`;
+    const allClosed = candidates.length > 0 && candidates.every((p) => (p.subIssues ?? []).every((s) => s.state === "CLOSED"));
+    if (!allClosed) continue;
+    const knowledgePr = knowledgePrOf(snapshot.pullRequests, viewer, spec.number);
+    if (knowledgePr !== null) {
+      const mkey = `merge-auto:${knowledgePr.number}`;
+      if (knowledgePr.state === "OPEN" && !knowledgePr.autoMerge && !dispatched.has(mkey)) {
+        actions.push({ kind: "merge-auto", key: mkey, spec: spec.number, pr: knowledgePr.number });
+      }
+    } else if (!specMarkers.some((b) => b.startsWith(MARKER_KNOWLEDGE_STARTED)) && !dispatched.has(kkey)) {
+      actions.push({
+        kind: "knowledge",
+        key: kkey,
+        spec: spec.number,
+        parents: candidates.map((p) => p.number),
+        subIssues: candidates.flatMap((p) => p.subIssues.map((s) => s.number)),
+      });
     }
   }
   return actions;

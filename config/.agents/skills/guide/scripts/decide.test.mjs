@@ -463,3 +463,150 @@ test("純粋性: 承認の遷移でも入力を変更せず、同じ入力に同
   assert.deepEqual(first, [requestApproval(5), approveSpec(12), rejectSpec(13)]);
   assert.deepEqual(decide(s), first);
 });
+
+// ---- 遷移: 仕様の sub-issue がすべて閉じ、学びの PR がまだない → knowledge ----
+
+const KNOWLEDGE_STARTED = "案内役: knowledge を起動した";
+const closedSubs = (...nums) => nums.map((number) => ({ number, state: "CLOSED" }));
+const knowledgeActions = (actions) => actions.filter((a) => a.kind === "knowledge");
+const knowledge = (n, parents, subIssues) => ({ kind: "knowledge", key: `knowledge:${n}`, spec: n, parents, subIssues });
+const pr = (number, body, over = {}) => ({ number, state: "MERGED", author: VIEWER, body, autoMerge: false, ...over });
+const mergeActions = (actions) => actions.filter((a) => a.kind === "merge-auto");
+
+// 仕様 #12・親 #20（sub-issue #21 #22 がともに閉じている）の基準の状態。
+const allClosed = (over = {}, specOver = {}) =>
+  snapshot(
+    [
+      spec(12, { comments: [byViewer(STARTED), byViewer(FINISHED(0))], ...specOver }),
+      issue(20, { body: "仕様: #12", subIssues: closedSubs(21, 22) }),
+      issue(21, { state: "CLOSED" }),
+      issue(22, { state: "CLOSED" }),
+    ],
+    { pullRequests: [], ...over },
+  );
+
+test("knowledge: sub-issue がすべて閉じ、学びの PR が無ければ、親・閉じた sub-issue を載せて出す", () => {
+  assert.deepEqual(knowledgeActions(decide(allClosed())), [knowledge(12, [20], [21, 22])]);
+});
+
+test("knowledge: pullRequests が無い（旧形式の）スナップショットでも、PR 無しとして出す", () => {
+  const s = allClosed();
+  delete s.pullRequests;
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20], [21, 22])]);
+});
+
+test("knowledge: 親が人の作ったもの（起動マーカー無し）でも、全部閉じていれば出す", () => {
+  const s = allClosed({}, { comments: [] });
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20], [21, 22])]);
+});
+
+test("knowledge: sub-issue に開いたものが 1 件でも残っていれば出さない（閉じたものがあっても）", () => {
+  const s = allClosed();
+  s.issues.find((i) => i.number === 20).subIssues = [{ number: 21, state: "CLOSED" }, { number: 22, state: "OPEN" }];
+  assert.deepEqual(knowledgeActions(decide(s)), []);
+});
+
+test("knowledge: 親が 2 つあり片方に開いた sub-issue が残っていれば出さない", () => {
+  const s = allClosed();
+  s.issues.push(issue(30, { body: "仕様: #12", subIssues: [{ number: 31, state: "OPEN" }] }), issue(31));
+  assert.deepEqual(knowledgeActions(decide(s)), []);
+});
+
+test("knowledge: 親が 2 つとも全部閉じていれば、親の昇順で両方の sub-issue を載せて 1 件だけ出す", () => {
+  const s = allClosed();
+  s.issues.push(issue(30, { body: "仕様: #12", subIssues: closedSubs(31) }), issue(31, { state: "CLOSED" }));
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20, 30], [21, 22, 31])]);
+});
+
+test("knowledge: 仕様を指す親が無ければ出さない", () => {
+  assert.deepEqual(knowledgeActions(decide(snapshot([spec(12)], { pullRequests: [] }))), []);
+});
+
+test("knowledge: 承認されていない仕様・閉じた仕様には出さない", () => {
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { labels: ["spec"] }))), []);
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { state: "CLOSED" }))), []);
+});
+
+test("knowledge: to-tickets が動いている間（起動マーカーだけ）・失敗した仕様（exit 1）には出さない", () => {
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: [byViewer(STARTED)] }))), []);
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: [byViewer(STARTED), byViewer(FINISHED(1))] }))), []);
+});
+
+test("学びの PR があれば二度作らない: 状態が MERGED・CLOSED・OPEN のどれでも、本文の途中の記録の行（CRLF・前後の空白つき）で数える", () => {
+  for (const state of ["MERGED", "CLOSED", "OPEN"]) {
+    const s = allClosed({ pullRequests: [pr(50, "概要\r\n  学びの元の仕様: #12  \r\n", { state })] });
+    assert.deepEqual(knowledgeActions(decide(s)), [], state);
+  }
+});
+
+test("学びの PR の判定: 似ているが一致しない行は PR 有りと数えず、出す", () => {
+  for (const body of ["学びの元の仕様: #120", "仕様: #12", "関連: #12", "学びの元の仕様: #12 #13", "引用 > 学びの元の仕様: #12", ""]) {
+    const s = allClosed({ pullRequests: [pr(50, body)] });
+    assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20], [21, 22])], JSON.stringify(body));
+  }
+});
+
+test("学びの PR の判定: 他人が作った PR の同じ行は数えず、出す", () => {
+  const s = allClosed({ pullRequests: [pr(50, "学びの元の仕様: #12", { author: "someone" })] });
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20], [21, 22])]);
+});
+
+test("学びの PR の判定: 別の仕様の学びの PR は数えない", () => {
+  const s = allClosed({ pullRequests: [pr(50, "学びの元の仕様: #13")] });
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(12, [20], [21, 22])]);
+});
+
+test("knowledge: viewer の起動マーカーがあれば（PR がまだ無くても）出さない。他人のコメントは数えない", () => {
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: [byViewer(STARTED), byViewer(FINISHED(0)), byViewer(KNOWLEDGE_STARTED)] }))), []);
+  const other = { author: "someone", body: KNOWLEDGE_STARTED };
+  assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: [byViewer(STARTED), byViewer(FINISHED(0)), other] }))), [knowledge(12, [20], [21, 22])]);
+});
+
+test("knowledge: dispatched に knowledge:12 があれば出さない", () => {
+  assert.deepEqual(knowledgeActions(decide(allClosed({ dispatched: ["knowledge:12"] }))), []);
+});
+
+test("knowledge: 仕様ごとに独立して判定する（片方の PR は他方を止めない）", () => {
+  const s = allClosed({ pullRequests: [pr(50, "学びの元の仕様: #12")] });
+  s.issues.push(
+    spec(13, { comments: [byViewer(STARTED), byViewer(FINISHED(0))] }),
+    issue(40, { body: "仕様: #13", subIssues: closedSubs(41) }),
+    issue(41, { state: "CLOSED" }),
+  );
+  assert.deepEqual(knowledgeActions(decide(s)), [knowledge(13, [40], [41])]);
+});
+
+test("merge-auto: OPEN で未予約の学びの PR があれば、起動マーカーの有無によらず予約だけを出し、knowledge は出さない", () => {
+  for (const comments of [[byViewer(STARTED), byViewer(FINISHED(0))], [byViewer(STARTED), byViewer(FINISHED(0)), byViewer(KNOWLEDGE_STARTED)]]) {
+    const actions = decide(allClosed({ pullRequests: [pr(50, "学びの元の仕様: #12", { state: "OPEN" })] }, { comments }));
+    assert.deepEqual(mergeActions(actions), [{ kind: "merge-auto", key: "merge-auto:50", spec: 12, pr: 50 }]);
+    assert.deepEqual(knowledgeActions(actions), []);
+  }
+});
+
+test("merge-auto: 予約済み・MERGED・CLOSED の PR、または dispatched に key があれば出さない。knowledge:12 だけなら出す", () => {
+  for (const over of [{ state: "OPEN", autoMerge: true }, { state: "MERGED" }, { state: "CLOSED" }]) {
+    assert.deepEqual(mergeActions(decide(allClosed({ pullRequests: [pr(50, "学びの元の仕様: #12", over)] }))), [], JSON.stringify(over));
+  }
+  const open = [pr(50, "学びの元の仕様: #12", { state: "OPEN" })];
+  assert.deepEqual(mergeActions(decide(allClosed({ pullRequests: open, dispatched: ["merge-auto:50"] }))), []);
+  assert.equal(mergeActions(decide(allClosed({ pullRequests: open, dispatched: ["knowledge:12"] }))).length, 1);
+});
+
+test("merge-auto: viewer 以外の PR・別の仕様の PR には出さない", () => {
+  const others = [pr(50, "学びの元の仕様: #12", { state: "OPEN", author: "someone" }), pr(51, "学びの元の仕様: #13", { state: "OPEN" })];
+  assert.deepEqual(mergeActions(decide(allClosed({ pullRequests: others }))), []);
+});
+
+test("knowledge: 全部閉じていると takt-sequence は出ず、既存の遷移の出力は変わらない", () => {
+  assert.deepEqual(flow(decide(allClosed())), []);
+  assert.deepEqual(flow(decide(withParent())), [taktSequence(20, [21, 22])]);
+  assert.deepEqual(knowledgeActions(decide(withParent())), []);
+});
+
+test("純粋性: knowledge の遷移でも入力を変更せず、同じ入力に同じ出力を返す", () => {
+  const s = deepFreeze(allClosed({ pullRequests: [pr(50, "学びの元の仕様: #13")] }));
+  const first = decide(s);
+  assert.deepEqual(knowledgeActions(first), [knowledge(12, [20], [21, 22])]);
+  assert.deepEqual(decide(s), first);
+});

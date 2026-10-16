@@ -8,7 +8,8 @@ import { createGithub } from "./github.mjs";
 import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
-import { startTaktSequence, taktIssueNumbers } from "./takt.mjs";
+import { startTaktSequence, taktIssueNumbers, taktRunDirs } from "./takt.mjs";
+import { runKnowledge } from "./knowledge.mjs";
 import { runToTickets } from "./to-tickets.mjs";
 
 const usage = () => {
@@ -59,7 +60,7 @@ const readSnapshot = createReadSnapshot({
   taktIssueNumbers: () => taktIssueNumbers(cwd),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, runToTickets, startTaktSequence });
+const execute = createExecute({ github, discord, cwd, repo, viewer, runToTickets, startTaktSequence, runKnowledge, taktRunDirs });
 
 const deps = { readSnapshot, execute, log };
 try {

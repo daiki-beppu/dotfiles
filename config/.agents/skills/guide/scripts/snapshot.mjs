@@ -11,6 +11,6 @@ export function createReadSnapshot({ repo, viewer, discordUserId, github, discor
         return { ...issue, reactions };
       }),
     );
-    return { repo, viewer, discordUserId, issues, taktIssues: taktIssueNumbers() };
+    return { repo, viewer, discordUserId, issues, taktIssues: taktIssueNumbers(), pullRequests: github.readPullRequests() };
   };
 }

@@ -167,3 +167,111 @@ test("差し戻し: 本人の ❌ で issue にコメントを 1 件書き（ラ
   await round(new Set());
   assert.equal(calls.length, 1);
 });
+
+// ---- knowledge: 起動マーカー → knowledge 起動 → PR の読み直し → 自動マージの予約 ----
+
+const KNOWLEDGE_MARKER = "案内役: knowledge を起動した";
+const closedIssue = (number) => issue(number, { state: "CLOSED" });
+
+// 仕様 #12・親 #20（sub-issue #21 #22 が閉じている）の世界。runKnowledge が成功すると、viewer の学びの PR #50 が GitHub に現れる。
+const knowledgeWorld = (over = {}) => {
+  const calls = [];
+  const issues = [
+    issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS, { author: VIEWER, body: "案内役: to-tickets を起動した" }, { author: VIEWER, body: "案内役: to-tickets が終わった（exit 0）" }] }),
+    issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "CLOSED" }, { number: 22, state: "CLOSED" }] }),
+    closedIssue(21),
+    closedIssue(22),
+  ];
+  const pullRequests = [];
+  const github = {
+    comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); },
+    readPullRequests: () => pullRequests.map((p) => ({ ...p })),
+    mergeAuto: (n) => { calls.push(`merge #${n}`); pullRequests.find((p) => p.number === n).autoMerge = true; },
+  };
+  const deps = {
+    github, cwd: "/x", repo: REPO, viewer: VIEWER,
+    taktRunDirs: () => ["/w/a/.takt/runs"],
+    runKnowledge: async (args) => {
+      calls.push(`knowledge ${JSON.stringify(args)}`);
+      pullRequests.push({ number: 50, state: "OPEN", author: VIEWER, body: "概要\n学びの元の仕様: #12\n", autoMerge: false });
+      return { code: 0, logFile: "l" };
+    },
+    runToTickets: async () => assert.fail("to-tickets は起動しない"),
+    startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
+    ...over,
+  };
+  const round = (dispatched = new Set()) =>
+    runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues, taktIssues: [], pullRequests: github.readPullRequests() }), execute: createExecute(deps), log: () => {} }, dispatched);
+  return { calls, round, pullRequests };
+};
+
+test("knowledge: 起動マーカー → knowledge 起動（仕様・親・閉じた sub-issue・run を渡す）→ 作られた PR に自動マージを予約の順に実行する", async () => {
+  const { calls, round } = knowledgeWorld();
+  await round();
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0], `comment #12 ${KNOWLEDGE_MARKER}`);
+  assert.match(calls[1], /^knowledge /);
+  const args = JSON.parse(calls[1].replace(/^knowledge /, ""));
+  assert.equal(args.cwd, "/x");
+  assert.equal(args.repo, REPO);
+  assert.equal(args.spec, 12);
+  assert.deepEqual(args.parents, [20]);
+  assert.deepEqual(args.subIssues, [21, 22]);
+  assert.deepEqual(args.runDirs, ["/w/a/.takt/runs"]);
+  assert.equal(calls[2], "merge #50");
+});
+
+test("knowledge: 新しい dispatched で回し直しても（再起動しても）二度起動も予約もしない", async () => {
+  const { calls, round } = knowledgeWorld();
+  await round();
+  await round(new Set());
+  assert.equal(calls.length, 3);
+});
+
+test("knowledge: PR を作った後に exit 1 で止まっても、流し直すと予約だけを行い、予約後はさらに何もしない", async () => {
+  let world;
+  world = knowledgeWorld({
+    runKnowledge: async () => {
+      world.pullRequests.push({ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #12", autoMerge: false });
+      return { code: 1, logFile: "l" };
+    },
+  });
+  await assert.rejects(world.round(), /exit 1/);
+  assert.equal(world.calls.length, 1);
+  await world.round(new Set());
+  assert.equal(world.calls.length, 2);
+  assert.equal(world.calls[1], "merge #50");
+  await world.round(new Set());
+  assert.equal(world.calls.length, 2);
+});
+
+test("knowledge: exit が 0 でなければ予約せずに失敗し、起動マーカーは残り、再起動で再度起動しない", async () => {
+  const { calls, round } = knowledgeWorld({ runKnowledge: async () => ({ code: 1, logFile: "l" }) });
+  await assert.rejects(round(), /exit 1/);
+  assert.deepEqual(calls, [`comment #12 ${KNOWLEDGE_MARKER}`]);
+  await round(new Set());
+  assert.equal(calls.length, 1);
+});
+
+test("knowledge: exit 0 でも学びの PR が見つからなければ予約せずに失敗し、再起動で再度起動しない", async () => {
+  const { calls, round } = knowledgeWorld({ runKnowledge: async () => ({ code: 0, logFile: "l" }) });
+  await assert.rejects(round(), /PR/);
+  assert.equal(calls.some((c) => c.startsWith("merge ")), false);
+  const before = calls.length;
+  await round(new Set());
+  assert.equal(calls.length, before);
+});
+
+test("knowledge: viewer 以外が作った同じ行の PR は学びの PR と見なさず、予約せずに失敗する", async () => {
+  const { calls, round, pullRequests } = knowledgeWorld({ runKnowledge: async () => ({ code: 0, logFile: "l" }) });
+  pullRequests.push({ number: 51, state: "OPEN", author: "someone", body: "学びの元の仕様: #12" });
+  await assert.rejects(round(), /PR/);
+  assert.equal(calls.some((c) => c.startsWith("merge ")), false);
+});
+
+test("knowledge: 学びの PR が既にあれば、起動も予約もしない", async () => {
+  const { calls, round, pullRequests } = knowledgeWorld();
+  pullRequests.push({ number: 49, state: "MERGED", author: VIEWER, body: "学びの元の仕様: #12" });
+  await round();
+  assert.deepEqual(calls, []);
+});

@@ -9,11 +9,11 @@ const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 
 const issue = (number, over = {}) => ({ number, title: "t", state: "OPEN", labels: ["spec"], body: "", comments: [], subIssues: [], ...over });
 const sent = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: SENT }];
 
-const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }]) => {
+const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }], pullRequests = []) => {
   const reads = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => issues },
+    github: { readIssues: () => issues, readPullRequests: () => pullRequests },
     discord: { readReactions: async (ref) => { reads.push(ref); return reactions; } },
     taktIssueNumbers: () => [3],
   });
@@ -42,9 +42,16 @@ test("送り済みの OPEN な仕様（承認済みでも）だけ、マーカ�
 test("リアクションの取得が失敗したら例外にする", async () => {
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => [issue(12, { comments: sent })] },
+    github: { readIssues: () => [issue(12, { comments: sent })], readPullRequests: () => [] },
     discord: { readReactions: async () => { throw new Error("Discord GET が 404"); } },
     taktIssueNumbers: () => [],
   });
   await assert.rejects(read(), /404/);
+});
+
+test("pullRequests: github.readPullRequests の結果をそのままスナップショットに入れる", async () => {
+  const prs = [{ number: 50, state: "MERGED", author: VIEWER, body: "学びの元の仕様: #12" }];
+  const { read } = build([issue(12)], undefined, prs);
+  const snap = await read();
+  assert.deepEqual(snap.pullRequests, prs);
 });
