@@ -17,24 +17,14 @@
    - システム設定 → キーボード → キーボードショートカット
    - Spotlight → 「Spotlight 検索を表示」のチェックを外す
 
-## 3. oh-my-zsh のインストール
-
-`.zshrc` がテーマ（eastwood）と git plugin に使用。未インストールだとシェル起動時に警告が出る。
-
-```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --keep-zshrc
-```
-
-`--keep-zshrc` 必須（インストーラに dotfiles 管理の .zshrc を上書きさせない）。
-
-## 4. Vite+ の確認
+## 3. Vite+ の確認
 
 `darwin-rebuild switch` がグローバル CLI を自動導入する。新しいシェルで
 `command -v vp` と `vp --version` を確認する。`node` / `npm` などの shim は
 system-first に設定し、既存の Node.js／パッケージマネージャーを継続使用する。
 導入方法と更新手順は README の「PATH 優先順位」「よくある操作」を参照。
 
-## 5. アプリの初期設定
+## 4. アプリの初期設定
 
 | アプリ | 設定内容 |
 |-------|---------|
@@ -42,7 +32,7 @@ system-first に設定し、既存の Node.js／パッケージマネージャ�
 | Google Drive | ログインして同期フォルダを設定 |
 | Cap | 画面収録の権限許可とショートカット設定（クラウド共有を使うならサインイン） |
 
-## 6. takt MCP の登録
+## 5. takt MCP の登録
 
 MCP サーバーの登録先（`~/.claude.json` / `~/.codex/config.toml`）は実行時データと同居しており dotfiles 管理外。
 darwin-rebuild で `~/.local/bin/takt-mcp-root` が張られた後に 1 回だけ登録する。

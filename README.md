@@ -40,7 +40,7 @@ sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (security.pam)** | sudo の Touch ID 認証 |
 | **Nix (launchd)** | 週次の自動クリーン（Nix ストア・Codex セッション） |
-| **Nix (home.activation)** | dotfiles 一式のシンボリックリンク (.zshenv, .zshrc, .zprofile, .local/bin/*, .config/zsh-abbr/*, .claude/*, .codex/AGENTS.md, .agents/skills, .takt/*) |
+| **Nix (home.activation)** | dotfiles 一式のシンボリックリンク (.zshenv, .zshrc, .zprofile, .oh-my-zsh（nixpkgs の oh-my-zsh）, .local/bin/*, .config/zsh-abbr/*, .claude/*, .codex/AGENTS.md, .agents/skills, .takt/*) |
 | **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`（shim は system-first） |
 | **Homebrew (brews)** | nixpkgs にないツール (git-lfs, ni, vercel) |
 | **Homebrew (casks)** | GUI アプリ (Claude, Codex, Cursor, Orca, Raycast 等) |
@@ -162,7 +162,6 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 
 - ディスプレイ解像度を「スペースを拡大」に変更
 - Raycast の設定（Spotlight ショートカットの変更）
-- oh-my-zsh のインストール
 - Vite+ の確認
 - アプリの初期設定（1Password・Google Drive・Cap 等）
 - takt MCP の登録
