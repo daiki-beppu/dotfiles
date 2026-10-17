@@ -19,6 +19,7 @@ const DESCRIBE = {
   "request-map-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.issue} の判断依頼を送る`,
   "request-grilling-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.ticket} の grilling の問い（判断依頼）を送る`,
   "post-provisional-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.ticket} の仮決め ${a.n} を流す`,
+  "reject-provisional-decision": (a) => `${a.key}: ticket #${a.ticket} の仮決め ${a.provisionals.map((p) => p.n).join(",")} の差し戻しを書き戻し、ticket を開き直して claim を外す`,
   "write-back-answer": (a) => `${a.key}: 本人の返信を ticket #${a.ticket} のコメントに書き戻す`,
   "inject-answer": (a) => `${a.key}: ticket #${a.ticket} の回答をタブ ${a.handle} に orca terminal send で流し込む`,
   knowledge: (a) => `${a.key}: 仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,

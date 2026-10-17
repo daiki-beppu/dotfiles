@@ -18,6 +18,7 @@ import {
   grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
+  provisionalRejectedMarker,
   provisionalSendingMarker,
   provisionalSentMarker,
 } from "./decide.mjs";
@@ -108,6 +109,11 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         evidence: action.evidence,
       });
       github.comment(action.ticket, provisionalSentMarker(action.ticket, action.n, action.threadId, messageId));
+    } else if (action.kind === "reject-provisional-decision") {
+      // 書き戻し（印）→ 開き直し → claim の解除。印は行動より先（途中で失敗して再起動しても書き戻しをやり直さない）。
+      for (const p of action.provisionals) github.comment(action.ticket, provisionalRejectedMarker(action.ticket, p.n, p.question, p.answer));
+      github.reopen(action.ticket);
+      github.removeAssignees(action.ticket, action.assignees);
     } else if (action.kind === "request-map-decision") {
       // 仕様の判断依頼と同じ印の形を、map に書く。
       github.comment(action.map, decisionMarker(action.issue, action.cause));

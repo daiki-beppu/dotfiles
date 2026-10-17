@@ -447,11 +447,16 @@ const PD_REQ = {
   question: "どの parser を使うか？", answer: "既存の parser", reason: "後で替えられるから", evidence: "[ADR](docs/adr/1.md)",
 };
 
+const pdRoutes = (id) => ({
+  "POST /api/v10/channels/T1/messages": json({ id }),
+  [`PUT /api/v10/channels/T1/messages/${id}/reactions/${CROSS}/@me`]: noContent(),
+});
+
 test("仮決め: map のスレッドに、ticket の題名・リンク・判断（問いと答え）・理由・根拠を本文に入れて 1 件送り、メッセージの ID を返す", async () => {
-  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M55" }) });
+  const { calls, discord } = adapter(pdRoutes("M55"));
   const result = await discord.sendProvisionalDecision(PD_REQ);
   assert.deepEqual(result, { messageId: "M55" });
-  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  assert.equal(`${calls[0].method} ${calls[0].path}`, "POST /api/v10/channels/T1/messages");
   const content = calls[0].body.content;
   for (const part of ["仮決め", "#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21", "どの parser を使うか？", "既存の parser", "後で替えられるから", "[ADR](docs/adr/1.md)"]) {
     assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
@@ -460,7 +465,7 @@ test("仮決め: map のスレッドに、ticket の題名・リンク・判断�
 });
 
 test("仮決め: メンション通知が飛ばない。送信が失敗したら例外にする", async () => {
-  const ok = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  const ok = adapter(pdRoutes("M1"));
   await ok.discord.sendProvisionalDecision({ ...PD_REQ, title: "@everyone", answer: "@here" });
   assert.deepEqual(ok.calls[0].body.allowed_mentions, { parse: [] });
   const down = adapter({ "POST /api/v10/channels/T1/messages": json({ message: "x" }, 403) });
@@ -468,9 +473,34 @@ test("仮決め: メンション通知が飛ばない。送信が失敗したら
 });
 
 test("仮決め: 問い・答え・理由・根拠が長くても 2000 文字以内に収め、題名とリンクと map・ticket の番号は切り落とさない", async () => {
-  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  const { calls, discord } = adapter(pdRoutes("M1"));
   await discord.sendProvisionalDecision({ ...PD_REQ, question: "q".repeat(3000), answer: "a".repeat(3000), reason: "r".repeat(3000), evidence: "e".repeat(3000) });
   const content = calls[0].body.content;
   assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21"]) assert.ok(content.includes(part), part);
+});
+
+test("仮決め: 本文で差し戻しは ❌ と案内し、送信後に Bot が ❌ だけを先付けする（✅ は付けない）", async () => {
+  const { calls, discord } = adapter(pdRoutes("M55"));
+  await discord.sendProvisionalDecision(PD_REQ);
+  assert.ok(calls[0].body.content.includes("❌"), calls[0].body.content);
+  assert.deepEqual(calls.slice(1).map((c) => `${c.method} ${c.path}`), [`PUT /api/v10/channels/T1/messages/M55/reactions/${CROSS}/@me`]);
+});
+
+test("仮決め: ❌ の先付けに失敗しても送信は成功とし、メッセージの ID を返して、失敗を warn に 1 行残す（トークンは含めない）", async () => {
+  const api = fakeApi({ ...pdRoutes("M55"), [`PUT /api/v10/channels/T1/messages/M55/reactions/${CROSS}/@me`]: json({ message: "Missing Permissions" }, 403) });
+  const warned = [];
+  const discord = createDiscord({ token: TOKEN, guildId: GUILD, userId: OWNER, fetch: api.fetch, warn: (s) => warned.push(s) });
+  assert.deepEqual(await discord.sendProvisionalDecision(PD_REQ), { messageId: "M55" });
+  assert.equal(warned.length, 1);
+  assert.match(warned[0], /403/);
+  assert.ok(!warned[0].includes(TOKEN));
+});
+
+test("仮決め: ❌ の案内を足しても、長い項目で 2000 文字を超えず、題名とリンクと番号は残る", async () => {
+  const { calls, discord } = adapter(pdRoutes("M1"));
+  await discord.sendProvisionalDecision({ ...PD_REQ, question: "q".repeat(3000), answer: "a".repeat(3000), reason: "r".repeat(3000), evidence: "e".repeat(3000) });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000 && content.includes("❌"), String(content.length));
   for (const part of ["#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21"]) assert.ok(content.includes(part), part);
 });

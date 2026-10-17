@@ -179,3 +179,21 @@ test("readComments: issue のコメントを {author, body} の形で読む", ()
   assert.deepEqual(paths, ["repos/o/r/issues/21/comments?per_page=100"]);
   assert.deepEqual(comments, [{ author: "me", body: "本文" }]);
 });
+
+test("reopen: REST の issue を PATCH して state=open にする", () => {
+  const { calls, execFile } = fakeGh(() => "{}");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).reopen(21);
+  assert.deepEqual(calls, [{ cmd: "gh", args: ["api", "-X", "PATCH", "repos/o/r/issues/21", "-f", "state=open"], cwd: "/x" }]);
+});
+
+test("removeAssignees: REST の assignees を DELETE で外す（指定したログインを assignees[] に渡す）", () => {
+  const { calls, execFile } = fakeGh(() => "{}");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).removeAssignees(21, ["a", "b"]);
+  assert.deepEqual(calls, [{ cmd: "gh", args: ["api", "-X", "DELETE", "repos/o/r/issues/21/assignees", "-f", "assignees[]=a", "-f", "assignees[]=b"], cwd: "/x" }]);
+});
+
+test("removeAssignees: 外す assignee が無ければ gh を呼ばない", () => {
+  const { calls, execFile } = fakeGh(() => "{}");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).removeAssignees(21, []);
+  assert.deepEqual(calls, []);
+});
