@@ -8,6 +8,7 @@ import { runRound } from "./loop.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
+import { launchWayfinder } from "./wayfinder.mjs";
 
 const REPO = "o/r";
 const VIEWER = "me";
@@ -30,10 +31,10 @@ const NOW = () => new Date(LAUNCHED_AT);
 const launchReply = (handle = "term_1") =>
   JSON.stringify({ result: { outcome: { kind: "terminal", handle }, receipt: { detail: "launched" }, worktreeId: "wt_1" } });
 // 偽の orca: 呼ばれた argv を calls に `orca <args>` で記録し、サブコマンドごとの応答（文字列）を返す。reply が Error なら投げる。
-const fakeOrca = (calls, { launch = launchReply(), rename = "{}" } = {}) => (args) => {
+const fakeOrca = (calls, { launch = launchReply(), rename = "{}", worktree = JSON.stringify({ ok: true, result: { worktree: { path: "/wt/new" } } }) } = {}) => (args) => {
   calls.push(`orca ${args.join(" ")}`);
   (calls.argvs ??= []).push(args);
-  const reply = args[0] === "agent" ? launch : rename;
+  const reply = args[0] === "agent" ? launch : args[0] === "worktree" ? worktree : rename;
   if (reply instanceof Error) throw reply;
   return reply;
 };
@@ -47,6 +48,7 @@ const world = (issues, over = {}) => {
     github, cwd: "/x", repo: REPO,
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
     launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
+    launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls), (cwd) => calls.push(`git fetch origin @${cwd}`)),
     now: NOW,
     startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); return { handle: "term_seq" }; },
     ...over,
@@ -631,4 +633,71 @@ test("セッション停止: 送信が失敗してもマーカーは残り、再
   assert.deepEqual(calls, [`comment #12 ${STALL_MARKER}`]);
   await round(new Set());
   assert.equal(calls.length, 1);
+});
+
+// ---- wayfinder: frontier の ticket にセッションを起動する ----
+const WF_BEFORE = (n) => `comment #${n} 案内役: wayfinder を起動する`;
+const WF_AFTER = (n) => `comment #${n} 案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`;
+const wfTicket = (number, type, over = {}) => issue(number, { labels: [`wayfinder:${type}`], assignees: [], blockedBy: [], ...over });
+const wfIssues = (...children) => [
+  issue(20, { labels: ["wayfinder:map"], subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
+  ...children,
+];
+
+test("wayfinder: ticket に起動前の印 → orca agent launch → タブ題名 → handle と時刻つきの印の順に書く。新しい dispatched で 2 周しても起動は 1 回", async () => {
+  const issues = wfIssues(wfTicket(21, "research"));
+  const { calls, round } = world(issues);
+  await round();
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0], WF_BEFORE(21));
+  assert.ok(calls[1].startsWith("orca agent launch "), calls[1]);
+  assert.ok(calls[2].startsWith("orca terminal rename "), calls[2]);
+  assert.equal(calls[3], WF_AFTER(21));
+  await round(new Set());
+  await round();
+  assert.equal(calls.length, 4);
+});
+
+test("wayfinder: 印は ticket に書く（map には書かない）", async () => {
+  const issues = wfIssues(wfTicket(21, "grilling"));
+  const { calls, round } = world(issues);
+  await round();
+  assert.ok(calls.filter((c) => c.startsWith("comment ")).every((c) => c.startsWith("comment #21 ")), calls.join("\n"));
+});
+
+test("wayfinder: frontier の 3 件に、同じ周でそれぞれ別のセッションを起動する（1 ticket 1 セッション）", async () => {
+  const issues = wfIssues(wfTicket(21, "research"), wfTicket(22, "grilling"), wfTicket(23, "research"));
+  const { calls, round } = world(issues);
+  await round();
+  const launches = orcaArgv(calls).filter((a) => a[0] === "agent");
+  assert.equal(launches.length, 3);
+  const prompts = launches.map((a) => a[a.indexOf("--prompt") + 1].split("\n")[0]);
+  assert.deepEqual(prompts, ["/wayfinder #20 #21", "/wayfinder #20 #22", "/wayfinder #20 #23"]);
+});
+
+test("wayfinder: 起動が失敗したら 2 段目の印を書かずに例外になり、再起動しても起動前の印があるので起動し直さない", async () => {
+  const issues = wfIssues(wfTicket(21, "research"));
+  const calls = [];
+  const down = {
+    launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls, { launch: new Error("orca down") }), () => {}),
+  };
+  const { round } = world(issues, down);
+  await assert.rejects(round(), /orca down/);
+  assert.equal(issues.find((i) => i.number === 21).comments.length, 1);
+  assert.equal(issues.find((i) => i.number === 21).comments[0].body, "案内役: wayfinder を起動する");
+  const again = world(issues);
+  await again.round(new Set());
+  assert.deepEqual(again.calls, []);
+});
+
+test("wayfinder: task の ticket は origin/main から作った worktree で起動し、research は main checkout で起動する", async () => {
+  const issues = wfIssues(wfTicket(21, "research"), wfTicket(23, "task"));
+  const { calls, round } = world(issues);
+  await round();
+  const create = orcaArgv(calls).filter((a) => a[0] === "worktree");
+  assert.equal(create.length, 1);
+  assert.ok(create[0].includes("origin/main"));
+  const launches = orcaArgv(calls).filter((a) => a[0] === "agent");
+  assert.equal(launches[0][launches[0].indexOf("--worktree") + 1], "path:/x");
+  assert.equal(launches[1][launches[1].indexOf("--worktree") + 1], "path:/wt/new");
 });

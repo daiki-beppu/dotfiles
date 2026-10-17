@@ -274,3 +274,23 @@ test("formal-spec: 承認依頼を送った仕様では execute に formal-spec 
   assert.ok(line, dry.calls.logs.join("\n"));
   assert.match(line, /#12/);
 });
+
+test("dry-run: wayfinder の行動も例外にせず、key・map・ticket・type を log に表示する", async () => {
+  const { calls, deps } = fakes({
+    readSnapshot: async () => ({
+      repo: REPO,
+      viewer: VIEWER,
+      issues: [
+        issue(20, { labels: ["wayfinder:map"], subIssues: [{ number: 23, state: "OPEN" }] }),
+        issue(23, { labels: ["wayfinder:task"], assignees: [], blockedBy: [] }),
+      ],
+      taktIssues: [],
+    }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+  });
+  await runRound({ ...deps, dryRun: true }, new Set());
+  const out = calls.logs.join("\n");
+  assert.match(out, /wayfinder:23/);
+  assert.match(out, /#20/);
+  assert.match(out, /task/);
+});

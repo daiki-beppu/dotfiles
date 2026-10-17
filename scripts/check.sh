@@ -268,6 +268,7 @@ check_guide() {
     config/.agents/skills/guide/scripts/args.test.mjs \
     config/.agents/skills/guide/scripts/github.test.mjs \
     config/.agents/skills/guide/scripts/takt.test.mjs \
+    config/.agents/skills/guide/scripts/wayfinder.test.mjs \
     config/.agents/skills/takt/scripts/align-decide.test.mjs
 }
 

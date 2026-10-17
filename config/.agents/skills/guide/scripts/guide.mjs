@@ -14,6 +14,7 @@ import { launchKnowledge } from "./knowledge.mjs";
 import { observeSession } from "./orca-agent.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
+import { launchWayfinder } from "./wayfinder.mjs";
 
 const usage = () => {
   console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--dry-run]");
@@ -58,7 +59,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, taktRunDirs });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs });
 
 const deps = { readSnapshot, execute, log };
 try {

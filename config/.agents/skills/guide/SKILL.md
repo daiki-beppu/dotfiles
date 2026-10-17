@@ -1,6 +1,6 @@
 ---
 name: guide
-description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送る常駐スクリプト「案内役」を動かす依頼に使う。
+description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動する常駐スクリプト「案内役」を動かす依頼に使う。
 ---
 
 # 案内役
@@ -17,6 +17,7 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 親 issue と sub-issue がそろい、まだ takt に渡していない | open な sub-issue を `takt-sequence` に渡す（Orca の新しいタブ、題名 `takt sequence <owner/repo>`）。takt-sequence の後に `案内役: takt-sequence が終わった（exit N）` の行を出させる（タブはシェルに戻るだけで閉じないので、終わったことはこの行で見分ける） |
 | 承認済みの open な仕様の親 issue の sub-issue がすべて closed で、学びの PR（viewer が作り、本文に `学びの元の仕様: #n` だけの行がある PR。状態は問わない）がまだなく、knowledge の起動の印もない | `orca agent launch --agent claude` で Orca のタブ（題名 `knowledge #n`）に `knowledge` を対話セッションとして起動する（devlog は起動しない）。終わるまで待たない。学びの PR ができたら、次の周以降に下の行で自動マージを予約する |
 | 同じ条件で、学びの PR が OPEN で自動マージが未予約（起動の印の有無は問わない。起動した周の次以降の通常の経路） | knowledge は起動せず、`gh pr merge <N> --auto --squash` だけを実行する |
+| open な `wayfinder:map` の子（sub-issue）で、open・unblocked（open なブロッカーなし）・未 claim（assignee なし）の ticket が、`wayfinder:research`・`wayfinder:grilling`・`wayfinder:task` のどれかのラベルを持ち、viewer の wayfinder の印（`案内役: wayfinder を起動する` か `案内役: wayfinder を起動した…`）がない。prototype の ticket には起動しない。frontier が複数なら同じ周でそれぞれに起動する | ticket ごとに新しいセッションを `orca agent launch --agent claude` で Orca のタブ（題名 `wayfinder #t`）に対話セッションとして起動する。プロンプトは `/wayfinder #<map> #<ticket>`。task は `git fetch origin` の後に `orca worktree create --base-branch origin/main`（名前 `wayfinder-<ticket>`）で作った worktree で、research と grilling は対象 repo の main checkout で起動する。起動したセッションの停止の観測と判断依頼はこの遷移では行わない |
 | 承認依頼を送り済みの open な仕様で、承認済みなら親の open な sub-issue の最新の takt タスク（`createdAt` が最も新しいもの）が `failed`（ABORT）、または仕様の最後の Formal Spec コメントが failed | 承認依頼のスレッドに、止まった issue・理由・takt のレポートの場所（`<worktreePath>/.takt/runs`、検証失敗なら検証器の作業ディレクトリ）を送る。原因ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様で、起動の印に handle がある工程（to-tickets など）の結果が GitHub に無く、セッションが止まった（① handle のセッションが Orca に見つからない ②入力待ち（確認・許可）③ 起動から `--stall-minutes`（既定 60）分経った。この順で理由を 1 つ選ぶ） | 承認依頼のスレッドに、工程・仕様・タブの名前（`<工程> #n`）・画面の最後の 10 行・理由を送る。結果は to-tickets なら仕様を指す親 issue、knowledge なら学びの PR、formal-spec なら viewer の Formal Spec コメント。印に handle が無い工程は観測しない。原因（`<工程> のセッションの停止`）ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様の親に handle つきの takt-sequence の起動の印があり、渡した sub-issue のうち open なものが残り、そのどれにも takt の `pending`・`running` のタスクも最新が `failed` のタスクも無く、takt-sequence が止まった（① タブが Orca に見つからない ② 画面の最後の 10 行に `案内役: takt-sequence が終わった` の行がある。この順で理由を 1 つ選ぶ。時間切れと入力待ちは見ない） | 承認依頼のスレッドに、親・open のまま残った sub-issue・タブの名前・画面の最後の 10 行・理由を送る。自動で起動し直さない。原因 `takt-sequence のセッションの停止`（N は親）で 1 度だけ。handle の起動の印が無い（古い形の）親は観測しない |
@@ -33,7 +34,7 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - `--from <n>`: 番号が n 以上の仕様だけを扱い、それより前の仕様には承認依頼も後続の行動も出さない。手で起票し終えた仕様が残っている repo に向けるとき、新しい仕様だけを流すのに使う（指定しなければ open な仕様をすべて扱う）。
 
 - `--dry-run`: 1 周だけ読み、観測した要約と行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
-- 前提: `gh` が認証済み。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge の起動に使う）。
+- 前提: `gh` が認証済み。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder の起動に使う）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
 
 ## 状態
@@ -58,6 +59,8 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: takt-sequence に渡した #a #b` | 親 | 起動する前に書く（1 段目）。これがある親は渡さない。#a #b が停止の観測で「渡した sub-issue」になる |
 | `案内役: takt-sequence を起動した（ターミナル H / T）` | 親 | 起動した後に書く（2 段目）。H は `orca terminal create --json` の応答の `result.terminal.handle`、T は起動時刻。これがある親だけ takt-sequence の停止を観測する。最後の印の handle を見る |
 | `案内役: <工程> を起動した（ターミナル H / T）` | 仕様 | to-tickets 以外の工程でも、Orca のタブで起動して handle を印に書けば、同じ形で停止の観測の対象になる（H は handle、T は起動時刻。起動時刻はこの印から読む） |
+| `案内役: wayfinder を起動する` | wayfinder の ticket | 起動する前に書く（1 段目）。map ではなく起動する ticket に書く。これがある ticket には起動を出さない。起動の成否が不明でも二重に起動しない |
+| `案内役: wayfinder を起動した（ターミナル H / T）` | wayfinder の ticket | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。これがある ticket には起動を出さない。ticket の印は停止の観測の対象にしない（観測するのは仕様の印だけ） |
 | `案内役: knowledge を起動する` | 仕様 | 起動する前に書く（1 段目）。これがある仕様には knowledge を出さない。起動の成否が不明でも二重に起動しない |
 | `案内役: knowledge を起動した（ターミナル H / T）` | 仕様 | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。handle が応答から取れなければ書かずに案内役が止まる |
 | `案内役: knowledge を起動した`（「（ターミナル」が続かない。古い版の印） | 仕様 | 読み取りだけ残す。これがある仕様には knowledge を出さない |
@@ -81,4 +84,5 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 - `orca agent launch --prompt "/knowledge …"` の対話セッションが PR 作成まで進むかは、実際の起動で確かめていない。許可については上の記述（許可を絞らない対話セッションは確認待ちで止まりうる）のとおり。
 - knowledge への素材は、仕様・親・閉じた sub-issue の番号と、takt list の `worktreePath` 配下の `.takt/runs`。worktree を片付けた後の run は渡せない（issue と PR だけが素材になる）。
 - 閉じたタブの handle を `orca terminal show` すると、`terminal_handle_stale` ではなく `ok: true` のまま `connected: false` が返る（2026-10-17 に実機で確認）。観測はどちらも「見つからない」とする。`terminal_handle_stale` が返るのは Orca の再起動後などと見ているが、確かめていない。
+- `orca worktree create --json` の応答の `result.worktree.path`（Orca の CLI の実装から読んだ形）と、`/wayfinder #<map> #<ticket>` の引数の解釈は、実機で確かめていない。
 - 対象は open な仕様だけ。sub-issue がすべて閉じる前に人が仕様を閉じると、学びの PR は作られない。
