@@ -10,7 +10,7 @@ import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
-import { runKnowledge } from "./knowledge.mjs";
+import { launchKnowledge } from "./knowledge.mjs";
 import { observeSession } from "./orca-agent.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 
@@ -57,7 +57,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, viewer, launchToTickets, now: () => new Date(), startTaktSequence, runKnowledge, taktRunDirs });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, now: () => new Date(), startTaktSequence, launchKnowledge, taktRunDirs });
 
 const deps = { readSnapshot, execute, log };
 try {
