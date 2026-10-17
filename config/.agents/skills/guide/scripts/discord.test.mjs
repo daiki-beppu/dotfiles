@@ -504,3 +504,33 @@ test("仮決め: ❌ の案内を足しても、長い項目で 2000 文字を�
   assert.ok(content.length <= 2000 && content.includes("❌"), String(content.length));
   for (const part of ["#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21"]) assert.ok(content.includes(part), part);
 });
+
+// ---- レート制限（429） ----
+
+const limited = (retryAfter) => json({ message: "You are being rate limited.", retry_after: retryAfter, global: false }, 429);
+
+test("429: retry_after の秒だけ待って同じ呼び出しをやり直す", async () => {
+  const replies = [limited(0.25), json([{ id: "c1", name: "live-mindmap", type: 0 }])];
+  const api = fakeApi({ "GET /api/v10/guilds/G1/channels": () => replies.shift() });
+  const slept = [];
+  const discord = createDiscord({ token: TOKEN, guildId: GUILD, userId: OWNER, fetch: api.fetch, sleep: async (ms) => slept.push(ms) });
+  assert.equal(await discord.ensureChannel("live-mindmap"), "c1");
+  assert.equal(api.calls.length, 2);
+  assert.deepEqual(slept, [250]);
+});
+
+test("429: retry_after が無ければ Retry-After ヘッダの秒を使う", async () => {
+  const replies = [new Response("", { status: 429, headers: { "retry-after": "2" } }), json([{ id: "c1", name: "live-mindmap", type: 0 }])];
+  const api = fakeApi({ "GET /api/v10/guilds/G1/channels": () => replies.shift() });
+  const slept = [];
+  const discord = createDiscord({ token: TOKEN, guildId: GUILD, userId: OWNER, fetch: api.fetch, sleep: async (ms) => slept.push(ms) });
+  assert.equal(await discord.ensureChannel("live-mindmap"), "c1");
+  assert.deepEqual(slept, [2000]);
+});
+
+test("429: やり直しても続けば、上限の回数で諦めて例外にする", async () => {
+  const api = fakeApi({ "GET /api/v10/guilds/G1/channels": () => limited(0.1) });
+  const discord = createDiscord({ token: TOKEN, guildId: GUILD, userId: OWNER, fetch: api.fetch, sleep: async () => {} });
+  await assert.rejects(discord.ensureChannel("live-mindmap"), /Discord GET \/guilds\/G1\/channels が 429/);
+  assert.equal(api.calls.length, 4);
+});
