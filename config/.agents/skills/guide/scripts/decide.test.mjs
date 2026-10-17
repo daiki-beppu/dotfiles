@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SEQUENCE_DONE, decide, decisionMarker, launchedMarker, sequencesToObserve, sessionsToObserve, tabTitle } from "./decide.mjs";
+// map のスレッド・人が見る ticket・ticket の停止の観測（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
+import * as D from "./decide.mjs";
 
 const REPO = "daiki-beppu/live-mindmap";
 const VIEWER = "daiki-beppu";
@@ -1494,17 +1496,378 @@ test("wayfinder: 複数の map があっても、各 map の frontier に 1 回�
   assert.deepEqual([...keys].sort(), ["wayfinder:21", "wayfinder:31"]);
 });
 
-test("wayfinder: 起動後の印があっても、停止の観測（sessionsToObserve）と判断依頼の対象にしない", () => {
-  const s = wfWorld(
-    [wfTicket(21, "task", { comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED)] })],
-    { over: { now: "2026-10-17T05:00:00.000Z", sessions: { term_1: { found: false, waiting: false, idle: false, tail: [] } } } },
-  );
-  assert.deepEqual(sessionsToObserve(s), []);
-  assert.deepEqual(decide(s).filter((a) => a.kind === "request-decision"), []);
-});
-
 test("wayfinder: 既存の遷移（承認依頼）は wayfinder の map があっても変わらない", () => {
   const base = snapshot([specBare(12)]);
   const withMap = snapshot([specBare(12), issue(20, { labels: ["wayfinder:map"] })]);
   assert.deepEqual(decide(withMap), decide(base));
+});
+
+// ---- wayfinder の map のスレッド・人が見る ticket（prototype）・ticket のセッションの停止 ----
+const MT_CREATING = "案内役: Discord に map のスレッドを立てる";
+const MT_CREATED = (thread = "900") => `案内役: Discord に map のスレッドを立てた（スレッド ${thread}）`;
+const HUMAN = (t) => `案内役: Discord に人が見る ticket を知らせる（#${t}）`;
+const WF_CAUSE = (type) => `${type} のセッションの停止`;
+const WF_LAUNCHED_AT = (handle, at = T0) => `案内役: wayfinder を起動した（ターミナル ${handle} / ${at}）`;
+const createThread = (map = 20, title = "地図") => ({ kind: "create-map-thread", key: `create-map-thread:${map}`, map, title });
+const notifies = (actions) => actions.filter((a) => a.kind === "notify-human-ticket");
+const creates = (actions) => actions.filter((a) => a.kind === "create-map-thread");
+const mapDecisions = (actions) => actions.filter((a) => a.kind === "request-map-decision");
+// map #20（題名「地図」）の世界。mapComments は map の issue に付く viewer 以外も含むコメント。
+const mapWorld = (children, { mapComments = [], map = {}, over = {} } = {}) =>
+  wfWorld(children, { map: { title: "地図", comments: mapComments, ...map }, over });
+const threaded = (...comments) => [byViewer(MT_CREATED()), ...comments];
+// 起動済みの ticket。セッションが最初の書き込みで claim するので、実際には assignee を持つ。
+const launchedTicket = (number, type, over = {}) =>
+  wfTicket(number, type, { title: `ticket ${number}`, comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1"))], assignees: ["daiki-beppu"], ...over });
+const stallOf = (children, { mapComments = threaded(), sessions = { term_1: obs() }, now = at(1), over = {} } = {}) =>
+  mapWorld(children, { mapComments, over: { sessions, now, ...over } });
+
+// -- mapThread --
+
+test("mapThread: viewer の「立てた」印からスレッドの ID を文字列で返す。無い・1 段目だけ・他人の印・行の途中の字面は null", () => {
+  const read = (comments) => D.mapThread(issue(20, { comments }), VIEWER);
+  assert.equal(read([byViewer(MT_CREATING), byViewer(MT_CREATED("900"))]), "900");
+  assert.equal(read([]), null);
+  assert.equal(read([byViewer(MT_CREATING)]), null);
+  assert.equal(read([{ author: "someone", body: MT_CREATED() }]), null);
+  assert.equal(read([byViewer(`メモ: ${MT_CREATED()}`)]), null);
+});
+
+// -- スレッドを立てる --
+
+test("スレッド: 印が無い map に frontier の prototype があれば、題名つきでスレッドを立てる行動だけが出る（通知は出さない）", () => {
+  const s = mapWorld([wfTicket(21, "prototype")]);
+  const actions = decide(s);
+  assert.deepEqual(creates(actions), [createThread(20, "地図")]);
+  assert.deepEqual(notifies(actions), []);
+});
+
+test("スレッド: 印が無い map で停止の判断依頼が要るときも、スレッドを立てる行動だけが先に出る（判断依頼は出さない）", () => {
+  const s = stallOf([launchedTicket(21, "research")], { mapComments: [], sessions: { term_1: obs({ found: false, tail: [] }) } });
+  const actions = decide(s);
+  assert.deepEqual(creates(actions), [createThread(20, "地図")]);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("スレッド: 知らせることが無い map には立てない（子が無い・research だけ・通知済みの prototype だけ・動いている ticket だけ）", () => {
+  assert.deepEqual(creates(decide(mapWorld([]))), []);
+  assert.deepEqual(creates(decide(mapWorld([wfTicket(21, "research")]))), []);
+  assert.deepEqual(creates(decide(mapWorld([wfTicket(21, "prototype")], { mapComments: [byViewer(HUMAN(21))] }))), []);
+  assert.deepEqual(creates(decide(stallOf([launchedTicket(21, "research")], { mapComments: [] }))), []);
+});
+
+test("スレッド: prototype と停止が同じ map で同時に起きても、立てる行動は 1 件だけ", () => {
+  const s = stallOf([wfTicket(22, "prototype"), launchedTicket(21, "research")], { mapComments: [], sessions: { term_1: obs({ found: false, tail: [] }) } });
+  assert.equal(creates(decide(s)).length, 1);
+});
+
+test("スレッド: 1 段目の印（立てる）だけなら、成否が不明なので立て直さず、通知も判断依頼も出さない", () => {
+  const s = stallOf([wfTicket(22, "prototype"), launchedTicket(21, "research")], { mapComments: [byViewer(MT_CREATING)], sessions: { term_1: obs({ found: false, tail: [] }) } });
+  const actions = decide(s);
+  assert.deepEqual(creates(actions), []);
+  assert.deepEqual(notifies(actions), []);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("スレッド: 2 段目の印（立てた）があれば立てる行動は出ない", () => {
+  assert.deepEqual(creates(decide(mapWorld([wfTicket(21, "prototype")], { mapComments: threaded() }))), []);
+});
+
+test("スレッド: 他人が書いた「立てた」印や、行の途中に字面があるだけのコメントではスレッドありとみなさない", () => {
+  const s = mapWorld([wfTicket(21, "prototype")], { mapComments: [{ author: "someone", body: MT_CREATED("900") }, byViewer(`メモ: ${MT_CREATED("900")}`)] });
+  const actions = decide(s);
+  assert.deepEqual(creates(actions), [createThread(20, "地図")]);
+  assert.deepEqual(notifies(actions), []);
+});
+
+test("スレッド: map ごとに 1 件ずつ、map の番号順に立てる。CLOSED の map には立てない", () => {
+  const s = snapshot([
+    issue(30, { title: "地図30", labels: ["wayfinder:map"], subIssues: [{ number: 31, state: "OPEN" }] }),
+    issue(20, { title: "地図20", labels: ["wayfinder:map"], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(40, { title: "閉じた地図", state: "CLOSED", labels: ["wayfinder:map"], subIssues: [{ number: 41, state: "OPEN" }] }),
+    wfTicket(21, "prototype"),
+    wfTicket(31, "prototype"),
+    wfTicket(41, "prototype"),
+  ]);
+  assert.deepEqual(creates(decide(s)), [createThread(20, "地図20"), createThread(30, "地図30")]);
+});
+
+test("スレッド: dispatched に key があれば出さない。同じスナップショットで印を足して 2 周しても二重に立てない", () => {
+  assert.deepEqual(creates(decide(mapWorld([wfTicket(21, "prototype")], { over: { dispatched: ["create-map-thread:20"] } }))), []);
+  const first = mapWorld([wfTicket(21, "prototype")]);
+  assert.equal(creates(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 20).comments.push(byViewer(MT_CREATING));
+  assert.deepEqual(creates(decide(first)), []);
+});
+
+test("スレッド: 立てる行動が出ても、research の起動など既存の wayfinder の行動は変わらない", () => {
+  const s = mapWorld([wfTicket(21, "research"), wfTicket(22, "prototype")]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(21, "research")]);
+});
+
+// -- prototype の通知 --
+
+test("通知: スレッドがある map の frontier の prototype に、スレッドの ID・題名つきの通知が 1 件出る。セッションの起動は出ない", () => {
+  const s = mapWorld([wfTicket(21, "prototype", { title: "見た目の試作" })], { mapComments: threaded() });
+  const actions = decide(s);
+  assert.deepEqual(notifies(actions), [{ kind: "notify-human-ticket", key: "notify-human-ticket:20:21", map: 20, ticket: 21, title: "見た目の試作", threadId: "900" }]);
+  assert.deepEqual(wfActions(actions), []);
+  assert.deepEqual(creates(actions), []);
+});
+
+test("通知: 知らせた印（viewer が map に書いた）があれば出さない。frontier の複数の prototype には 1 件ずつ出す", () => {
+  const s = mapWorld([wfTicket(21, "prototype"), wfTicket(22, "prototype")], { mapComments: threaded(byViewer(HUMAN(21))) });
+  assert.deepEqual(notifies(decide(s)).map((a) => a.ticket), [22]);
+});
+
+test("通知: 別の ticket の印が前方一致しても通知済みとみなさない（#2 と #21）", () => {
+  const s = mapWorld([wfTicket(2, "prototype"), wfTicket(21, "prototype")], { mapComments: threaded(byViewer(HUMAN(21))) });
+  assert.deepEqual(notifies(decide(s)).map((a) => a.ticket), [2]);
+  const reverse = mapWorld([wfTicket(2, "prototype"), wfTicket(21, "prototype")], { mapComments: threaded(byViewer(HUMAN(2))) });
+  assert.deepEqual(notifies(decide(reverse)).map((a) => a.ticket), [21]);
+});
+
+test("通知: 他人が書いた印や、行の途中に字面があるだけのコメントでは通知済みとみなさない。ticket 側に書かれた印も数えない", () => {
+  const s = mapWorld([wfTicket(21, "prototype", { comments: [byViewer(HUMAN(21))] })], {
+    mapComments: threaded({ author: "someone", body: HUMAN(21) }, byViewer(`メモ: ${HUMAN(21)}`)),
+  });
+  assert.deepEqual(notifies(decide(s)).map((a) => a.ticket), [21]);
+});
+
+test("通知: prototype 以外（research・grilling・task・種類なし・map）には出さない。種類の起動は従来どおり", () => {
+  const s = mapWorld(
+    [wfTicket(21, "research"), wfTicket(22, "grilling"), wfTicket(23, "task"), issue(24, { assignees: [], blockedBy: [] }), issue(25, { labels: ["wayfinder:map"], assignees: [], blockedBy: [] })],
+    { mapComments: threaded() },
+  );
+  const actions = decide(s);
+  assert.deepEqual(notifies(actions), []);
+  assert.deepEqual(wfActions(actions).map((a) => a.ticket), [21, 22, 23]);
+});
+
+test("通知: frontier の外の prototype（assignee あり＝人が引き取った・open なブロッカーあり・CLOSED）には出さず、スレッドも立てない", () => {
+  const children = [
+    wfTicket(21, "prototype", { assignees: ["daiki-beppu"] }),
+    wfTicket(22, "prototype", { blockedBy: [{ number: 9, state: "OPEN" }] }),
+    wfTicket(23, "prototype", { state: "CLOSED" }),
+  ];
+  assert.deepEqual(notifies(decide(mapWorld(children, { mapComments: threaded() }))), []);
+  assert.deepEqual(creates(decide(mapWorld(children))), []);
+  const ok = mapWorld([wfTicket(24, "prototype", { blockedBy: [{ number: 9, state: "CLOSED" }] })], { mapComments: threaded() });
+  assert.deepEqual(notifies(decide(ok)).map((a) => a.ticket), [24]);
+});
+
+test("通知: map が CLOSED なら、スレッドがあっても出さない", () => {
+  assert.deepEqual(notifies(decide(mapWorld([wfTicket(21, "prototype")], { mapComments: threaded(), map: { state: "CLOSED" } }))), []);
+});
+
+test("通知: prototype だけの frontier では wayfinder の起動が 0 件（prototype でセッションを起動しない）", () => {
+  const s = mapWorld([wfTicket(21, "prototype"), wfTicket(22, "prototype")], { mapComments: threaded() });
+  assert.deepEqual(wfActions(decide(s)), []);
+  assert.deepEqual(wfActions(decide(mapWorld([wfTicket(21, "prototype")]))), []);
+});
+
+test("通知: dispatched に key があれば出さない。同じスナップショットで印を足して 2 周しても 1 度だけ", () => {
+  assert.deepEqual(notifies(decide(mapWorld([wfTicket(21, "prototype")], { mapComments: threaded(), over: { dispatched: ["notify-human-ticket:20:21"] } }))), []);
+  const first = mapWorld([wfTicket(21, "prototype")], { mapComments: threaded() });
+  assert.equal(notifies(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 20).comments.push(byViewer(HUMAN(21)));
+  assert.deepEqual(notifies(decide(first)), []);
+});
+
+test("通知: 同じ prototype が複数の map の子でも、最初の map だけで 1 回出す", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(30, { labels: ["wayfinder:map"], comments: [byViewer(MT_CREATED("901"))], subIssues: [{ number: 21, state: "OPEN" }] }),
+    wfTicket(21, "prototype"),
+  ]);
+  assert.deepEqual(notifies(decide(s)).map((a) => `${a.map}:${a.ticket}:${a.threadId}`), ["20:21:900"]);
+});
+
+test("通知: 複数の map があれば、それぞれのスレッドの ID で出す", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(30, { labels: ["wayfinder:map"], comments: [byViewer(MT_CREATED("901"))], subIssues: [{ number: 31, state: "OPEN" }] }),
+    wfTicket(21, "prototype"),
+    wfTicket(31, "prototype"),
+  ]);
+  assert.deepEqual(notifies(decide(s)).map((a) => `${a.map}:${a.ticket}:${a.threadId}`), ["20:21:900", "30:31:901"]);
+});
+
+// -- ticket のセッションの観測の対象 --
+
+test("ticketSessionsToObserve: handle つきの起動の印がある open な ticket（claim 済みでも）の handle・種類・起動時刻を返す", () => {
+  const s = mapWorld([launchedTicket(21, "research")], { mapComments: threaded() });
+  assert.deepEqual(D.ticketSessionsToObserve(s), [{ map: 20, ticket: 21, type: "research", handle: "term_1", startedAt: T0 }]);
+});
+
+test("ticketSessionsToObserve: 起動の印が複数あれば最後の印の handle と時刻を使う", () => {
+  const s = mapWorld(
+    [launchedTicket(21, "task", { comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1")), byViewer(WF_LAUNCHED_AT("term_2", at(5)))] })],
+    { mapComments: threaded() },
+  );
+  assert.deepEqual(D.ticketSessionsToObserve(s), [{ map: 20, ticket: 21, type: "task", handle: "term_2", startedAt: at(5) }]);
+});
+
+test("ticketSessionsToObserve: 閉じた ticket・起動前の印だけ・他の工程の印・他人の印・prototype・閉じた map の子は対象にしない", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [21, 22, 23, 24, 25].map((number) => ({ number, state: "OPEN" })) }),
+    issue(40, { labels: ["wayfinder:map"], state: "CLOSED", subIssues: [{ number: 41, state: "OPEN" }] }),
+    launchedTicket(21, "research", { state: "CLOSED" }),
+    launchedTicket(22, "research", { comments: [byViewer(WF_LAUNCHING)] }),
+    launchedTicket(23, "research", { comments: [byViewer(launchedMarker("to-tickets", "term_x", T0))] }),
+    launchedTicket(24, "research", { comments: [{ author: "someone", body: WF_LAUNCHED_AT("term_y") }] }),
+    launchedTicket(25, "prototype"),
+    launchedTicket(41, "research"),
+  ]);
+  assert.deepEqual(D.ticketSessionsToObserve(s), []);
+});
+
+test("ticketSessionsToObserve: map に同じ ticket・原因の判断依頼の印があれば対象にしない。別の ticket の印や ticket 側の印では外れない", () => {
+  const marker = (n, type = "research") => byViewer(decisionMarker(n, WF_CAUSE(type)));
+  const decided = mapWorld([launchedTicket(21, "research")], { mapComments: threaded(marker(21)) });
+  assert.deepEqual(D.ticketSessionsToObserve(decided), []);
+  const other = mapWorld([launchedTicket(21, "research")], { mapComments: threaded(marker(2)) });
+  assert.equal(D.ticketSessionsToObserve(other).length, 1);
+  const onTicket = mapWorld([launchedTicket(21, "research", { comments: [byViewer(WF_LAUNCHED_AT("term_1")), marker(21)] })], { mapComments: threaded() });
+  assert.equal(D.ticketSessionsToObserve(onTicket).length, 1);
+});
+
+test("ticketSessionsToObserve: 仕様用の sessionsToObserve には ticket が混ざらない", () => {
+  assert.deepEqual(sessionsToObserve(mapWorld([launchedTicket(21, "research")], { mapComments: threaded() })), []);
+});
+
+// -- ticket のセッションの停止 --
+
+const stalledAction = (over = {}) => ({
+  kind: "request-map-decision",
+  key: `request-map-decision:20:21:${WF_CAUSE("research")}`,
+  map: 20,
+  issue: 21,
+  cause: WF_CAUSE("research"),
+  title: "ticket 21",
+  threadId: "900",
+  step: "wayfinder",
+  tab: "wayfinder #21",
+  tail: ["line1", "line2"],
+  ...over,
+});
+const withoutReason = ({ reason, ...rest }) => rest;
+
+test("ticket の停止: セッションが見つからなければ、map のスレッドへの判断依頼が 1 件出る（ticket・タブ・画面・理由つき）", () => {
+  const s = stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ found: false, tail: [] }) } });
+  const [a, ...rest] = mapDecisions(decide(s));
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), stalledAction({ tail: [] }));
+  assert.match(a.reason, /見つから/);
+});
+
+test("ticket の停止: 入力待ち（waiting）なら出る。タブの画面の最後の行を持つ", () => {
+  const [a, ...rest] = mapDecisions(decide(stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ waiting: true }) } })));
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), stalledAction());
+  assert.match(a.reason, /入力待ち/);
+});
+
+test("ticket の停止: 起動から stallMinutes（既定 60）分経てば出る。60 分ちょうどから、59 分では出ない", () => {
+  const timedOut = mapDecisions(decide(stallOf([launchedTicket(21, "research")], { now: at(60) })));
+  assert.equal(timedOut.length, 1);
+  assert.match(timedOut[0].reason, /60 分/);
+  assert.deepEqual(mapDecisions(decide(stallOf([launchedTicket(21, "research")], { now: at(59) }))), []);
+});
+
+test("ticket の停止: stallMinutes を渡せばその分数で判定する。起動の印の時刻から数える", () => {
+  const s = (minutes, now) => stallOf([launchedTicket(21, "task", { comments: [byViewer(WF_LAUNCHED_AT("term_1", at(10)))] })], { now, over: { stallMinutes: minutes } });
+  assert.deepEqual(mapDecisions(decide(s(5, at(14)))), []);
+  assert.equal(mapDecisions(decide(s(5, at(15)))).length, 1);
+});
+
+test("ticket の停止: 理由は 見つからない → 入力待ち → 時間切れ の順に 1 つだけ選ぶ（既存の工程の停止と同じ）", () => {
+  const all = stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ found: false, waiting: true, tail: [] }) }, now: at(120) });
+  assert.match(mapDecisions(decide(all))[0].reason, /見つから/);
+  const waitingAndLate = stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ waiting: true }) }, now: at(120) });
+  assert.match(mapDecisions(decide(waitingAndLate))[0].reason, /入力待ち/);
+});
+
+test("ticket の停止: 動いている（見つかる・入力待ちでない・時間内）なら出ない。idle だけでも出ない", () => {
+  assert.deepEqual(mapDecisions(decide(stallOf([launchedTicket(21, "research")]))), []);
+  assert.deepEqual(mapDecisions(decide(stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ idle: true }) } }))), []);
+});
+
+test("ticket の停止: 観測が無い handle（sessions に無い）は出さない", () => {
+  assert.deepEqual(mapDecisions(decide(stallOf([launchedTicket(21, "research")], { sessions: {} }))), []);
+});
+
+test("ticket の停止: 原因は ticket の種類ごと（research・grilling・task）。key に map・ticket・原因が入る", () => {
+  for (const type of ["research", "grilling", "task"]) {
+    const s = stallOf([launchedTicket(21, type)], { sessions: { term_1: obs({ waiting: true }) } });
+    const [a] = mapDecisions(decide(s));
+    assert.equal(a.cause, WF_CAUSE(type));
+    assert.equal(a.key, `request-map-decision:20:21:${WF_CAUSE(type)}`);
+  }
+});
+
+test("ticket の停止: ticket が閉じていれば出ない（結果は ticket が閉じたこと）", () => {
+  const s = stallOf([launchedTicket(21, "research", { state: "CLOSED" })], { sessions: { term_1: obs({ found: false, tail: [] }) } });
+  assert.deepEqual(mapDecisions(decide(s)), []);
+  assert.deepEqual(creates(decide(stallOf([launchedTicket(21, "research", { state: "CLOSED" })], { mapComments: [], sessions: { term_1: obs({ found: false, tail: [] }) } }))), []);
+});
+
+test("ticket の停止: map に同じ ticket・原因の判断依頼の印があれば出ない。別の ticket の印（#2 と #21）では止めない", () => {
+  const down = { term_1: obs({ found: false, tail: [] }) };
+  const mark = (n) => byViewer(decisionMarker(n, WF_CAUSE("research")));
+  assert.deepEqual(mapDecisions(decide(stallOf([launchedTicket(21, "research")], { sessions: down, mapComments: threaded(mark(21)) }))), []);
+  assert.equal(mapDecisions(decide(stallOf([launchedTicket(21, "research")], { sessions: down, mapComments: threaded(mark(2)) }))).length, 1);
+});
+
+test("ticket の停止: 他人が書いた判断依頼の印や、行の途中に字面があるだけのコメントでは止めない", () => {
+  const down = { term_1: obs({ found: false, tail: [] }) };
+  const text = decisionMarker(21, WF_CAUSE("research"));
+  const s = stallOf([launchedTicket(21, "research")], { sessions: down, mapComments: threaded({ author: "someone", body: text }, byViewer(`メモ: ${text}`)) });
+  assert.equal(mapDecisions(decide(s)).length, 1);
+});
+
+test("ticket の停止: dispatched に key があれば出さない。同じスナップショットで印を足して 2 周しても 1 度だけ", () => {
+  const down = { term_1: obs({ found: false, tail: [] }) };
+  const done = stallOf([launchedTicket(21, "research")], { sessions: down, over: { dispatched: [`request-map-decision:20:21:${WF_CAUSE("research")}`] } });
+  assert.deepEqual(mapDecisions(decide(done)), []);
+  const first = stallOf([launchedTicket(21, "research")], { sessions: down });
+  assert.equal(mapDecisions(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 20).comments.push(byViewer(decisionMarker(21, WF_CAUSE("research"))));
+  assert.deepEqual(mapDecisions(decide(first)), []);
+});
+
+test("ticket の停止: 同じ周で止まった ticket ごとに 1 件ずつ。止まっていない ticket には出さない", () => {
+  const s = stallOf(
+    [
+      launchedTicket(21, "research"),
+      launchedTicket(22, "task", { comments: [byViewer(WF_LAUNCHED_AT("term_2"))] }),
+      launchedTicket(23, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_3"))] }),
+    ],
+    { sessions: { term_1: obs({ waiting: true }), term_2: obs(), term_3: obs({ found: false, tail: [] }) } },
+  );
+  assert.deepEqual(mapDecisions(decide(s)).map((a) => a.issue), [21, 23]);
+});
+
+test("ticket の停止: 仕様用の判断依頼（request-decision）は出さず、仕様の停止の判定にも混ざらない", () => {
+  const s = stallOf([launchedTicket(21, "research")], { sessions: { term_1: obs({ found: false, tail: [] }) } });
+  assert.deepEqual(decide(s).filter((a) => a.kind === "request-decision"), []);
+});
+
+test("ticket の停止: 仕様の停止（to-tickets）と ticket の停止が同じスナップショットにあっても、それぞれの行動が出る", () => {
+  const s = stallOf([launchedTicket(21, "research")], {
+    sessions: { term_1: obs({ found: false, tail: [] }), term_s: obs({ waiting: true }) },
+  });
+  s.issues.push(spec(12, { title: "仕様A", comments: [...SENT_ALL, byViewer("案内役: to-tickets を起動する"), byViewer("案内役: to-tickets を起動した（ターミナル term_s / 2026-10-17T00:00:00.000Z）")] }));
+  const actions = decide(s);
+  assert.equal(stalls(actions).length, 1);
+  assert.equal(mapDecisions(actions).length, 1);
+});
+
+test("純粋性: map のスレッド・通知・ticket の停止の判定も入力を変更せず、同じ入力に同じ出力を返す", () => {
+  const s = deepFreeze(stallOf([wfTicket(22, "prototype"), launchedTicket(21, "research")], { sessions: { term_1: obs({ waiting: true }) } }));
+  const first = decide(s);
+  assert.deepEqual(decide(s), first);
+  assert.deepEqual(D.ticketSessionsToObserve(s).length, 1);
+  assert.equal(notifies(first).length, 1);
+  assert.equal(mapDecisions(first).length, 1);
 });

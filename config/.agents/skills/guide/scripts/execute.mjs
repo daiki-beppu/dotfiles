@@ -6,10 +6,13 @@ import {
   MARKER_APPROVAL_SENT_PREFIX,
   MARKER_HANDED_PREFIX,
   MARKER_KNOWLEDGE_LAUNCHING,
+  MARKER_MAP_THREAD_CREATED_PREFIX,
+  MARKER_MAP_THREAD_CREATING,
   MARKER_REJECTED,
   MARKER_WAYFINDER_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
+  humanTicketMarker,
   launchedMarker,
 } from "./decide.mjs";
 
@@ -64,6 +67,36 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         url: `https://github.com/${repo}/issues/${action.issue}`,
         reason: action.reason,
         reports: action.reports,
+        step: action.step,
+        tab: action.tab,
+        tail: action.tail,
+      });
+    } else if (action.kind === "create-map-thread") {
+      // 承認依頼と同じ 2 段の印を map に書く。スレッドの ID は作成の応答からしか取れない。
+      const channelId = await discord.ensureChannel(repo.split("/")[1].toLowerCase());
+      github.comment(action.map, MARKER_MAP_THREAD_CREATING);
+      const { threadId } = await discord.createMapThread({ channelId, map: action.map, title: action.title });
+      github.comment(action.map, `${MARKER_MAP_THREAD_CREATED_PREFIX}（スレッド ${threadId}）`);
+    } else if (action.kind === "notify-human-ticket") {
+      // 印は送信より先に map に書く（prototype の ticket ではセッションを起動しない）。
+      github.comment(action.map, humanTicketMarker(action.ticket));
+      await discord.sendHumanTicket({
+        threadId: action.threadId,
+        map: action.map,
+        ticket: action.ticket,
+        title: action.title,
+        url: `https://github.com/${repo}/issues/${action.ticket}`,
+      });
+    } else if (action.kind === "request-map-decision") {
+      // 仕様の判断依頼と同じ印の形を、map に書く。
+      github.comment(action.map, decisionMarker(action.issue, action.cause));
+      await discord.sendDecisionRequest({
+        threadId: action.threadId,
+        map: action.map,
+        issue: action.issue,
+        title: action.title,
+        url: `https://github.com/${repo}/issues/${action.issue}`,
+        reason: action.reason,
         step: action.step,
         tab: action.tab,
         tail: action.tail,

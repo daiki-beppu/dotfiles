@@ -13,6 +13,10 @@
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 //     | { kind: "wayfinder", key, map, ticket, type }
 //       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
+//     | { kind: "create-map-thread", key, map, title }   （知らせることがある open な map に Discord のスレッドが無い。印は map に書く）
+//     | { kind: "notify-human-ticket", key, map, ticket, title, threadId }   （frontier の prototype ticket を map のスレッドへ知らせる。印は map に書く）
+//     | { kind: "request-map-decision", key, map, issue, cause, title, threadId, reason, step, tab, tail }
+//       （wayfinder で起動した ticket のセッションが止まった。map のスレッドへ判断依頼を送る。印は map に書く）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, step, tab, tail }
@@ -35,10 +39,18 @@ const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ (
 // Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
 export const tabTitle = (step, spec) => `${step} #${spec}`;
 // wayfinder の ticket の印も 2 段（起動前 / launchedMarker("wayfinder", …)）。どちらも ticket の issue に書く。
-// 起動したセッションの停止の観測は ticket では行わない（RESULT_OF に wayfinder を入れない。sessionsToObserve は仕様の印だけを読む）。
+// 起動したセッションの停止の観測は ticketSessionsToObserve が行う（sessionsToObserve は仕様の印だけを読む）。結果は ticket が閉じたこと。
 export const MARKER_WAYFINDER_LAUNCHING = "案内役: wayfinder を起動する";
 const WAYFINDER_LAUNCHED_PREFIX = "案内役: wayfinder を起動した";
 const WAYFINDER_TYPES = ["research", "grilling", "task"];
+// 人が見る ticket。セッションは起動せず、map のスレッドへ知らせるだけ。
+const HUMAN_TYPE = "prototype";
+// map の Discord スレッドも 2 段の印（立てる前 / 立てた後にスレッドの ID）。どちらも map の issue に書く。
+export const MARKER_MAP_THREAD_CREATING = "案内役: Discord に map のスレッドを立てる";
+export const MARKER_MAP_THREAD_CREATED_PREFIX = "案内役: Discord に map のスレッドを立てた";
+const MAP_THREAD_CREATED = /^案内役: Discord に map のスレッドを立てた（スレッド ([^）\s]+)）/;
+// 閉じ括弧まで含めて照合する（#2 が #21 に前方一致しないように）。map の issue に書く。
+export const humanTicketMarker = (ticket) => `案内役: Discord に人が見る ticket を知らせる（#${ticket}）`;
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
 // takt-sequence も 2 段の印: 起動前に「渡した」（二重に渡さない）、起動後に launchedMarker("takt-sequence", …) を親に書く。
 // 起動のコマンドは takt-sequence の後に SEQUENCE_DONE の行を出す。画面にこの行があれば takt-sequence は終わっている。
@@ -119,6 +131,15 @@ export function sentApprovalRequest(issue, viewer) {
   for (const body of markers(issue, viewer)) {
     const m = APPROVAL_SENT.exec(body);
     if (m) return { threadId: m[1], messageId: m[2] };
+  }
+  return null;
+}
+
+// map のスレッドの ID（viewer の「立てた」印）。無ければ null。
+export function mapThread(map, viewer) {
+  for (const body of markers(map, viewer)) {
+    const m = MAP_THREAD_CREATED.exec(body);
+    if (m) return m[1];
   }
   return null;
 }
@@ -244,27 +265,41 @@ function decideDecisionRequests(snapshot, dispatched) {
   return actions;
 }
 
-// open な wayfinder:map の子 ticket のうち、frontier（open・unblocked・未 claim）にある research・grilling・task ごとの起動。
-// prototype と、起動の印（viewer の 1 段目か 2 段目）がある ticket には出さない。map の番号の昇順、map の子の順。
-function decideWayfinder(snapshot, dispatched) {
-  const { viewer, issues } = snapshot;
-  const actions = [];
+const openMaps = (snapshot) =>
+  snapshot.issues.filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map")).sort((a, b) => a.number - b.number);
+
+// open な wayfinder:map の子 ticket のうち、frontier（open・unblocked・未 claim）にある research・grilling・task・prototype。
+// map の番号の昇順、map の子の順。同じ ticket が複数の map の子なら最初の map だけ。
+function wayfinderFrontier(snapshot) {
+  const { issues } = snapshot;
+  const frontier = [];
   const seen = new Set();
-  const maps = issues.filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map")).sort((a, b) => a.number - b.number);
-  for (const map of maps) {
+  for (const map of openMaps(snapshot)) {
     for (const child of map.subIssues ?? []) {
       const ticket = issues.find((i) => i.number === child.number);
       if (ticket === undefined || ticket.state !== "OPEN") continue;
-      const type = WAYFINDER_TYPES.find((t) => hasLabel(ticket, `wayfinder:${t}`));
+      const type = [...WAYFINDER_TYPES, HUMAN_TYPE].find((t) => hasLabel(ticket, `wayfinder:${t}`));
       if (type === undefined) continue;
       if ((ticket.assignees ?? []).length > 0) continue;
       if ((ticket.blockedBy ?? []).some((b) => b.state === "OPEN")) continue;
-      if (markers(ticket, viewer).some((b) => b.startsWith(MARKER_WAYFINDER_LAUNCHING) || b.startsWith(WAYFINDER_LAUNCHED_PREFIX))) continue;
-      const key = `wayfinder:${ticket.number}`;
-      if (dispatched.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      actions.push({ kind: "wayfinder", key, map: map.number, ticket: ticket.number, type });
+      if (seen.has(ticket.number)) continue;
+      seen.add(ticket.number);
+      frontier.push({ map, ticket, type });
     }
+  }
+  return frontier;
+}
+
+// frontier の research・grilling・task ごとの起動。prototype と、起動の印（viewer の 1 段目か 2 段目）がある ticket には出さない。
+function decideWayfinder(snapshot, dispatched) {
+  const { viewer } = snapshot;
+  const actions = [];
+  for (const { map, ticket, type } of wayfinderFrontier(snapshot)) {
+    if (!WAYFINDER_TYPES.includes(type)) continue;
+    if (markers(ticket, viewer).some((b) => b.startsWith(MARKER_WAYFINDER_LAUNCHING) || b.startsWith(WAYFINDER_LAUNCHED_PREFIX))) continue;
+    const key = `wayfinder:${ticket.number}`;
+    if (dispatched.has(key)) continue;
+    actions.push({ kind: "wayfinder", key, map: map.number, ticket: ticket.number, type });
   }
   return actions;
 }
@@ -388,6 +423,76 @@ function decideSequenceStalls(snapshot, dispatched) {
   return actions;
 }
 
+// wayfinder で起動した ticket の観測の対象。open な map の open な子で、種類のラベルを持ち、viewer の handle つきの起動の印
+// （最後のもの）があり、map に同じ ticket・原因の判断依頼の印が無いものだけ。起動した ticket はセッションが claim しているので、frontier は見ない。
+export function ticketSessionsToObserve(snapshot) {
+  const { viewer, issues } = snapshot;
+  const targets = [];
+  const seen = new Set();
+  for (const map of openMaps(snapshot)) {
+    const ownMap = markers(map, viewer);
+    for (const child of map.subIssues ?? []) {
+      const ticket = issues.find((i) => i.number === child.number);
+      if (ticket === undefined || ticket.state !== "OPEN" || seen.has(ticket.number)) continue;
+      const type = WAYFINDER_TYPES.find((t) => hasLabel(ticket, `wayfinder:${t}`));
+      if (type === undefined) continue;
+      seen.add(ticket.number);
+      const launched = markers(ticket, viewer)
+        .map((b) => LAUNCHED.exec(b))
+        .filter((m) => m && m[1] === "wayfinder")
+        .at(-1);
+      if (launched === undefined || ownMap.includes(decisionMarker(ticket.number, stallCause(type)))) continue;
+      targets.push({ map: map.number, ticket: ticket.number, type, handle: launched[2], startedAt: launched[3] });
+    }
+  }
+  return targets;
+}
+
+// map ごとの Discord への知らせ。知らせること（frontier の prototype の通知、止まった ticket の判断依頼）があるのにスレッドが無ければ、
+// スレッドを立てる行動だけを出す（スレッドの ID は立てた後の印から読む）。1 段目の印だけがあるときは成否が不明なので何も出さない。
+function decideMapNotices(snapshot, dispatched) {
+  const { viewer, issues } = snapshot;
+  const notices = new Map();
+  const noticesOf = (map) => {
+    if (!notices.has(map.number)) notices.set(map.number, []);
+    return notices.get(map.number);
+  };
+  for (const { map, ticket, type } of wayfinderFrontier(snapshot)) {
+    if (type !== HUMAN_TYPE) continue;
+    const key = `notify-human-ticket:${map.number}:${ticket.number}`;
+    if (dispatched.has(key) || markers(map, viewer).includes(humanTicketMarker(ticket.number))) continue;
+    noticesOf(map).push({ kind: "notify-human-ticket", key, map: map.number, ticket: ticket.number, title: ticket.title });
+  }
+  for (const { map: mapNumber, ticket, type, handle, startedAt } of ticketSessionsToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (observation === undefined) continue;
+    const reason = stallReason(observation, startedAt, snapshot);
+    if (reason === null) continue;
+    const cause = stallCause(type);
+    const key = `request-map-decision:${mapNumber}:${ticket}:${cause}`;
+    if (dispatched.has(key)) continue;
+    noticesOf(issues.find((i) => i.number === mapNumber)).push({
+      kind: "request-map-decision", key, map: mapNumber, issue: ticket, cause, title: issues.find((i) => i.number === ticket).title,
+      reason, step: "wayfinder", tab: tabTitle("wayfinder", ticket), tail: observation.tail ?? [],
+    });
+  }
+  const actions = [];
+  for (const map of openMaps(snapshot)) {
+    const pending = notices.get(map.number) ?? [];
+    if (pending.length === 0) continue;
+    const threadId = mapThread(map, viewer);
+    if (threadId !== null) {
+      actions.push(...pending.map((a) => ({ ...a, threadId })));
+      continue;
+    }
+    const own = markers(map, viewer);
+    const key = `create-map-thread:${map.number}`;
+    if (own.some((b) => b.startsWith(MARKER_MAP_THREAD_CREATING) || b.startsWith(MARKER_MAP_THREAD_CREATED_PREFIX)) || dispatched.has(key)) continue;
+    actions.push({ kind: "create-map-thread", key, map: map.number, title: map.title });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -454,6 +559,7 @@ export function decide(snapshot) {
   return [
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
+    ...decideMapNotices(snapshot, dispatched),
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),

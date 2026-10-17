@@ -294,3 +294,50 @@ test("dry-run: wayfinder の行動も例外にせず、key・map・ticket・type
   assert.match(out, /#20/);
   assert.match(out, /task/);
 });
+
+// ---- map のスレッド・人が見る ticket・ticket の停止（dry-run の表示） ----
+const mapDry = async (issues, extra = {}) => {
+  const { calls, deps } = fakes({
+    readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues, taktIssues: [], ...extra }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+  });
+  await runRound({ ...deps, dryRun: true }, new Set());
+  return calls.logs.join("\n");
+};
+const mapOf = (comments, children) => issue(20, { title: "地図", labels: ["wayfinder:map"], comments, subIssues: children.map((n) => ({ number: n, state: "OPEN" })) });
+const proto = (n) => issue(n, { labels: ["wayfinder:prototype"], assignees: [], blockedBy: [] });
+
+test("dry-run: map のスレッドを立てる行動も例外にせず、key と map の番号を log に表示する", async () => {
+  const out = await mapDry([mapOf([], [21]), proto(21)]);
+  assert.match(out, /create-map-thread:20/);
+  assert.match(out, /#20/);
+});
+
+test("dry-run: 人が見る ticket の通知も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+  const out = await mapDry([mapOf([{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }], [21]), proto(21)]);
+  assert.match(out, /notify-human-ticket:20:21/);
+  assert.match(out, /#20/);
+  assert.match(out, /#21/);
+});
+
+test("dry-run: ticket の停止の判断依頼も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+  const ticket = issue(21, {
+    labels: ["wayfinder:research"], assignees: ["x"], blockedBy: [],
+    comments: [{ author: VIEWER, body: "案内役: wayfinder を起動した（ターミナル term_1 / 2026-10-17T00:00:00.000Z）" }],
+  });
+  const out = await mapDry(
+    [mapOf([{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }], [21]), ticket],
+    { now: "2026-10-17T00:01:00.000Z", sessions: { term_1: { found: false, waiting: false, idle: false, tail: [] } } },
+  );
+  assert.match(out, /request-map-decision:20:21:/);
+  assert.match(out, /#20/);
+  assert.match(out, /#21/);
+});
+
+test("map の行動も同じスナップショットで 2 周しても、行動ごとに execute は 1 回だけ", async () => {
+  const { calls, deps } = fakes({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues: [mapOf([], [21]), proto(21)], taktIssues: [] }) });
+  const dispatched = new Set();
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  assert.deepEqual(calls.executed, ["create-map-thread:20"]);
+});
