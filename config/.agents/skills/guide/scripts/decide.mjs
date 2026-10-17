@@ -53,7 +53,10 @@ const REJECT_EMOJI = "❌";
 
 const FINISHED = /^案内役: to-tickets が終わった（exit (\d+)）/;
 
-// 学び（knowledge）: 起動前に仕様の issue へ書くマーカーと、学びの PR 本文に書く記録の行の接頭辞。
+// 学び（knowledge）: 起動前（1 段目）に仕様の issue へ書く印と、学びの PR 本文に書く記録の行の接頭辞。
+// 起動後（2 段目）の印は launchedMarker("knowledge", …) で書く。MARKER_KNOWLEDGE_STARTED は古い版の handle なしの印と、
+// 2 段目の印の両方に前方一致する（読み取りだけ。これがある仕様には knowledge を出さない）。
+export const MARKER_KNOWLEDGE_LAUNCHING = "案内役: knowledge を起動する";
 export const MARKER_KNOWLEDGE_STARTED = "案内役: knowledge を起動した";
 export const KNOWLEDGE_SPEC_PREFIX = "学びの元の仕様: #";
 
@@ -306,7 +309,7 @@ export function decide(snapshot) {
       if (knowledgePr.state === "OPEN" && !knowledgePr.autoMerge && !dispatched.has(mkey)) {
         actions.push({ kind: "merge-auto", key: mkey, spec: spec.number, pr: knowledgePr.number });
       }
-    } else if (!specMarkers.some((b) => b.startsWith(MARKER_KNOWLEDGE_STARTED)) && !dispatched.has(kkey)) {
+    } else if (!specMarkers.some((b) => b.startsWith(MARKER_KNOWLEDGE_LAUNCHING) || b.startsWith(MARKER_KNOWLEDGE_STARTED)) && !dispatched.has(kkey)) {
       actions.push({
         kind: "knowledge",
         key: kkey,

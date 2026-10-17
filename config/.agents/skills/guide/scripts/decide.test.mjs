@@ -641,6 +641,44 @@ test("knowledge: viewer の起動マーカーがあれば（PR がまだ無く�
   assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: [byViewer(STARTED), byViewer(FINISHED(0)), other] }))), [knowledge(12, [20], [21, 22])]);
 });
 
+const KNOWLEDGE_LAUNCHING = "案内役: knowledge を起動する";
+const KNOWLEDGE_LAUNCHED = "案内役: knowledge を起動した（ターミナル term_k / 2026-10-17T00:00:00.000Z）";
+const specComments = (...extra) => [byViewer(STARTED), byViewer(FINISHED(0)), ...extra];
+
+test("knowledge: 起動の印（1 段目だけ・1 段目と 2 段目・古い handle なしの印）のどれがあっても出さない", () => {
+  for (const extra of [[byViewer(KNOWLEDGE_LAUNCHING)], [byViewer(KNOWLEDGE_LAUNCHING), byViewer(KNOWLEDGE_LAUNCHED)], [byViewer(KNOWLEDGE_STARTED)]]) {
+    assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: specComments(...extra) }))), [], JSON.stringify(extra));
+  }
+});
+
+test("knowledge: 他人の起動の印や、引用で始まる印では止めない", () => {
+  for (const extra of [
+    [{ author: "someone", body: KNOWLEDGE_LAUNCHING }],
+    [{ author: "someone", body: KNOWLEDGE_LAUNCHED }],
+    [byViewer(`> ${KNOWLEDGE_LAUNCHED}`)],
+    [byViewer(`> ${KNOWLEDGE_LAUNCHING}`)],
+  ]) {
+    assert.deepEqual(knowledgeActions(decide(allClosed({}, { comments: specComments(...extra) }))), [knowledge(12, [20], [21, 22])], JSON.stringify(extra));
+  }
+});
+
+test("knowledge: 1 周目の行動の key を dispatched に入れた 2 周目は、同じスナップショットでも出さない", () => {
+  const first = decide(allClosed());
+  assert.deepEqual(knowledgeActions(first), [knowledge(12, [20], [21, 22])]);
+  assert.deepEqual(knowledgeActions(decide(allClosed({ dispatched: first.map((a) => a.key) }))), []);
+});
+
+test("merge-auto: 新しい 2 段の印があり、学びの PR が OPEN で未予約なら、予約だけを出す。1 周目の key を dispatched に入れた 2 周目は出さない", () => {
+  const comments = specComments(byViewer(KNOWLEDGE_LAUNCHING), byViewer(KNOWLEDGE_LAUNCHED));
+  const prs = [pr(50, "学びの元の仕様: #12", { state: "OPEN" })];
+  const first = decide(allClosed({ pullRequests: prs }, { comments }));
+  assert.deepEqual(mergeActions(first), [{ kind: "merge-auto", key: "merge-auto:50", spec: 12, pr: 50 }]);
+  assert.deepEqual(knowledgeActions(first), []);
+  const second = decide(allClosed({ pullRequests: prs, dispatched: first.map((a) => a.key) }, { comments }));
+  assert.deepEqual(mergeActions(second), []);
+  assert.deepEqual(knowledgeActions(second), []);
+});
+
 test("knowledge: dispatched に knowledge:12 があれば出さない", () => {
   assert.deepEqual(knowledgeActions(decide(allClosed({ dispatched: ["knowledge:12"] }))), []);
 });
