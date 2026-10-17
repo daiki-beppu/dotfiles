@@ -1871,3 +1871,28 @@ test("純粋性: map のスレッド・通知・ticket の停止の判定も入�
   assert.equal(notifies(first).length, 1);
   assert.equal(mapDecisions(first).length, 1);
 });
+
+// -- 保留の map --
+
+const ON_HOLD = { labels: ["wayfinder:map", "wayfinder:on-hold"] };
+
+test("保留: wayfinder:on-hold の map の frontier には、起動もスレッドも通知も出さない", () => {
+  const s = mapWorld([wfTicket(21, "research"), wfTicket(22, "grilling"), wfTicket(23, "task"), wfTicket(24, "prototype")], { map: ON_HOLD });
+  assert.deepEqual(decide(s), []);
+  const threadedHold = mapWorld([wfTicket(24, "prototype")], { map: ON_HOLD, mapComments: threaded() });
+  assert.deepEqual(notifies(decide(threadedHold)), []);
+});
+
+test("保留: wayfinder:on-hold の map の子は、起動済みでも観測も判断依頼もしない", () => {
+  const s = stallOf([launchedTicket(21, "research")], { sessions: {}, over: {} });
+  s.issues.find((i) => i.number === 20).labels.push("wayfinder:on-hold");
+  assert.deepEqual(D.ticketSessionsToObserve(s), []);
+  assert.deepEqual(mapDecisions(decide(s)), []);
+});
+
+test("保留: 保留を外した map は、次の周からまた起動を出す", () => {
+  const held = mapWorld([wfTicket(21, "research")], { map: ON_HOLD });
+  assert.deepEqual(wfActions(decide(held)), []);
+  held.issues.find((i) => i.number === 20).labels = ["wayfinder:map"];
+  assert.deepEqual(wfActions(decide(held)), [wfAction(21, "research")]);
+});

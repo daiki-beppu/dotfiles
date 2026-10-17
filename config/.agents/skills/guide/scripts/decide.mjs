@@ -265,8 +265,11 @@ function decideDecisionRequests(snapshot, dispatched) {
   return actions;
 }
 
+// 案内役が扱う map。open で、保留（wayfinder:on-hold）でないもの。保留の map は、起動・通知・観測・判断依頼のどれもしない。
 const openMaps = (snapshot) =>
-  snapshot.issues.filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map")).sort((a, b) => a.number - b.number);
+  snapshot.issues
+    .filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map") && !hasLabel(i, "wayfinder:on-hold"))
+    .sort((a, b) => a.number - b.number);
 
 // open な wayfinder:map の子 ticket のうち、frontier（open・unblocked・未 claim）にある research・grilling・task・prototype。
 // map の番号の昇順、map の子の順。同じ ticket が複数の map の子なら最初の map だけ。
