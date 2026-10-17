@@ -13,6 +13,7 @@ import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
 import { observeSession, sendToSession } from "./orca-agent.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
+import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
 
@@ -59,7 +60,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }) });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }) });
 
 const deps = { readSnapshot, execute, log };
 try {

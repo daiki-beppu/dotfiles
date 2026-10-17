@@ -194,6 +194,37 @@ test("sessions: 仕様の工程と wayfinder の ticket が同じ周にあれば
   assert.deepEqual([...observed].sort(), ["term_1", "term_t"]);
 });
 
+// ---- to-spec のセッションの観測（map に書かれた起動後の印の handle） ----
+
+const clearMap = (comments, over = {}) =>
+  issue(20, { labels: ["wayfinder:map"], body: "## Not yet specified\n", comments, subIssues: [{ number: 21, state: "CLOSED" }], ...over });
+const closedTicket = issue(21, { state: "CLOSED", labels: ["wayfinder:research"], assignees: [VIEWER], blockedBy: [] });
+
+test("sessions: map に起動後の印がある to-spec のセッションを、既存の observeSession で観測して入れる", async () => {
+  const { read, observed } = buildObserved([clearMap([MT_CREATED, launched("to-spec", "term_s")]), closedTicket]);
+  const snap = await read();
+  assert.deepEqual(observed, ["term_s"]);
+  assert.deepEqual(snap.sessions, { term_s: { found: true, waiting: false, idle: true, startedAt: T0, tail: ["t"] } });
+});
+
+test("sessions: to-spec の観測が失敗したら例外にする。見つからない観測（found: false）は入れる", async () => {
+  const issues = [clearMap([MT_CREATED, launched("to-spec", "term_s")]), closedTicket];
+  const gone = buildObserved(issues, { observe: () => ({ found: false, waiting: false, idle: false, tail: [] }) });
+  assert.equal((await gone.read()).sessions.term_s.found, false);
+  const failing = buildObserved(issues, { observe: () => { throw new Error("orca down"); } });
+  await assert.rejects(failing.read(), /orca down/);
+});
+
+test("sessions: 起動前の印だけの map・結果の仕様ができた map・保留の map は to-spec を観測しない（orca を呼ばない）", async () => {
+  const prelaunch = clearMap([{ author: VIEWER, body: "案内役: to-spec を起動する" }]);
+  const done = clearMap([launched("to-spec", "term_s")], { number: 40 });
+  const result = issue(50, { labels: ["spec"], body: "概要\n元の map: #40" });
+  const hold = clearMap([launched("to-spec", "term_h")], { number: 60, labels: ["wayfinder:map", "wayfinder:on-hold"] });
+  const { read, observed } = buildObserved([prelaunch, done, result, hold, closedTicket]);
+  await read();
+  assert.deepEqual(observed, []);
+});
+
 // ---- grilling の判断依頼への返信の読み取り ----
 
 const G_SENT = (t, message, thread = "T900") => ({ author: VIEWER, body: `案内役: Discord に判断依頼を送った（#${t} grilling の問い 1760000000000 / スレッド ${thread} / メッセージ ${message}）` });

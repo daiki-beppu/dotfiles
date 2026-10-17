@@ -295,6 +295,46 @@ test("dry-run: wayfinder の行動も例外にせず、key・map・ticket・type
   assert.match(out, /task/);
 });
 
+test("dry-run: to-spec の行動も例外にせず、key と map の番号を log に表示する", async () => {
+  const { calls, deps } = fakes({
+    readSnapshot: async () => ({
+      repo: REPO,
+      viewer: VIEWER,
+      issues: [
+        issue(20, { labels: ["wayfinder:map"], body: "## Not yet specified\n<!-- x -->\n", subIssues: [{ number: 23, state: "CLOSED" }] }),
+        issue(23, { state: "CLOSED", labels: ["wayfinder:task"], assignees: [], blockedBy: [] }),
+      ],
+      taktIssues: [],
+    }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+  });
+  const actions = await runRound({ ...deps, dryRun: true }, new Set());
+  assert.deepEqual(actions.filter((a) => a.kind === "to-spec").map((a) => a.key), ["to-spec:20"]);
+  const line = calls.logs.find((l) => l.includes("to-spec:20"));
+  assert.ok(line, calls.logs.join("\n"));
+  assert.match(line, /#20/);
+  assert.match(line, /to-spec/);
+});
+
+test("to-spec: 実行すると execute に to-spec の行動を 1 度だけ渡し、dispatched に key を入れる。2 周目は出さない", async () => {
+  const { calls, deps } = fakes({
+    readSnapshot: async () => ({
+      repo: REPO,
+      viewer: VIEWER,
+      issues: [
+        issue(20, { labels: ["wayfinder:map"], body: "", subIssues: [{ number: 23, state: "CLOSED" }] }),
+        issue(23, { state: "CLOSED", labels: ["wayfinder:task"], assignees: [], blockedBy: [] }),
+      ],
+      taktIssues: [],
+    }),
+  });
+  const dispatched = new Set();
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  assert.deepEqual(calls.executed.filter((k) => k.startsWith("to-spec:")), ["to-spec:20"]);
+  assert.ok(dispatched.has("to-spec:20"));
+});
+
 // ---- map のスレッド・人が見る ticket・ticket の停止（dry-run の表示） ----
 const mapDry = async (issues, extra = {}) => {
   const { calls, deps } = fakes({

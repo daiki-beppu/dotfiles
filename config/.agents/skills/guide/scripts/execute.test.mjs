@@ -7,6 +7,7 @@ import { createExecute } from "./execute.mjs";
 import { runRound } from "./loop.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
+import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
 
@@ -46,6 +47,7 @@ const world = (issues, over = {}) => {
   const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); } };
   const deps = {
     github, cwd: "/x", repo: REPO,
+    launchToSpec: (a) => launchToSpec(a, fakeOrca(calls)),
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
     launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
     launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls), (cwd) => calls.push(`git fetch origin @${cwd}`)),
@@ -702,6 +704,86 @@ test("wayfinder: task の ticket は origin/main から作った worktree で起
   assert.equal(launches[1][launches[1].indexOf("--worktree") + 1], "path:/wt/new");
 });
 
+// ---- to-spec: 晴れた map に起動前の印 → orca agent launch → 起動後の印を map に書く ----
+const TS_BEFORE = "comment #20 案内役: to-spec を起動する";
+const TS_AFTER = `comment #20 案内役: to-spec を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`;
+const clearMap = () => [
+  issue(20, { labels: ["wayfinder:map"], body: "## Not yet specified\n\n<!-- 説明 -->\n\n## Out of scope\n", subIssues: [{ number: 21, state: "CLOSED" }] }),
+  issue(21, { state: "CLOSED", labels: ["wayfinder:research"], assignees: [], blockedBy: [] }),
+];
+
+test("to-spec: map に起動前の印 → orca agent launch → タブ題名 → handle と時刻つきの印の順に書き、新しい dispatched で 2 周しても起動は 1 回", async () => {
+  const issues = clearMap();
+  const { calls, round } = world(issues);
+  await round();
+  assert.equal(calls.length, 4, calls.join("\n"));
+  assert.equal(calls[0], TS_BEFORE);
+  assert.ok(calls[1].startsWith("orca agent launch "), calls[1]);
+  assert.ok(calls[2].startsWith("orca terminal rename "), calls[2]);
+  assert.equal(calls[3], TS_AFTER);
+  await round(new Set());
+  await round();
+  assert.equal(calls.length, 4);
+});
+
+test("to-spec: orca agent launch に map の番号つきのプロンプトを渡し、印は map にだけ書く", async () => {
+  const issues = clearMap();
+  const { calls, round } = world(issues);
+  await round();
+  const launch = orcaArgv(calls)[0];
+  assert.deepEqual(launch.slice(0, 7), ["agent", "launch", "--agent", "claude", "--worktree", "path:/x", "--prompt"]);
+  assert.equal(launch[7].split("\n")[0], "/to-spec #20");
+  assert.ok(calls.filter((c) => c.startsWith("comment ")).every((c) => c.startsWith("comment #20 ")), calls.join("\n"));
+  const rename = orcaArgv(calls)[1];
+  assert.equal(rename[rename.indexOf("--title") + 1], "to-spec #20");
+});
+
+test("to-spec: 起動後の印の handle は応答から、時刻は注入した now から取る", async () => {
+  const issues = clearMap();
+  const { calls, round } = world(issues, {
+    launchToSpec: (a) => launchToSpec(a, fakeOrca(calls, { launch: launchReply("term_99") })),
+    now: () => new Date("2026-01-02T03:04:05.678Z"),
+  });
+  await round();
+  assert.equal(calls.at(-1), "comment #20 案内役: to-spec を起動した（ターミナル term_99 / 2026-01-02T03:04:05.678Z）");
+});
+
+test("to-spec: 起動が失敗したら 2 段目の印を書かずに例外になり、再起動しても起動前の印があるので起動し直さない", async () => {
+  const issues = clearMap();
+  const w = world(issues, { launchToSpec: (a) => launchToSpec(a, fakeOrca(w.calls, { launch: new Error("orca down") })) });
+  await assert.rejects(w.round(), /orca down/);
+  assert.equal(w.calls[0], TS_BEFORE, "印は起動より先");
+  assert.deepEqual(issues[0].comments.map((c) => c.body), ["案内役: to-spec を起動する"]);
+  const again = world(issues);
+  await again.round(new Set());
+  assert.deepEqual(again.calls, []);
+});
+
+test("to-spec: handle が取れない応答でも、起動前の印だけが残り、再起動しても起動し直さない", async () => {
+  const issues = clearMap();
+  const calls = [];
+  const { round } = world(issues, { launchToSpec: (a) => launchToSpec(a, fakeOrca(calls, { launch: '{"result":{"outcome":{}}}' })) });
+  await assert.rejects(round(), /handle/);
+  assert.deepEqual(issues[0].comments.map((c) => c.body), ["案内役: to-spec を起動する"]);
+  const again = world(issues);
+  await again.round(new Set());
+  assert.deepEqual(again.calls, []);
+});
+
+test("to-spec: 霧が残る map・開いた子がある map では起動しない", async () => {
+  const fog = clearMap();
+  fog[0].body = "## Not yet specified\n- 認証方式\n";
+  const open = clearMap();
+  open[1].state = "OPEN";
+  open[1].assignees = ["someone"];
+  open[0].subIssues = [{ number: 21, state: "OPEN" }];
+  for (const issues of [fog, open]) {
+    const { calls, round } = world(issues);
+    await round();
+    assert.deepEqual(calls, []);
+  }
+});
+
 // ---- wayfinder の map のスレッド・人が見る ticket・ticket のセッションの停止 ----
 const MT_CREATING = "案内役: Discord に map のスレッドを立てる";
 const MT_CREATED = "案内役: Discord に map のスレッドを立てた（スレッド T900）";
@@ -733,8 +815,10 @@ const mapNoticeWorld = (issues, { discordOver = {}, sessions, now = "2026-10-17T
     runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues, taktIssues: [], now, sessions }), execute: createExecute(deps), log: () => {} }, dispatched);
   return { calls, round };
 };
+// 霧が残る map（子がすべて閉じても to-spec を起動しない）。ここで見たいのは map の通知なので、晴れた map にしない。
+const FOGGY = "## Not yet specified\n- 残っている問い\n";
 const mapIssues = (children, mapComments = []) => [
-  issue(20, { title: "地図", labels: ["wayfinder:map"], comments: mapComments, subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
+  issue(20, { title: "地図", labels: ["wayfinder:map"], body: FOGGY, comments: mapComments, subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
   ...children,
 ];
 const protoTicket = (over = {}) => wfTicket(21, "prototype", { title: "見た目の試作", ...over });
@@ -1131,21 +1215,22 @@ const RJ_OWNER = "U-owner";
 const RJ_SENT = byViewer("案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド T900 / メッセージ M42）");
 const RJ_MARKER = "案内役: Discord で仮決めが差し戻された（#21 仮決め 1）";
 // 偽の GitHub は reopen・removeAssignees の結果を次の読み出しに反映する（開き直した ticket が frontier に戻る流れを周をまたいで再現する）。
-const rejectWorld = ({ failOn } = {}) => {
+const rejectWorld = ({ failOn, mapBody = FOGGY } = {}) => {
   const ticket = wfTicket(21, "grilling", {
     title: "parser を選ぶ", state: "CLOSED", assignees: [VIEWER],
     comments: [byViewer(PD_BODY), byViewer(PD_SENDING_MARKER), RJ_SENT, byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_old / ${LAUNCHED_AT}）`)],
   });
-  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
+  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], body: mapBody, comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
   const calls = [];
   const github = {
-    comment: (n, body) => { calls.push(`comment #${n} ${body}`); ticket.comments.push(byViewer(body)); },
+    comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push(byViewer(body)); },
     reopen: (n) => { calls.push(`reopen #${n}`); if (failOn === "reopen") throw new Error("gh down"); ticket.state = "OPEN"; },
     removeAssignees: (n, logins) => { calls.push(`unassign #${n} ${logins.join(",")}`); ticket.assignees = []; },
   };
   const deps = {
     github, cwd: "/x", repo: REPO,
     launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls), () => {}),
+    launchToSpec: (a) => launchToSpec(a, fakeOrca(calls)),
     now: NOW,
     discord: {},
   };
@@ -1162,7 +1247,7 @@ const rejectWorld = ({ failOn } = {}) => {
       dispatched,
     );
   };
-  return { calls, round, ticket };
+  return { calls, round, ticket, issues };
 };
 const rjKinds = (calls) => calls.map((c) => c.split(" ")[0] + (c.startsWith("comment ") ? ` ${c.split(" ")[1]}` : ""));
 
@@ -1188,6 +1273,22 @@ test("差し戻し: 周をまとめて回しても、書き戻し・開き直し
   // 書き戻しの後に書かれた印は、新しい回の起動前と起動後の 2 件だけ。
   const bodies = w.ticket.comments.map((c) => c.body);
   assert.deepEqual(bodies.slice(bodies.findIndex((b) => b.startsWith(RJ_MARKER)) + 1), ["案内役: wayfinder を起動する", `案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`]);
+});
+
+test("差し戻し × to-spec: 開き直される子を持つ晴れた map には、同じ周で to-spec の印も起動も出ない。子が再び閉じた周で 1 度だけ起動する", async () => {
+  const w = rejectWorld({ mapBody: "## Not yet specified\n\n<!-- 説明 -->\n" });
+  const mapComments = () => w.issues[0].comments.map((c) => c.body);
+  await w.round();
+  assert.deepEqual(rjKinds(w.calls).slice(0, 3), ["comment #21", "reopen", "unassign"], w.calls.join("\n"));
+  assert.ok(!w.calls.some((c) => c.startsWith("comment #20 案内役: to-spec")), w.calls.join("\n"));
+  assert.ok(!orcaArgv(w.calls).some((a) => a[0] === "agent" && String(a[a.indexOf("--prompt") + 1]).startsWith("/to-spec")));
+  assert.ok(!mapComments().some((b) => b.startsWith("案内役: to-spec")));
+  // 開き直した子が再び閉じる（書き戻しの印は残る）。
+  w.ticket.state = "CLOSED";
+  await w.round(new Set());
+  assert.equal(w.calls.filter((c) => c.startsWith("comment #20 案内役: to-spec を起動する")).length, 1, w.calls.join("\n"));
+  assert.equal(w.calls.filter((c) => c.startsWith("comment #20 案内役: to-spec を起動した")).length, 1);
+  assert.equal(orcaArgv(w.calls).filter((a) => a[0] === "agent" && String(a[a.indexOf("--prompt") + 1]).startsWith("/to-spec #20")).length, 1);
 });
 
 test("差し戻し: 開き直しが失敗したら例外になり、書き戻しの印は残るので、再起動しても書き戻しをやり直さない", async () => {
