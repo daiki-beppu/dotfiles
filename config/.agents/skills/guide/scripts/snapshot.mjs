@@ -1,7 +1,7 @@
 // スナップショットの組み立て。GitHub の issue に、承認依頼を送り済みの OPEN な仕様（承認済みを含む）の Discord リアクションを足す。
 // 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない）。現在時刻 now と stallMinutes も渡す。
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
-import { awaitsReaction, grillingQuestionsToRefresh, grillingRepliesToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, ticketSessionsToObserve } from "./decide.mjs";
+import { awaitsReaction, grillingQuestionsToRefresh, grillingRepliesToRead, provisionalRejectionsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, ticketSessionsToObserve } from "./decide.mjs";
 
 export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, github, discord, taktTasks, now = () => new Date(), stallMinutes, observeSession }) {
   return async () => {
@@ -27,6 +27,11 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     for (const { threadId, messageId } of grillingRepliesToRead(base)) {
       decisionReplies[messageId] = await discord.readReplies({ threadId, messageId });
     }
-    return { ...base, now: now().toISOString(), stallMinutes, sessions, decisionReplies };
+    // 閉じた ticket の、流した印があり書き戻し前の仮決めだけ、本人の差し戻し（❌）を読む（メッセージの ID をキーに入れる）。
+    const provisionalReactions = {};
+    for (const { threadId, messageId } of provisionalRejectionsToRead(base)) {
+      provisionalReactions[messageId] = await discord.readReactions({ threadId, messageId });
+    }
+    return { ...base, now: now().toISOString(), stallMinutes, sessions, decisionReplies, provisionalReactions };
   };
 }

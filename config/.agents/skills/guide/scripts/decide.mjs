@@ -314,14 +314,16 @@ function wayfinderFrontier(snapshot) {
   return frontier;
 }
 
-// frontier の research・grilling・task ごとの起動。prototype と、起動の印（viewer の 1 段目か 2 段目）がある ticket には出さない。
+// frontier の research・grilling・task ごとの起動。prototype と、今の回に起動の印（viewer の 1 段目か 2 段目）がある ticket には出さない。
 function decideWayfinder(snapshot, dispatched) {
   const { viewer } = snapshot;
   const actions = [];
   for (const { map, ticket, type } of wayfinderFrontier(snapshot)) {
     if (!WAYFINDER_TYPES.includes(type)) continue;
-    if (markers(ticket, viewer).some((b) => b.startsWith(MARKER_WAYFINDER_LAUNCHING) || b.startsWith(WAYFINDER_LAUNCHED_PREFIX))) continue;
-    const key = `wayfinder:${ticket.number}`;
+    // 起動の印は、最後の差し戻しの書き戻し（開き直し）より後のものだけを数える。回ごとに 1 度起動する。
+    const { marks, cycle } = currentCycle(ticket, viewer);
+    if (marks.some((b) => b.startsWith(MARKER_WAYFINDER_LAUNCHING) || b.startsWith(WAYFINDER_LAUNCHED_PREFIX))) continue;
+    const key = cycle === 0 ? `wayfinder:${ticket.number}` : `wayfinder:${ticket.number}:${cycle}`;
     if (dispatched.has(key)) continue;
     actions.push({ kind: "wayfinder", key, map: map.number, ticket: ticket.number, type });
   }
@@ -461,7 +463,8 @@ export function ticketSessionsToObserve(snapshot) {
       const type = WAYFINDER_TYPES.find((t) => hasLabel(ticket, `wayfinder:${t}`));
       if (type === undefined) continue;
       seen.add(ticket.number);
-      const launched = markers(ticket, viewer)
+      // 開き直した ticket では、前の回の handle を観測しない（閉じたタブの「見つからない」を停止と誤認しないため）。
+      const launched = currentCycle(ticket, viewer).marks
         .map((b) => LAUNCHED.exec(b))
         .filter((m) => m && m[1] === "wayfinder")
         .at(-1);
@@ -496,7 +499,14 @@ export const provisionalSendingMarker = (ticket, n) => `案内役: Discord に�
 export const provisionalSentMarker = (ticket, n, threadId, messageId) =>
   `案内役: Discord に仮決めを流した（#${ticket} 仮決め ${n} / スレッド ${threadId} / メッセージ ${messageId}）`;
 const PROVISIONAL_SENDING = /^案内役: Discord に仮決めを流す（#(\d+) 仮決め (\d+)）$/;
-const PROVISIONAL_SENT = /^案内役: Discord に仮決めを流した（#(\d+) 仮決め (\d+) \/ スレッド [^\s/）]+ \/ メッセージ [^\s/）]+）$/;
+const PROVISIONAL_SENT = /^案内役: Discord に仮決めを流した（#(\d+) 仮決め (\d+) \/ スレッド ([^\s/）]+) \/ メッセージ ([^\s/）]+)）$/;
+// 差し戻しの書き戻し。1 行目が印（ticket と仮決めの番号）、空行の後に問いと答え。本文に `## ` の行を作らない（仮決めとして読まれないように）。
+// 承認の差し戻しの印（MARKER_REJECTED）とは前方一致しない文言にする。
+export const provisionalRejectedMarker = (ticket, n, question, answer) =>
+  `案内役: Discord で仮決めが差し戻された（#${ticket} 仮決め ${n}）\n\n- 問い: ${question}\n- 答え: ${answer}\n\nこの ticket を開き直した。差し戻された仮決めを踏まえて解き直すこと。`;
+const PROVISIONAL_REJECTED = /^案内役: Discord で仮決めが差し戻された（#(\d+) 仮決め (\d+)）(?:\r?\n|$)/;
+const REJECT_ACTION_KEY = "reject-provisional-decision";
+const NO_PROVISIONAL = "（仮決めの記録が ticket に無い）";
 const PROVISIONAL_FIELDS = [
   ["answer", /^- 答え: (\S.*)$/],
   ["triage", /^- 振り分け: (⓪|③)$/],
@@ -574,6 +584,22 @@ function provisionalMarks(ticket, viewer) {
   return done;
 }
 
+// ticket の差し戻しの書き戻しの印。回の数（印の数）と、最後の印より後の viewer のコメント（今の回のコメント）。
+// markers() は GitHub のコメントの順を保つので、順だけで回が決まる。別の ticket・他人の印は数えない。
+function currentCycle(ticket, viewer) {
+  const all = markers(ticket, viewer);
+  let cycle = 0;
+  let last = -1;
+  for (const [i, body] of all.entries()) {
+    const m = PROVISIONAL_REJECTED.exec(body);
+    if (m && Number(m[1]) === ticket.number) {
+      cycle += 1;
+      last = i;
+    }
+  }
+  return { marks: all.slice(last + 1), cycle };
+}
+
 // viewer の最後の「判断の問い」コメント（1 行目が見出し）の 2 行目以降。無ければ NO_QUESTION。
 function lastQuestion(ticket, viewer) {
   const body = markers(ticket, viewer)
@@ -642,6 +668,69 @@ function decideGrillingAnswers(snapshot, dispatched) {
       if (!(observation?.found && observation.waitSource === "hook" && String(observation.waitSince) === since)) continue;
       actions.push({ kind: "inject-answer", key, ticket, since, handle, answer });
     }
+  }
+  return actions;
+}
+
+// 差し戻しを読むべき仮決め。open で保留でない map の子のうち、閉じた ticket の、流した印があり、まだ書き戻していない仮決め。
+// open の間は何も出さない（閉じてから開き直す）ので読まない。同じ ticket が複数の map の子なら最初の map だけ。
+function pendingRejections(snapshot) {
+  const { viewer, issues } = snapshot;
+  const pending = [];
+  const seen = new Set();
+  for (const map of openMaps(snapshot)) {
+    for (const child of map.subIssues ?? []) {
+      const ticket = issues.find((i) => i.number === child.number);
+      if (ticket === undefined || seen.has(ticket.number)) continue;
+      seen.add(ticket.number);
+      if (ticket.state !== "CLOSED") continue;
+      const rejected = new Set();
+      const sent = new Map();
+      for (const body of markers(ticket, viewer)) {
+        let m;
+        if ((m = PROVISIONAL_REJECTED.exec(body)) && Number(m[1]) === ticket.number) rejected.add(Number(m[2]));
+        else if ((m = PROVISIONAL_SENT.exec(body)) && Number(m[1]) === ticket.number) sent.set(Number(m[2]), { threadId: m[3], messageId: m[4] });
+      }
+      for (const [n, { threadId, messageId }] of [...sent].sort((a, b) => a[0] - b[0])) {
+        if (!rejected.has(n)) pending.push({ map: map.number, ticket, n, threadId, messageId });
+      }
+    }
+  }
+  return pending;
+}
+
+// 本人の差し戻し（❌）を読むべき仮決めのスレッドとメッセージ。
+export const provisionalRejectionsToRead = (snapshot) =>
+  pendingRejections(snapshot).map(({ threadId, messageId }) => ({ threadId, messageId }));
+
+// 閉じた ticket の仮決めに本人の ❌ があれば、ticket への書き戻し・開き直し・claim の解除を 1 つの行動にする。
+// 同じ ticket の複数の仮決めは 1 件に束ねる（開き直しは 1 回。新しいセッションが全部の差し戻しを知って解けるように）。
+function decideProvisionalRejections(snapshot, dispatched) {
+  const { viewer, discordUserId } = snapshot;
+  if (discordUserId == null) return [];
+  const rejected = pendingRejections(snapshot).filter(({ messageId }) =>
+    (snapshot.provisionalReactions?.[messageId] ?? []).some((r) => r.userId === discordUserId && r.emoji === REJECT_EMOJI),
+  );
+  const byTicket = new Map();
+  for (const r of rejected) {
+    const id = `${r.map}:${r.ticket.number}`;
+    if (!byTicket.has(id)) byTicket.set(id, []);
+    byTicket.get(id).push(r);
+  }
+  const actions = [];
+  for (const items of byTicket.values()) {
+    const { map, ticket } = items[0];
+    const key = `${REJECT_ACTION_KEY}:${map}:${ticket.number}:${items.map((r) => r.n).join(",")}`;
+    if (dispatched.has(key)) continue;
+    const recorded = provisionalDecisions(ticket, viewer);
+    actions.push({
+      kind: REJECT_ACTION_KEY, key, map, ticket: ticket.number,
+      provisionals: items.map(({ n }) => {
+        const p = recorded.find((d) => d.n === n);
+        return { n, question: p?.question ?? NO_PROVISIONAL, answer: p?.answer ?? NO_PROVISIONAL };
+      }),
+      assignees: [...(ticket.assignees ?? [])],
+    });
   }
   return actions;
 }
@@ -791,6 +880,7 @@ export function decide(snapshot) {
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideMapNotices(snapshot, dispatched),
+    ...decideProvisionalRejections(snapshot, dispatched),
     ...decideGrillingAnswers(snapshot, dispatched),
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),

@@ -81,6 +81,16 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
       gh(["api", `repos/${repo}/issues/${number}/comments`, "-f", `body=${body}`]);
     },
 
+    reopen(number) {
+      gh(["api", "-X", "PATCH", `repos/${repo}/issues/${number}`, "-f", "state=open"]);
+    },
+
+    // claim（assignee）を外す。外す人がいなければ呼ばない。
+    removeAssignees(number, logins) {
+      if (logins.length === 0) return;
+      gh(["api", "-X", "DELETE", `repos/${repo}/issues/${number}/assignees`, ...logins.flatMap((l) => ["-f", `assignees[]=${l}`])]);
+    },
+
     // REST で付ける。repo にまだ無いラベルは GitHub が作るので、spec-approved を前もって用意しなくてよい（gh issue edit は無いラベルで失敗する）。
     addLabel(number, label) {
       gh(["api", `repos/${repo}/issues/${number}/labels`, "-f", `labels[]=${label}`]);

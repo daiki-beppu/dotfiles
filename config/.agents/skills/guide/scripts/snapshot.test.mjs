@@ -312,3 +312,52 @@ test("refresh: 読み直しの取得が失敗したら例外にする", async ()
   const { read } = buildRefresh(grillingTicket(21), { later: [], readComments: () => { throw new Error("gh が 502"); } });
   await assert.rejects(read(), /502/);
 });
+
+// ---- 仮決めの差し戻しのリアクションの読み取り ----
+
+const PD_SENT_C = (t, n, message, thread = "T900") => ({ author: VIEWER, body: `案内役: Discord に仮決めを流した（#${t} 仮決め ${n} / スレッド ${thread} / メッセージ ${message}）` });
+const PD_REJECTED_C = (t, n) => ({ author: VIEWER, body: `案内役: Discord で仮決めが差し戻された（#${t} 仮決め ${n}）\n\n- 問い: q\n- 答え: a` });
+const pdTicket = (number, over = {}) => ticketIssue(number, { state: "CLOSED", labels: ["wayfinder:grilling"], assignees: [], comments: [], ...over });
+
+const buildReactions = (issues, { readReactions } = {}) => {
+  const reads = [];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => issues, readPullRequests: () => [], readComments: (n) => issues.find((i) => i.number === n).comments },
+    discord: { readReactions: async (ref) => { reads.push(ref); return readReactions ? readReactions(ref) : []; }, readReplies: async () => [] },
+    taktTasks: () => [],
+    now: () => NOW,
+    observeSession: () => ({ found: true, waiting: false, idle: true, tail: ["t"] }),
+  });
+  return { read, reads };
+};
+
+test("provisionalReactions: 閉じた ticket の、流した印があり書き戻し前の仮決めだけ、スレッドとメッセージの ID でリアクションを読み、メッセージの ID をキーに入れる", async () => {
+  const mine = [{ emoji: "❌", userId: "U1" }];
+  const pending = pdTicket(21, { comments: [PD_SENT_C(21, 1, "M1"), PD_SENT_C(21, 2, "M2"), PD_REJECTED_C(21, 2)] });
+  const open = pdTicket(22, { state: "OPEN", comments: [PD_SENT_C(22, 1, "M3")] });
+  const unsent = pdTicket(23);
+  const { read, reads } = buildReactions([mapIssue([pending, open, unsent]), pending, open, unsent], { readReactions: async () => mine });
+  const snap = await read();
+  assert.deepEqual(reads, [{ threadId: "T900", messageId: "M1" }]);
+  assert.deepEqual(snap.provisionalReactions, { M1: mine });
+});
+
+test("provisionalReactions: 読む対象が無ければ discord を呼ばず空にする。取得が失敗したら例外にする（黙って空にしない）", async () => {
+  const none = pdTicket(21);
+  const a = buildReactions([mapIssue([none]), none]);
+  const snap = await a.read();
+  assert.deepEqual(a.reads, []);
+  assert.deepEqual(snap.provisionalReactions ?? {}, {});
+  const pending = pdTicket(21, { comments: [PD_SENT_C(21, 1, "M1")] });
+  const b = buildReactions([mapIssue([pending]), pending], { readReactions: async () => { throw new Error("Discord GET が 500"); } });
+  await assert.rejects(b.read(), /500/);
+});
+
+test("provisionalReactions: 読んだ本人の ❌ から、decide が書き戻しと開き直しの行動を 1 件出す（読み取りから判定までの配線）", async () => {
+  const pending = pdTicket(21, { comments: [PD_SENT_C(21, 1, "M1")] });
+  const { read } = buildReactions([mapIssue([pending]), pending], { readReactions: async () => [{ emoji: "❌", userId: "U1" }] });
+  const actions = decide(await read()).filter((a) => a.kind === "reject-provisional-decision");
+  assert.equal(actions.length, 1);
+  assert.equal(actions[0].ticket, 21);
+});

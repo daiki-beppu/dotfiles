@@ -66,7 +66,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
     // grilling・task の仮決め 1 件を map のスレッドに流す。ID は差し戻しの受け付けに使うので返す。
     // 2000 文字の上限で切れるのは問い・答え・理由・根拠だけにする（題名・リンク・番号を必ず残す）。
     async sendProvisionalDecision({ threadId, map, ticket, title, url, question, answer, reason, evidence }) {
-      const head = `仮決め: map #${map} の #${ticket} ${title}\n${url}\n`;
+      const head = `仮決め: map #${map} の #${ticket} ${title}\n${url}\n差し戻すときは ❌ を押してください。\n`;
       const labels = ["判断: ", "\n→ ", "\n理由: ", "\n根拠: "];
       const room = Math.max(0, MAX_CONTENT - head.length - labels.reduce((n, l) => n + l.length, 0));
       const values = [question, answer, reason, evidence];
@@ -85,6 +85,10 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         content: `${head}${labels.map((l, i) => `${l}${shown[i]}`).join("")}`,
         allowed_mentions: { parse: [] },
       });
+      // 押すだけで済むよう Bot が ❌ を先に付けておく（判定は本人の分だけを見る）。送信は済んでいるので、付け損ねても例外にせず 1 行残す。
+      await call("PUT", `/channels/${threadId}/messages/${message.id}/reactions/${encodeURIComponent("❌")}/@me`).catch((e) =>
+        warn(`map #${map} の #${ticket} の仮決めに ❌ を先付けできなかった: ${e.message}`),
+      );
       return { messageId: message.id };
     },
 

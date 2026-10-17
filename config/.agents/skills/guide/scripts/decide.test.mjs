@@ -2438,3 +2438,167 @@ test("仮決め: 既存の遷移（prototype の通知）は、仮決めがあ�
   assert.deepEqual(notifies(decide(s)).map((a) => a.ticket), [21]);
   assert.equal(posts(decide(s)).length, 2);
 });
+
+// ---- 仮決めの差し戻し: 閉じた ticket の仮決めに本人が ❌ を押したら、ticket に書き戻して開き直し、claim を外す ----
+const RJ = (t, n) => D.provisionalRejectedMarker(t, n, "どの parser？", "既存");
+const rejects = (actions) => actions.filter((a) => a.kind === "reject-provisional-decision");
+const ONE = pdComment(pdItem("どの parser？", "既存"));
+// 掲載済み（メッセージ M1）で閉じた #21。既定では本人の ❌ が付いている。
+const rjWorld = (ticketOver = {}, { reactions = { M1: [{ emoji: "❌", userId: OWNER }] }, over = {}, map = {} } = {}) =>
+  pdWorld(
+    { comments: [byViewer(ONE), byViewer(PD_SENDING(21, 1)), byViewer(PD_SENT(21, 1, "900", "M1"))], assignees: [VIEWER], ...ticketOver },
+    { map, over: { discordUserId: OWNER, provisionalReactions: reactions, ...over } },
+  );
+
+test("差し戻しの書き戻し: 印の文言は 1 行目に ticket と仮決めの番号、続けて問いと答え。承認の差し戻しの印とも仮決めの掲載の印とも前方一致しない", () => {
+  const m = RJ(21, 1);
+  assert.equal(m.split("\n")[0], "案内役: Discord で仮決めが差し戻された（#21 仮決め 1）");
+  assert.ok(m.includes("- 問い: どの parser？") && m.includes("- 答え: 既存"), m);
+  assert.ok(!m.startsWith(D.MARKER_REJECTED));
+  assert.ok(!m.split(/\r?\n/).some((l) => l.startsWith("## ") || l.startsWith("### ")), m);
+});
+
+test("差し戻しの書き戻し: 書き戻しコメントの本文は仮決めとして読まれない（通し番号が増えない）", () => {
+  const t = wfTicket(21, "grilling", { comments: [byViewer(ONE), byViewer(D.provisionalRejectedMarker(21, 1, "どの parser？", "## 仮決め"))] });
+  assert.deepEqual(D.provisionalDecisions(t, VIEWER).map((p) => p.n), [1]);
+});
+
+test("差し戻し: 閉じた ticket の掲載済みの仮決めに本人の ❌ があれば、書き戻しと開き直しの行動が 1 件だけ出る（問い・答え・外す assignee つき）", () => {
+  const found = rejects(decide(rjWorld()));
+  assert.deepEqual(found, [
+    {
+      kind: "reject-provisional-decision", key: "reject-provisional-decision:20:21:1", map: 20, ticket: 21,
+      provisionals: [{ n: 1, question: "どの parser？", answer: "既存" }], assignees: [VIEWER],
+    },
+  ]);
+});
+
+test("差し戻し: 同じ ticket の複数の仮決めが差し戻されたら、1 件の行動に仮決めごとの問いと答えを束ねる（開き直しは 1 回）", () => {
+  const w = rjWorld({
+    comments: [byViewer(two), byViewer(PD_SENT(21, 1, "900", "M1")), byViewer(PD_SENT(21, 2, "900", "M2"))],
+  }, { reactions: { M1: [{ emoji: "❌", userId: OWNER }], M2: [{ emoji: "❌", userId: OWNER }] } });
+  const found = rejects(decide(w));
+  assert.equal(found.length, 1);
+  assert.deepEqual(found[0].provisionals, [
+    { n: 1, question: "どの parser？", answer: "既存" },
+    { n: 2, question: "名前は？", answer: "foo" },
+  ]);
+  assert.equal(found[0].key, "reject-provisional-decision:20:21:1,2");
+});
+
+test("差し戻し: 書き戻しの印を足した 2 周目と、dispatched に key がある周には出ない（1 度だけ）", () => {
+  const w = rjWorld();
+  const first = rejects(decide(w));
+  assert.equal(first.length, 1);
+  assert.deepEqual(rejects(decide({ ...w, dispatched: [first[0].key] })), []);
+  w.issues.find((i) => i.number === 21).comments.push(byViewer(RJ(21, 1)));
+  assert.deepEqual(rejects(decide(w)), []);
+});
+
+test("差し戻し: 本人以外の ❌・本人の ✅ だけ・別のメッセージへの ❌・本人の ID が不明、では出ない", () => {
+  const cases = [
+    { M1: [{ emoji: "❌", userId: "U-other" }] },
+    { M1: [{ emoji: "✅", userId: OWNER }] },
+    { M2: [{ emoji: "❌", userId: OWNER }] },
+    {},
+  ];
+  for (const reactions of cases) assert.deepEqual(rejects(decide(rjWorld({}, { reactions }))), [], JSON.stringify(reactions));
+  assert.deepEqual(rejects(decide(rjWorld({}, { over: { discordUserId: undefined } }))), []);
+  assert.deepEqual(rejects(decide({ ...rjWorld(), provisionalReactions: undefined })), []);
+});
+
+test("差し戻し: 書き戻し済みの判定は ticket の番号と書き手で区別する（他人・別の ticket・行の途中の字面は書き戻し済みにしない）", () => {
+  const text = RJ(21, 1);
+  const comments = (extra) => [byViewer(ONE), byViewer(PD_SENT(21, 1, "900", "M1")), ...extra];
+  for (const extra of [
+    [{ author: "someone", body: text }],
+    [byViewer(RJ(2, 1))],
+    [byViewer(`メモ: ${text}`)],
+    [byViewer(RJ(21, 2))],
+  ]) {
+    assert.equal(rejects(decide(rjWorld({ comments: comments(extra) }))).length, 1, JSON.stringify(extra));
+  }
+});
+
+test("差し戻し: ticket が open の間は出ない（閉じる前の差し戻しは、閉じてから開き直す）。閉じれば同じ ❌ で 1 件出る", () => {
+  const w = rjWorld({ state: "OPEN" });
+  assert.deepEqual(rejects(decide(w)), []);
+  w.issues.find((i) => i.number === 21).state = "CLOSED";
+  w.issues.find((i) => i.number === 20).subIssues = [{ number: 21, state: "CLOSED" }];
+  assert.equal(rejects(decide(w)).length, 1);
+});
+
+test("差し戻し: 仮決めを流した印が無い（掲載前の）ticket、保留の map の ticket には出ない", () => {
+  assert.deepEqual(rejects(decide(rjWorld({ comments: [byViewer(ONE)] }))), []);
+  assert.deepEqual(rejects(decide(rjWorld({}, { map: ON_HOLD }))), []);
+});
+
+test("差し戻し: 書き戻しの行動は、開き直す前の assignee がいなくても出る（assignees は空のまま）", () => {
+  const [a] = rejects(decide(rjWorld({ assignees: [] })));
+  assert.deepEqual(a.assignees, []);
+});
+
+test("差し戻し: 読む対象は、閉じた ticket の、流した印があり書き戻し前の仮決めのスレッドとメッセージだけ", () => {
+  const sent = (t, n, message) => byViewer(PD_SENT(t, n, "900", message));
+  const s = mapWorld(
+    [
+      wfTicket(21, "grilling", { state: "CLOSED", comments: [byViewer(two), sent(21, 1, "M1"), sent(21, 2, "M2"), byViewer(RJ(21, 2))] }),
+      wfTicket(22, "task", { state: "OPEN", comments: [byViewer(ONE), sent(22, 1, "M3")] }),
+      wfTicket(23, "task", { state: "CLOSED", comments: [byViewer(ONE)] }),
+    ],
+    { mapComments: threaded() },
+  );
+  assert.deepEqual(D.provisionalRejectionsToRead(s), [{ threadId: "900", messageId: "M1" }]);
+});
+
+test("差し戻し: 純粋性。入力を変更せず、同じ入力に同じ出力を返す", () => {
+  const s = deepFreeze(rjWorld());
+  const first = decide(s);
+  assert.equal(rejects(first).length, 1);
+  assert.deepEqual(decide(s), first);
+});
+
+// ---- 開き直した回ごとに 1 度だけ起動する ----
+const WF_REOPENED = (extra = []) => [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_old")), byViewer(RJ(21, 1)), ...extra];
+const reopened = (extra = [], over = {}) => wfTicket(21, "grilling", { title: "parser を選ぶ", comments: WF_REOPENED(extra), ...over });
+
+test("開き直した回の起動: 前の回の起動の印が残っていても、書き戻しより後に起動の印が無ければ新しい key で 1 件出る（初回の key は変わらない）", () => {
+  const s = mapWorld([reopened()], { mapComments: threaded() });
+  assert.deepEqual(wfActions(decide(s)), [{ ...wfAction(21, "grilling"), key: "wayfinder:21:1" }]);
+  assert.deepEqual(wfActions(decide(mapWorld([wfTicket(21, "grilling")], { mapComments: threaded() }))), [wfAction(21, "grilling")]);
+});
+
+test("開き直した回の起動: 同じ回では二重に起動しない。dispatched の新しい key、新しい回の起動前の印、起動後の印のどれでも止まる", () => {
+  const world = (extra, over = {}) => mapWorld([reopened(extra)], { mapComments: threaded(), over });
+  assert.deepEqual(wfActions(decide(world([], { dispatched: ["wayfinder:21:1"] }))), []);
+  assert.deepEqual(wfActions(decide(world([byViewer(WF_LAUNCHING)]))), []);
+  assert.deepEqual(wfActions(decide(world([byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_new"))]))), []);
+});
+
+test("開き直した回の起動: 前の回の key（wayfinder:21）が dispatched にあっても新しい回の起動は止まらず、2 周目（印を足した後）は 0 件", () => {
+  const s = mapWorld([reopened()], { mapComments: threaded(), over: { dispatched: ["wayfinder:21"] } });
+  const first = wfActions(decide(s));
+  assert.deepEqual(first.map((a) => a.key), ["wayfinder:21:1"]);
+  s.issues.find((i) => i.number === 21).comments.push(byViewer(WF_LAUNCHING));
+  assert.deepEqual(wfActions(decide({ ...s, dispatched: ["wayfinder:21", first[0].key] })), []);
+});
+
+test("開き直した回の起動: 回は書き戻しの印の数で数える（2 回目の差し戻しの後は key wayfinder:21:2）。他人・別の ticket の書き戻しでは回が進まない", () => {
+  const twice = reopened([byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_2")), byViewer(RJ(21, 1))]);
+  assert.deepEqual(wfActions(decide(mapWorld([twice], { mapComments: threaded() }))).map((a) => a.key), ["wayfinder:21:2"]);
+  const noise = wfTicket(21, "grilling", { comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_old")), { author: "someone", body: RJ(21, 1) }, byViewer(RJ(2, 1))] });
+  assert.deepEqual(wfActions(decide(mapWorld([noise], { mapComments: threaded() }))), []);
+});
+
+test("開き直した回の起動: assignee が残る間（claim を外す前）は起動しない", () => {
+  assert.deepEqual(wfActions(decide(mapWorld([reopened([], { assignees: [VIEWER] })], { mapComments: threaded() }))), []);
+});
+
+test("開き直した ticket の停止の観測: 書き戻しの後に起動の印が無い間は前の回の handle を観測せず、判断依頼も出さない。新しい起動の印の後は新しい handle", () => {
+  const gone = { term_old: obs({ found: false, tail: [] }) };
+  const s = mapWorld([reopened()], { mapComments: threaded(), over: { sessions: gone, now: at(1) } });
+  assert.deepEqual(D.ticketSessionsToObserve(s), []);
+  assert.deepEqual(mapDecisions(decide(s)), []);
+  const fresh = mapWorld([reopened([byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_new"))], { assignees: [VIEWER] })], { mapComments: threaded() });
+  assert.deepEqual(D.ticketSessionsToObserve(fresh).map((t) => t.handle), ["term_new"]);
+});

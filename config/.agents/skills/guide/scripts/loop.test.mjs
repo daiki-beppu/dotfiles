@@ -399,3 +399,24 @@ test("dry-run: 仮決めの掲載の行動も例外にせず、execute を呼ば
   await runRound(deps, new Set());
   assert.ok(logs.some((l) => l.includes("post-provisional-decision:20:21:1")), logs.join("\n"));
 });
+
+test("dry-run: 仮決めの差し戻しの行動も例外にせず、execute を呼ばず、key を含めて log に表示する", async () => {
+  const logs = [];
+  const sent = "案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド 900 / メッセージ M1）";
+  const body = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: なし\n";
+  const deps = {
+    readSnapshot: async () => ({
+      repo: REPO, viewer: VIEWER, taktIssues: [], discordUserId: "U-owner",
+      provisionalReactions: { M1: [{ emoji: "❌", userId: "U-owner" }] },
+      issues: [
+        issue(20, { title: "地図", labels: ["wayfinder:map"], subIssues: [{ number: 21, state: "CLOSED" }], comments: [{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }] }),
+        issue(21, { title: "parser を選ぶ", state: "CLOSED", labels: ["wayfinder:grilling"], assignees: [VIEWER], blockedBy: [], comments: [{ author: VIEWER, body }, { author: VIEWER, body: sent }] }),
+      ],
+    }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+    log: (line) => logs.push(String(line)),
+    dryRun: true,
+  };
+  await runRound(deps, new Set());
+  assert.ok(logs.some((l) => l.includes("reject-provisional-decision:20:21:1") && l.includes("#21")), logs.join("\n"));
+});

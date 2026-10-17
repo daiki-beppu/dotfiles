@@ -1125,3 +1125,76 @@ test("仮決め: map のスレッドが無ければ、先にスレッドを立�
   assert.equal(calls.filter((c) => c.startsWith("provisional ")).length, 1);
   assert.equal(pdReq(calls.find((c) => c.startsWith("provisional "))).threadId, "T900");
 });
+
+// ---- 仮決めの差し戻し: ticket に書き戻す → 開き直す → claim を外す。開き直した ticket は次の周で新しい回として 1 度だけ起動する ----
+const RJ_OWNER = "U-owner";
+const RJ_SENT = byViewer("案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド T900 / メッセージ M42）");
+const RJ_MARKER = "案内役: Discord で仮決めが差し戻された（#21 仮決め 1）";
+// 偽の GitHub は reopen・removeAssignees の結果を次の読み出しに反映する（開き直した ticket が frontier に戻る流れを周をまたいで再現する）。
+const rejectWorld = ({ failOn } = {}) => {
+  const ticket = wfTicket(21, "grilling", {
+    title: "parser を選ぶ", state: "CLOSED", assignees: [VIEWER],
+    comments: [byViewer(PD_BODY), byViewer(PD_SENDING_MARKER), RJ_SENT, byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_old / ${LAUNCHED_AT}）`)],
+  });
+  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
+  const calls = [];
+  const github = {
+    comment: (n, body) => { calls.push(`comment #${n} ${body}`); ticket.comments.push(byViewer(body)); },
+    reopen: (n) => { calls.push(`reopen #${n}`); if (failOn === "reopen") throw new Error("gh down"); ticket.state = "OPEN"; },
+    removeAssignees: (n, logins) => { calls.push(`unassign #${n} ${logins.join(",")}`); ticket.assignees = []; },
+  };
+  const deps = {
+    github, cwd: "/x", repo: REPO,
+    launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls), () => {}),
+    now: NOW,
+    discord: {},
+  };
+  const round = (dispatched = new Set()) => {
+    issues[0].subIssues = [{ number: 21, state: ticket.state }];
+    return runRound(
+      {
+        readSnapshot: async () => ({
+          repo: REPO, viewer: VIEWER, issues: structuredClone(issues), taktIssues: [], discordUserId: RJ_OWNER,
+          provisionalReactions: { M42: [{ emoji: "❌", userId: RJ_OWNER }] },
+        }),
+        execute: createExecute(deps), log: () => {},
+      },
+      dispatched,
+    );
+  };
+  return { calls, round, ticket };
+};
+const rjKinds = (calls) => calls.map((c) => c.split(" ")[0] + (c.startsWith("comment ") ? ` ${c.split(" ")[1]}` : ""));
+
+test("差し戻し: 書き戻しのコメント → 開き直し → assignee の解除、の順に 1 度だけ実行する。書き戻しは ticket に問いと答えつきで書く", async () => {
+  const w = rejectWorld();
+  await w.round();
+  const first = w.calls.slice(0, 3);
+  assert.ok(first[0].startsWith(`comment #21 ${RJ_MARKER}`), first[0]);
+  assert.ok(first[0].includes("- 問い: どの parser？") && first[0].includes("- 答え: 既存"), first[0]);
+  assert.deepEqual(first.slice(1), ["reopen #21", `unassign #21 ${VIEWER}`]);
+});
+
+test("差し戻し: 周をまとめて回しても、書き戻し・開き直しは 1 度だけ。開き直した ticket には次の周で新しい回の起動が 1 度だけ出る（新しい dispatched でも二重にならない）", async () => {
+  const w = rejectWorld();
+  await w.round();
+  await w.round();
+  await w.round(new Set());
+  await w.round(new Set());
+  assert.equal(w.calls.filter((c) => c.startsWith(`comment #21 ${RJ_MARKER}`)).length, 1, w.calls.join("\n"));
+  assert.equal(w.calls.filter((c) => c === "reopen #21").length, 1);
+  assert.equal(w.calls.filter((c) => c.startsWith("unassign ")).length, 1);
+  assert.equal(orcaArgv(w.calls).filter((a) => a[0] === "agent").length, 1, w.calls.join("\n"));
+  // 書き戻しの後に書かれた印は、新しい回の起動前と起動後の 2 件だけ。
+  const bodies = w.ticket.comments.map((c) => c.body);
+  assert.deepEqual(bodies.slice(bodies.findIndex((b) => b.startsWith(RJ_MARKER)) + 1), ["案内役: wayfinder を起動する", `案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`]);
+});
+
+test("差し戻し: 開き直しが失敗したら例外になり、書き戻しの印は残るので、再起動しても書き戻しをやり直さない", async () => {
+  const w = rejectWorld({ failOn: "reopen" });
+  await assert.rejects(w.round(), /gh down/);
+  assert.equal(w.calls.filter((c) => c.startsWith(`comment #21 ${RJ_MARKER}`)).length, 1);
+  assert.equal(rjKinds(w.calls)[0], "comment #21");
+  await w.round(new Set());
+  assert.equal(w.calls.filter((c) => c.startsWith(`comment #21 ${RJ_MARKER}`)).length, 1, w.calls.join("\n"));
+});
