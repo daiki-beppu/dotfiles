@@ -1561,3 +1561,30 @@ test("修正のセッションの停止の判断依頼: 新しい dispatched で
   assert.equal(w.posts.length, 1);
   assert.equal(w.calls.filter((c) => c === `comment #12 ${RD_STALL_MARKER}`).length, 1);
 });
+
+test("close-tab: タブを閉じてから、閉じた印を工程の印と同じ issue に書く。見つからないタブ（gone）は close せず印だけ書く", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    cwd: "/x", repo: REPO,
+    closeTab: ({ cwd, handle }) => calls.push(`close ${handle} ${cwd}`),
+  });
+  await execute({ kind: "close-tab", key: "close-tab:term_1", issue: 12, step: "to-tickets", handle: "term_1", gone: false });
+  await execute({ kind: "close-tab", key: "close-tab:term_s", issue: 20, step: "takt-sequence", handle: "term_s", gone: true });
+  assert.deepEqual(calls, [
+    "close term_1 /x",
+    "comment #12 案内役: to-tickets のタブを閉じた（ターミナル term_1）",
+    "comment #20 案内役: takt-sequence のタブを閉じた（ターミナル term_s）",
+  ]);
+});
+
+test("close-tab: close が失敗したら印を書かずに例外にする（次に流し直したときに閉じ直す）", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    cwd: "/x", repo: REPO,
+    closeTab: () => { throw new Error("orca down"); },
+  });
+  await assert.rejects(execute({ kind: "close-tab", key: "close-tab:term_1", issue: 12, step: "to-tickets", handle: "term_1", gone: false }), /orca down/);
+  assert.deepEqual(calls, []);
+});

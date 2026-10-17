@@ -407,6 +407,30 @@ function decideToSpec(snapshot, dispatched) {
   return actions;
 }
 
+// 終わったタブを閉じた印。handle ごとに書き、これがある handle はもう観測も close もしない。
+export const closedTabMarker = (step, handle) => `案内役: ${step} のタブを閉じた（ターミナル ${handle}）`;
+
+// 印の列から、工程ごとの最後の起動の印（handle と起動時刻）。印を消して流し直した後は新しい handle を見る。
+function latestLaunches(own) {
+  const latest = new Map();
+  for (const body of own) {
+    const m = LAUNCHED.exec(body);
+    if (m) latest.set(m[1], { handle: m[2], startedAt: m[3] });
+  }
+  return latest;
+}
+
+// 親の印から、takt-sequence に渡した sub-issue と、最後の起動の印（handle と起動時刻）。どちらかが無い（古い形の）親は null。
+function handedSequence(own) {
+  const handed = own.filter((b) => b.startsWith(MARKER_HANDED_PREFIX)).at(-1);
+  const launch = latestLaunches(own).get("takt-sequence");
+  if (handed === undefined || launch === undefined) return null;
+  return { handedIssues: new Set([...handed.matchAll(HANDED_ISSUES)].map((m) => Number(m[1]))), ...launch };
+}
+
+// takt-sequence が終わったか（画面に終わりの行がある）。
+const sequenceFinished = (observation) => (observation.tail ?? []).some((line) => SEQUENCE_DONE_LINE.test(line.trim()));
+
 // 工程ごとの結果（GitHub に出るもの）。表に無い工程は結果を判定できないので観測しない。
 const RESULT_OF = {
   "to-tickets": (snapshot, spec) =>
@@ -425,14 +449,9 @@ export function sessionsToObserve(snapshot) {
   for (const spec of openSpecs(snapshot)) {
     if (sentApprovalRequest(spec, snapshot.viewer) === null) continue;
     const own = markers(spec, snapshot.viewer);
-    const latest = new Map();
-    for (const body of own) {
-      const m = LAUNCHED.exec(body);
-      if (m) latest.set(m[1], { handle: m[2], startedAt: m[3] });
-    }
-    for (const [step, { handle, startedAt }] of latest) {
+    for (const [step, { handle, startedAt }] of latestLaunches(own)) {
       const hasResult = RESULT_OF[step];
-      if (hasResult === undefined || hasResult(snapshot, spec)) continue;
+      if (hasResult === undefined || hasResult(snapshot, spec) || own.includes(closedTabMarker(step, handle))) continue;
       if (own.includes(decisionMarker(spec.number, stallCause(step)))) continue;
       targets.push({ spec: spec.number, step, handle, startedAt });
     }
@@ -508,13 +527,11 @@ export function sequencesToObserve(snapshot) {
     const ownSpec = markers(spec, viewer);
     for (const parent of issues.filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))) {
       const own = markers(parent, viewer);
-      const handed = own.filter((b) => b.startsWith(MARKER_HANDED_PREFIX)).at(-1);
-      const launched = own.map((b) => LAUNCHED.exec(b)).filter((m) => m && m[1] === "takt-sequence").at(-1);
-      if (handed === undefined || launched === undefined) continue;
-      const handedIssues = new Set([...handed.matchAll(HANDED_ISSUES)].map((m) => Number(m[1])));
-      const open = parent.subIssues.filter((s) => s.state === "OPEN" && handedIssues.has(s.number)).map((s) => s.number);
+      const sequence = handedSequence(own);
+      if (sequence === null || own.includes(closedTabMarker("takt-sequence", sequence.handle))) continue;
+      const open = parent.subIssues.filter((s) => s.state === "OPEN" && sequence.handedIssues.has(s.number)).map((s) => s.number);
       if (open.length === 0 || ownSpec.includes(decisionMarker(parent.number, stallCause("takt-sequence")))) continue;
-      targets.push({ spec: spec.number, parent: parent.number, issues: open, handle: launched[2], startedAt: launched[3] });
+      targets.push({ spec: spec.number, parent: parent.number, issues: open, handle: sequence.handle, startedAt: sequence.startedAt });
     }
   }
   return targets;
@@ -524,7 +541,7 @@ export function sequencesToObserve(snapshot) {
 function sequenceStallReason(observation, issues) {
   const left = issues.map((n) => `#${n}`).join(" ");
   if (!observation.found) return `takt-sequence のタブが Orca に見つからない（open のまま: ${left}）`;
-  if ((observation.tail ?? []).some((line) => SEQUENCE_DONE_LINE.test(line.trim()))) {
+  if (sequenceFinished(observation)) {
     return `takt-sequence が終わったが、sub-issue が open のまま残っている（${left}）`;
   }
   return null;
@@ -1083,6 +1100,55 @@ function decideReviewFixStalls(snapshot, dispatched) {
   return actions;
 }
 
+// 閉じる候補のタブ: 結果が GitHub に出て、判断依頼を送っておらず、閉じた印も無いもの。印を書く issue・工程・handle。
+// 工程は仕様の最後の起動の印、takt-sequence は親の最後の起動の印を見る。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
+export function tabsToClose(snapshot) {
+  const { viewer, issues } = snapshot;
+  const targets = [];
+  const add = (issue, own, step, handle) => {
+    if (!own.includes(closedTabMarker(step, handle))) targets.push({ issue, step, handle });
+  };
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    const ownSpec = markers(spec, viewer);
+    for (const [step, { handle }] of latestLaunches(ownSpec)) {
+      const hasResult = RESULT_OF[step];
+      if (hasResult === undefined || !hasResult(snapshot, spec)) continue;
+      if (ownSpec.includes(decisionMarker(spec.number, stallCause(step)))) continue;
+      // formal-spec の failed は結果だが、人が直してそのタブで検証し直すので閉じない
+      if (step === "formal-spec" && lastFormalSpec(spec, viewer)?.status === "failed") continue;
+      add(spec.number, ownSpec, step, handle);
+    }
+    for (const parent of issues.filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))) {
+      const own = markers(parent, viewer);
+      const sequence = handedSequence(own);
+      if (sequence === null) continue;
+      if (parent.subIssues.some((s) => s.state === "OPEN" && sequence.handedIssues.has(s.number))) continue;
+      if (ownSpec.includes(decisionMarker(parent.number, stallCause("takt-sequence")))) continue;
+      add(parent.number, own, "takt-sequence", sequence.handle);
+    }
+  }
+  return targets;
+}
+
+// 手が止まったか: 工程は idle（入力を受け付ける状態に戻った）で入力待ちでない、takt-sequence は終わりの行がある。
+const tabFinished = (step, observation) =>
+  step === "takt-sequence" ? sequenceFinished(observation) : observation.idle === true && !observation.waiting;
+
+// 終わったタブを閉じる。既に見つからないタブは close せず、印だけ書く（gone）。
+function decideCloseTabs(snapshot, dispatched) {
+  const actions = [];
+  for (const { issue, step, handle } of tabsToClose(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    const key = `close-tab:${handle}`;
+    if (observation === undefined || dispatched.has(key)) continue;
+    const gone = !observation.found;
+    if (!gone && !tabFinished(step, observation)) continue;
+    actions.push({ kind: "close-tab", key, issue, step, handle, gone });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -1158,5 +1224,6 @@ export function decide(snapshot) {
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
     ...decideReviewFixStalls(snapshot, dispatched),
+    ...decideCloseTabs(snapshot, dispatched),
   ];
 }

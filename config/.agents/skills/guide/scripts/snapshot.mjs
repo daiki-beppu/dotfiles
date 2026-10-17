@@ -1,8 +1,8 @@
 // スナップショットの組み立て。GitHub の issue に、承認依頼を送り済みの OPEN な仕様（承認済みを含む）の Discord リアクションを足す。
-// 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションと晴れた map の to-spec のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない）。現在時刻 now と stallMinutes も渡す。
+// 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションと晴れた map の to-spec のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない。ただし工程と takt-sequence は、閉じる候補として閉じた印が付くまで観測する）。現在時刻 now と stallMinutes も渡す。
 // 渡した sub-issue の OPEN な PR は、コメントと merge タスクの記録を読む（review-fix の判定用）。その PR の修正のセッションも、結果が出ていなければ観測する。
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
-import { awaitsReaction, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, provisionalRejectionsToRead, reviewFixSessionsToObserve, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, ticketSessionsToObserve } from "./decide.mjs";
+import { awaitsReaction, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, provisionalRejectionsToRead, reviewFixSessionsToObserve, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, tabsToClose, ticketSessionsToObserve } from "./decide.mjs";
 
 export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, github, discord, taktTasks, mergeTasks, now = () => new Date(), stallMinutes, observeSession }) {
   return async () => {
@@ -24,6 +24,10 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     const toObserve = [...sessionsToObserve(observed), ...sequencesToObserve(observed), ...ticketSessionsToObserve(observed), ...mapSessionsToObserve(observed), ...reviewFixSessionsToObserve({ ...observed, reviewPullRequests })];
     for (const { handle, startedAt } of toObserve) {
       sessions[handle] = { ...(await observeSession({ handle })), startedAt };
+    }
+    // 結果が出て閉じる候補のタブ（停止の観測とは重ならない）。startedAt は使わない
+    for (const { handle } of tabsToClose(observed)) {
+      if (!(handle in sessions)) sessions[handle] = await observeSession({ handle });
     }
     // 入力待ちの観測より前に書かれた「判断の問い」を拾うため、観測の後で対象の ticket のコメントだけを読み直す。
     const refreshed = new Map();

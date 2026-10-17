@@ -8,7 +8,7 @@
 //   実機のセッションは全て null で、入力待ちの実物の取得は未確認）。show に「手が止まった」を示す欄は無いので、idle は `orca terminal wait --for tui-idle` で取る（満たされれば idle、timeout なら idle ではない。busy な tui-idle の timeout の応答形は、同じ待ちの仕組みの `--for exit` の timeout で確認: 終了コード 1、error.code "timeout"）。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { observeSession } from "./orca-agent.mjs";
+import { closeTab, observeSession } from "./orca-agent.mjs";
 // 送信（新しい公開物）は名前空間で読む（未実装でも既存の観測のテストは動かす）。
 import * as O from "./orca-agent.mjs";
 
@@ -154,4 +154,15 @@ test("sendToSession: 回答の本文はそのまま 1 つの引数で渡す（�
 test("sendToSession: orca が失敗したら例外にする（handle を含む）", () => {
   const down = () => { throw Object.assign(new Error("Command failed"), { status: 1, stdout: JSON.stringify({ ok: false, error: { code: "terminal_handle_stale" } }) }); };
   assert.throws(() => O.sendToSession({ cwd: "/x", handle: "term_gone", text: "x" }, down), /term_gone/);
+});
+
+test("closeTab: orca terminal close を handle 指定で呼ぶ。閉じ済みのタブ（ok で返る）も、古い handle（terminal_handle_stale）も成功として扱う", () => {
+  const calls = [];
+  closeTab({ cwd: "/x", handle: "term_1" }, (args, opts) => { calls.push({ args, cwd: opts.cwd }); return JSON.stringify({ ok: true, result: { close: { handle: "term_1", ptyKilled: true } } }); });
+  assert.deepEqual(calls, [{ args: ["terminal", "close", "--terminal", "term_1", "--json"], cwd: "/x" }]);
+  assert.doesNotThrow(() => closeTab({ cwd: "/x", handle: "term_gone" }, () => { throw staleError(); }));
+});
+
+test("closeTab: それ以外の失敗は handle を入れて例外にする", () => {
+  assert.throws(() => closeTab({ cwd: "/x", handle: "term_1" }, () => { throw new Error("orca down"); }), /orca terminal close が失敗した（ターミナル term_1）: orca down/);
 });

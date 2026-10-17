@@ -25,6 +25,7 @@ const DESCRIBE = {
   "write-back-answer": (a) => `${a.key}: 本人の返信を ticket #${a.ticket} のコメントに書き戻す`,
   "inject-answer": (a) => `${a.key}: ticket #${a.ticket} の回答をタブ ${a.handle} に orca terminal send で流し込む`,
   "review-fix": (a) => `${a.key}: PR #${a.pr}（sub-issue #${a.issue}）の takt のレビューの失敗を直す review-fix を、head ブランチの worktree の Orca のタブで起動する`,
+  "close-tab": (a) => `${a.key}: 終わった ${a.step} のタブ（#${a.issue}）を${a.gone ? "閉じた記録だけ残す（既に無い）" : "閉じる"}`,
   knowledge: (a) => `${a.key}: 仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,
 };
 const describe = (a) => DESCRIBE[a.kind](a);
