@@ -3,6 +3,7 @@
 //   show: { ok: true, result: { terminal: { handle, title, agentIdentity, agentWait: null, ... } } }（作業の無いシェルのタブは agentWait: null）
 //   read: { ok: true, result: { terminal: { handle, status: "running", tail: [行...], nextCursor, ... } } }
 //   存在しない handle: 終了コード 1、stdout に { ok: false, error: { code: "terminal_handle_stale" } }
+//   閉じたタブの handle: show は ok: true のまま terminal.connected: false を返す（2026-10-17、`orca terminal close` の後に 15 秒待っても同じ）。動いているタブは connected: true
 // agentWait: null（待ちなし）または { source: "prompt-text" | "title" | "hook", reason?, since? }（Orca 本体の getTerminalInteractiveWait の実装で確認。
 //   実機のセッションは全て null で、入力待ちの実物の取得は未確認）。show に「手が止まった」を示す欄は無いので、idle は `orca terminal wait --for tui-idle` で取る（満たされれば idle、timeout なら idle ではない。busy な tui-idle の timeout の応答形は、同じ待ちの仕組みの `--for exit` の timeout で確認: 終了コード 1、error.code "timeout"）。
 import assert from "node:assert/strict";
@@ -84,6 +85,13 @@ test("observeSession: セッションが見つからない（terminal_handle_sta
   const { calls, run } = fakeOrca({ show: staleError() });
   const o = observeSession({ cwd: "/x", handle: "term_gone" }, run);
   assert.deepEqual(o, { found: false, waiting: false, idle: false, tail: [] });
+  assert.deepEqual(calls.map((c) => c.args[1]), ["show"]);
+});
+
+test("observeSession: 閉じたタブ（show の connected: false）も found: false で、read は呼ばない", () => {
+  const closed = JSON.stringify({ ok: true, result: { terminal: { handle: "term_1", connected: false, agentWait: null } } });
+  const { calls, run } = fakeOrca({ show: closed });
+  assert.deepEqual(observeSession({ cwd: "/x", handle: "term_1" }, run), { found: false, waiting: false, idle: false, tail: [] });
   assert.deepEqual(calls.map((c) => c.args[1]), ["show"]);
 });
 

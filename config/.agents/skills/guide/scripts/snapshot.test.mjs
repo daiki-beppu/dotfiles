@@ -132,3 +132,16 @@ test("sessions: 観測すべき工程が無くても now と空の sessions を�
   const snap = await read();
   assert.deepEqual(snap.sessions ?? {}, {});
 });
+
+test("sessions: takt-sequence の起動の印（handle つき）がある親で、渡した sub-issue が open なら、そのタブも観測する。古い形の親と、閉じきった親は観測しない", async () => {
+  const handed = (...n) => ({ author: VIEWER, body: `案内役: takt-sequence に渡した ${n.map((x) => `#${x}`).join(" ")}` });
+  const { read, observed } = buildObserved([
+    issue(12, { comments: sent }),
+    issue(20, { labels: [], body: "仕様: #12", comments: [handed(21), launched("takt-sequence", "term_seq")], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(30, { labels: [], body: "仕様: #12", comments: [handed(31)], subIssues: [{ number: 31, state: "OPEN" }] }),
+    issue(40, { labels: [], body: "仕様: #12", comments: [handed(41), launched("takt-sequence", "term_closed")], subIssues: [{ number: 41, state: "CLOSED" }] }),
+  ]);
+  const snap = await read();
+  assert.deepEqual(observed, ["term_seq"]);
+  assert.deepEqual(snap.sessions, { term_seq: { found: true, waiting: false, idle: true, startedAt: T0, tail: ["t"] } });
+});

@@ -1,7 +1,7 @@
 // decide.mjs の判定テスト。GitHub・takt・Discord・子プロセスは一切呼ばない。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide, decisionMarker, launchedMarker, sessionsToObserve, tabTitle } from "./decide.mjs";
+import { SEQUENCE_DONE, decide, decisionMarker, launchedMarker, sequencesToObserve, sessionsToObserve, tabTitle } from "./decide.mjs";
 
 const REPO = "daiki-beppu/live-mindmap";
 const VIEWER = "daiki-beppu";
@@ -1275,4 +1275,114 @@ test("to-tickets の条件: 未承認の仕様は passed でも出さない（�
 test("to-tickets の条件: 親ができた後の takt-sequence には Formal Spec の条件を掛けない（人が作った親の受け渡し）", () => {
   const s = snapshot([sentSpec(12), issue(20, { body: "仕様: #12", subIssues: openSubs(21) })]);
   assert.deepEqual(flow(decide(s)), [taktSequence(20, [21])]);
+});
+
+// ---- takt-sequence の停止: タブが消えたか、sub-issue が残ったまま終わったら、承認依頼のスレッドへ判断依頼 ----
+
+const SEQ_CAUSE = "takt-sequence のセッションの停止";
+const SEQ_LAUNCHED = (handle = "term_s") => launchedMarker("takt-sequence", handle, T0);
+const seqStalls = (actions) => actions.filter((a) => a.kind === "request-decision" && a.cause === SEQ_CAUSE);
+
+// 仕様 #12 の親 #20 を takt-sequence に渡して起動済み（handle term_s）。#21 は閉じ、#22 #23 が open のまま。
+const seqWorld = ({ parentComments = [byViewer(HANDED(21, 22, 23)), byViewer(SEQ_LAUNCHED())], subs, specComments = [], sessions = { term_s: obs({ tail: ["…", `${SEQUENCE_DONE}（exit 0）`, "$"] }) }, over = {} } = {}) =>
+  snapshot(
+    [
+      spec(12, { comments: [...SENT_ALL, ...specComments] }),
+      issue(20, { title: "親A", body: "仕様: #12", comments: parentComments, subIssues: subs ?? [{ number: 21, state: "CLOSED" }, ...openSubs(22, 23)] }),
+      issue(21, { state: "CLOSED" }),
+      issue(22),
+      issue(23),
+    ],
+    { repo: REPO, sessions, now: at(1), ...over },
+  );
+
+test("takt-sequence の停止: タブが Orca に見つからなければ 1 件。issue は親、送り先は承認依頼のスレッド、タブは takt-sequence の題名", () => {
+  const [a, ...rest] = seqStalls(decide(seqWorld({ sessions: { term_s: obs({ found: false, tail: [] }) } })));
+  assert.deepEqual(rest, []);
+  assert.equal(a.spec, 12);
+  assert.equal(a.issue, 20);
+  assert.equal(a.title, "親A");
+  assert.equal(a.threadId, "555");
+  assert.equal(a.step, "takt-sequence");
+  assert.equal(a.tab, `takt sequence ${REPO}`);
+  assert.equal(a.key, `request-decision:12:20:${SEQ_CAUSE}`);
+  assert.match(a.reason, /見つから/);
+  assert.match(a.reason, /#22 #23/);
+});
+
+test("takt-sequence の停止: 終わりの目印が画面にあり、open な sub-issue が残っていれば 1 件。画面の数行つき", () => {
+  const [a, ...rest] = seqStalls(decide(seqWorld()));
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /終わった/);
+  assert.deepEqual(a.tail, ["…", `${SEQUENCE_DONE}（exit 0）`, "$"]);
+});
+
+test("takt-sequence の停止: 動いている（目印が無い）なら、時間がどれだけ経っても入力待ちでも出さない", () => {
+  const running = { term_s: obs({ waiting: true, tail: ["投入: #22"] }) };
+  assert.deepEqual(seqStalls(decide(seqWorld({ sessions: running, over: { now: at(9999) } }))), []);
+});
+
+test("takt-sequence の停止: open な sub-issue に takt の pending / running があれば出さない（別の takt-sequence が流している）", () => {
+  for (const kind of ["pending", "running"]) {
+    const tasks = [{ issue: 23, kind, createdAt: T0 }];
+    assert.deepEqual(seqStalls(decide(seqWorld({ over: { taktTasks: tasks, taktIssues: [23] } }))), [], kind);
+  }
+  const done = [{ issue: 23, kind: "completed", createdAt: T0 }];
+  assert.equal(seqStalls(decide(seqWorld({ over: { taktTasks: done, taktIssues: [23] } }))).length, 1);
+});
+
+test("takt-sequence の停止: open な sub-issue の最新の takt タスクが failed（ABORT）なら出さない（ABORT の判断依頼に任せる）", () => {
+  const tasks = [{ issue: 22, kind: "failed", createdAt: T0 }];
+  assert.deepEqual(seqStalls(decide(seqWorld({ over: { taktTasks: tasks, taktIssues: [22] } }))), []);
+});
+
+test("takt-sequence の停止: 渡した sub-issue がすべて閉じていれば観測もせず出さない", () => {
+  const s = seqWorld({ subs: [21, 22, 23].map((number) => ({ number, state: "CLOSED" })) });
+  assert.deepEqual(sequencesToObserve(s), []);
+  assert.deepEqual(seqStalls(decide(s)), []);
+});
+
+test("takt-sequence の停止: 渡していない sub-issue（後から足したもの）だけが open なら出さない", () => {
+  const s = seqWorld({ subs: [{ number: 21, state: "CLOSED" }, { number: 22, state: "CLOSED" }, { number: 23, state: "CLOSED" }, ...openSubs(24)] });
+  assert.deepEqual(seqStalls(decide(s)), []);
+});
+
+test("takt-sequence の停止: 古い形（handle の起動の印が無い）の親は観測も判断依頼もせず、二重に渡しもしない", () => {
+  const s = seqWorld({ parentComments: [byViewer(HANDED(21, 22, 23))], sessions: {} });
+  assert.deepEqual(sequencesToObserve(s), []);
+  assert.deepEqual(seqStalls(decide(s)), []);
+  assert.deepEqual(flow(decide(s)), []);
+});
+
+test("takt-sequence の停止: 判断依頼の印が仕様にあれば再送せず、観測もしない", () => {
+  const s = seqWorld({ specComments: [byViewer(decisionMarker(20, SEQ_CAUSE))] });
+  assert.deepEqual(sequencesToObserve(s), []);
+  assert.deepEqual(seqStalls(decide(s)), []);
+});
+
+test("takt-sequence の停止: 同じスナップショットで 2 周しても二重に出さない（dispatched の key で止まる）", () => {
+  const [a] = seqStalls(decide(seqWorld()));
+  assert.deepEqual(seqStalls(decide(seqWorld({ over: { dispatched: [a.key] } }))), []);
+});
+
+test("takt-sequence の停止: 観測が無い・viewer 以外の起動の印・承認依頼のスレッドが無い・fromSpec の範囲外なら出さない", () => {
+  assert.deepEqual(seqStalls(decide(seqWorld({ sessions: {} }))), []);
+  const other = seqWorld({ parentComments: [byViewer(HANDED(21, 22, 23)), { author: "someone", body: SEQ_LAUNCHED() }] });
+  assert.deepEqual(sequencesToObserve(other), []);
+  assert.deepEqual(seqStalls(decide(seqWorld({ over: { fromSpec: 13 } }))), []);
+  const unsent = snapshot(
+    [spec(12), issue(20, { body: "仕様: #12", comments: [byViewer(HANDED(22)), byViewer(SEQ_LAUNCHED())], subIssues: openSubs(22) }), issue(22)],
+    { sessions: { term_s: obs({ found: false }) }, now: at(1) },
+  );
+  assert.deepEqual(seqStalls(decide(unsent)), []);
+});
+
+test("sequencesToObserve: 起動の印の handle と時刻、渡したうち open な sub-issue を返す。起動の印が複数あれば最後のもの", () => {
+  assert.deepEqual(sequencesToObserve(seqWorld()), [{ spec: 12, parent: 20, issues: [22, 23], handle: "term_s", startedAt: T0 }]);
+  const again = seqWorld({ parentComments: [byViewer(HANDED(21, 22, 23)), byViewer(SEQ_LAUNCHED()), byViewer(launchedMarker("takt-sequence", "term_t", at(5)))] });
+  assert.deepEqual(sequencesToObserve(again), [{ spec: 12, parent: 20, issues: [22, 23], handle: "term_t", startedAt: at(5) }]);
+});
+
+test("takt-sequence の停止: to-tickets などの工程の停止の判定には混ざらない（sessionsToObserve に出ない）", () => {
+  assert.deepEqual(sessionsToObserve(seqWorld()), []);
 });

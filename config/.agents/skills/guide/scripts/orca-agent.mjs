@@ -56,7 +56,8 @@ function errorCode(e) {
 }
 
 // handle のセッションの観測 { found, waiting, idle, tail }。
-//   found: `orca terminal show` が handle を返したか（存在しない handle の応答 terminal_handle_stale だけを false にする。それ以外の失敗は例外）
+//   found: `orca terminal show` が handle を返し、タブがつながっているか。存在しない handle の応答 terminal_handle_stale と、
+//          閉じたタブ（show は ok のまま connected: false を返す）を false にする。それ以外の失敗は例外
 //   waiting: show の agentWait が null でない（人にしか答えられない入力待ち。Orca が prompt-text / title / hook のどれかで確かめたもの）
 //   idle: `orca terminal wait --for tui-idle` が短い待ちで満たされた（手が止まっている）。待ちが timeout（終了コード 1、error.code: "timeout"）なら false
 //   tail: `orca terminal read` の画面の最後の 10 行
@@ -70,6 +71,7 @@ export function observeSession({ cwd, handle }, run = runOrca) {
   }
   const terminal = parseReply(shown, "orca terminal show").result?.terminal;
   if (terminal === undefined) throw new Error(`orca terminal show の応答に result.terminal が無い: ${head(shown)}`);
+  if (terminal.connected === false) return { found: false, waiting: false, idle: false, tail: [] };
   const read = parseReply(run(["terminal", "read", "--terminal", handle, "--json"], { cwd }), "orca terminal read");
   const tail = read.result?.terminal?.tail;
   if (!Array.isArray(tail)) throw new Error(`orca terminal read の応答に result.terminal.tail が無い（ターミナル ${handle}）`);

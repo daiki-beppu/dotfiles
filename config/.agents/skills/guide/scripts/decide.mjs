@@ -32,6 +32,11 @@ const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ (
 // Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
 export const tabTitle = (step, spec) => `${step} #${spec}`;
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
+// takt-sequence も 2 段の印: 起動前に「渡した」（二重に渡さない）、起動後に launchedMarker("takt-sequence", …) を親に書く。
+// 起動のコマンドは takt-sequence の後に SEQUENCE_DONE の行を出す。画面にこの行があれば takt-sequence は終わっている。
+export const SEQUENCE_DONE = "案内役: takt-sequence が終わった";
+export const sequenceTabTitle = (repo) => `takt sequence ${repo}`;
+const HANDED_ISSUES = /#(\d+)/g;
 
 // 承認依頼: 送る前（二重送信の防止）と送った後（スレッドとメッセージの ID を GitHub に残す）の 2 つ。差し戻しは 1 つ。
 export const MARKER_APPROVAL_SENDING = "案内役: Discord に承認依頼を送る";
@@ -293,6 +298,61 @@ function decideSessionStalls(snapshot, dispatched) {
   return actions;
 }
 
+// 渡した親ごとの takt-sequence の観測の対象。親に viewer の handle つきの起動の印（最後のもの）があり、
+// 渡した sub-issue のうち open なものが残り、判断依頼を送っていないものだけ。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
+export function sequencesToObserve(snapshot) {
+  const { viewer, issues } = snapshot;
+  const targets = [];
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    const ownSpec = markers(spec, viewer);
+    for (const parent of issues.filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))) {
+      const own = markers(parent, viewer);
+      const handed = own.filter((b) => b.startsWith(MARKER_HANDED_PREFIX)).at(-1);
+      const launched = own.map((b) => LAUNCHED.exec(b)).filter((m) => m && m[1] === "takt-sequence").at(-1);
+      if (handed === undefined || launched === undefined) continue;
+      const handedIssues = new Set([...handed.matchAll(HANDED_ISSUES)].map((m) => Number(m[1])));
+      const open = parent.subIssues.filter((s) => s.state === "OPEN" && handedIssues.has(s.number)).map((s) => s.number);
+      if (open.length === 0 || ownSpec.includes(decisionMarker(parent.number, stallCause("takt-sequence")))) continue;
+      targets.push({ spec: spec.number, parent: parent.number, issues: open, handle: launched[2], startedAt: launched[3] });
+    }
+  }
+  return targets;
+}
+
+// takt-sequence が止まった理由（見つからない → 終わった）。止まっていなければ null。時間切れと入力待ちは見ない。
+function sequenceStallReason(observation, issues) {
+  const left = issues.map((n) => `#${n}`).join(" ");
+  if (!observation.found) return `takt-sequence のタブが Orca に見つからない（open のまま: ${left}）`;
+  if ((observation.tail ?? []).some((line) => line.includes(SEQUENCE_DONE))) {
+    return `takt-sequence が終わったが、sub-issue が open のまま残っている（${left}）`;
+  }
+  return null;
+}
+
+// takt-sequence が sub-issue を残したまま止まったときの判断依頼。open な sub-issue のどれかを takt が扱っている
+// （pending / running、または最新が failed で ABORT の判断依頼に任せる）なら出さない。
+function decideSequenceStalls(snapshot, dispatched) {
+  const tasks = snapshot.taktTasks ?? [];
+  const busy = (n) => tasks.some((t) => Number(t.issue) === n && (t.kind === "pending" || t.kind === "running")) || abortedTask(tasks, n) !== null;
+  const cause = stallCause("takt-sequence");
+  const actions = [];
+  for (const { spec, parent, issues, handle } of sequencesToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (observation === undefined || issues.some(busy)) continue;
+    const reason = sequenceStallReason(observation, issues);
+    if (reason === null) continue;
+    const key = `request-decision:${spec}:${parent}:${cause}`;
+    if (dispatched.has(key)) continue;
+    const specIssue = snapshot.issues.find((i) => i.number === spec);
+    actions.push({
+      kind: "request-decision", key, spec, issue: parent, cause, title: snapshot.issues.find((i) => i.number === parent).title,
+      threadId: sentApprovalRequest(specIssue, snapshot.viewer).threadId, reason, step: "takt-sequence", tab: sequenceTabTitle(snapshot.repo), tail: observation.tail ?? [],
+    });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -356,5 +416,10 @@ export function decide(snapshot) {
       });
     }
   }
-  return [...actions, ...decideDecisionRequests(snapshot, dispatched), ...decideSessionStalls(snapshot, dispatched)];
+  return [
+    ...actions,
+    ...decideDecisionRequests(snapshot, dispatched),
+    ...decideSessionStalls(snapshot, dispatched),
+    ...decideSequenceStalls(snapshot, dispatched),
+  ];
 }
