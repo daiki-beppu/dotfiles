@@ -892,3 +892,156 @@ test("map のスレッド → 通知 → 停止の流れ: 各行動の印が Git
   assert.equal(kinds.filter((k) => k === "human").length, 1);
   assert.equal(kinds.filter((k) => k === "decision").length, 1);
 });
+
+// ---- grilling の判断依頼 → 書き戻し → 流し込み ----
+// 偽の GitHub（書いたコメントを次の読み出しで viewer のコメントにする）・Discord・orca terminal send を同じ calls に順序つきで記録し、
+// 実際の decide を通して、行動の順序と、再起動（新しい dispatched）で繰り返さないことを見る。
+const OWNER_ID = "U-owner";
+const SINCE = "1760000000000";
+const GRILLING_SEND = `案内役: Discord に判断依頼を送る（#21 grilling の問い ${SINCE}）`;
+const GRILLING_SENT = `案内役: Discord に判断依頼を送った（#21 grilling の問い ${SINCE} / スレッド T900 / メッセージ M1）`;
+const GRILLING_WRITTEN = (answer) => `案内役: Discord の回答を書き戻した（#21 grilling の問い ${SINCE}）\n\n${answer}`;
+const GRILLING_INJECT = `案内役: 回答をタブに流し込む（#21 grilling の問い ${SINCE}）`;
+const QUESTION_COMMENT = "## 判断の問い\n公開 API の名前を v2 にするか？\n- A: する\n- B: しない（推奨）";
+const GRILLING_SCREEN = ["❯ 1. A", "  2. B"];
+const hookObs = (since = SINCE) => ({ found: true, waiting: true, waitSource: "hook", waitSince: since, idle: false, tail: GRILLING_SCREEN });
+
+const grillingExecWorld = ({ replies = {}, discordOver = {}, sendOver, ticketComments = [], sessions = { term_1: hookObs() } } = {}) => {
+  const calls = [];
+  const issues = mapIssues(
+    [wfTicket(21, "grilling", {
+      title: "公開 API の名前", assignees: [VIEWER],
+      comments: [byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`), byViewer(QUESTION_COMMENT), ...ticketComments],
+    })],
+    [byViewer(MT_CREATED)],
+  );
+  const ticket = issues.find((i) => i.number === 21);
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push(byViewer(body)); } };
+  const discord = {
+    sendDecisionRequest: async (req) => { calls.push(`decision ${JSON.stringify(req)}`); return { messageId: "M1" }; },
+    ...discordOver,
+  };
+  const deps = {
+    github, discord, cwd: "/x", repo: REPO,
+    launchWayfinder: async () => assert.fail("grilling のセッションは作り直さない"),
+    launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchFormalSpec: async () => assert.fail("formal-spec は起動しない"),
+    now: NOW,
+    startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
+    sendToSession: sendOver ?? (async (req) => { calls.push(`send ${JSON.stringify(req)}`); }),
+  };
+  const state = { replies, sessions };
+  const round = (dispatched = new Set()) =>
+    runRound({
+      readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, discordUserId: OWNER_ID, issues, taktIssues: [], now: "2026-10-17T00:10:00.000Z", sessions: state.sessions, decisionReplies: state.replies }),
+      execute: createExecute(deps), log: () => {},
+    }, dispatched);
+  return { calls, round, state, ticket };
+};
+
+test("grilling の判断依頼: 「送る」の印を ticket に → Discord に問いつきで送る → スレッドとメッセージの ID つきの「送った」印を ticket に、の順に実行する", async () => {
+  const { calls, round } = grillingExecWorld();
+  await round();
+  assert.equal(calls.length, 3, calls.join("\n"));
+  assert.equal(calls[0], `comment #21 ${GRILLING_SEND}`);
+  const req = JSON.parse(calls[1].replace(/^decision /, ""));
+  assert.deepEqual([req.threadId, req.map, req.issue, req.title, req.url, req.tab], ["T900", 20, 21, "公開 API の名前", "https://github.com/o/r/issues/21", "wayfinder #21"]);
+  assert.deepEqual(req.tail, GRILLING_SCREEN);
+  assert.ok(req.question.includes("公開 API の名前を v2 にするか？") && req.question.includes("B: しない（推奨）"), req.question);
+  assert.equal(calls[2], `comment #21 ${GRILLING_SENT}`);
+});
+
+test("grilling の判断依頼（Discord アダプタ経由）: スレッドのメッセージに ticket の題名・リンク・問いの中身・画面の最後の行が入る。停止の判断依頼は重ならない", async () => {
+  const posts = [];
+  const fetch = async (url, init) => { posts.push({ path: new URL(url).pathname, content: JSON.parse(init.body).content }); return { ok: true, status: 200, json: async () => ({ id: "M1" }) }; };
+  const discord = createDiscord({ token: "t", guildId: "g", userId: OWNER_ID, fetch });
+  const { calls, round } = grillingExecWorld({ discordOver: { sendDecisionRequest: (req) => discord.sendDecisionRequest(req) } });
+  await round();
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].path, "/api/v10/channels/T900/messages");
+  for (const part of ["公開 API の名前", "https://github.com/o/r/issues/21", "公開 API の名前を v2 にするか？", "B: しない（推奨）", ...GRILLING_SCREEN]) {
+    assert.ok(posts[0].content.includes(part), `本文に ${part} が無い: ${posts[0].content}`);
+  }
+  assert.ok(calls.includes(`comment #21 ${GRILLING_SENT}`), calls.join("\n"));
+  assert.ok(!calls.some((c) => c.includes("grilling のセッションの停止")));
+});
+
+test("grilling の判断依頼: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = grillingExecWorld();
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 1);
+  assert.equal(calls.length, 3);
+});
+
+test("grilling の判断依頼: 送信が失敗しても「送る」の印は残り、再起動で再送しない（停止の判断依頼にも切り替わらない）", async () => {
+  const { calls, round } = grillingExecWorld({ discordOver: { sendDecisionRequest: async () => { throw new Error("discord down"); } } });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, [`comment #21 ${GRILLING_SEND}`]);
+  await round(new Set());
+  assert.deepEqual(calls, [`comment #21 ${GRILLING_SEND}`]);
+});
+
+test("grilling の書き戻し: 本人の返信を ticket のコメントに書く（1 行目に印、空行、回答）。再起動しても二度書かない", async () => {
+  const { calls, round } = grillingExecWorld({ ticketComments: [byViewer(GRILLING_SEND), byViewer(GRILLING_SENT)], replies: { M1: [{ userId: OWNER_ID, content: "B 案で行く" }] } });
+  await round();
+  assert.deepEqual(calls.filter((c) => !c.startsWith("send ")), [`comment #21 ${GRILLING_WRITTEN("B 案で行く")}`]);
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("comment ") && c.includes("回答を書き戻した")).length, 1);
+});
+
+test("grilling の書き戻し: 本人以外の返信だけなら、ticket に何も書かず、タブにも何も送らない", async () => {
+  const { calls, round } = grillingExecWorld({ ticketComments: [byViewer(GRILLING_SEND), byViewer(GRILLING_SENT)], replies: { M1: [{ userId: "U-other", content: "勝手な答え" }] } });
+  await round();
+  await round(new Set());
+  assert.deepEqual(calls, []);
+});
+
+test("grilling の流し込み: 「流し込む」の印を ticket に → 起動の印の handle のタブへ回答を送る、の順。回答の改行は空白にして 1 行で送る。再起動しても二度送らない", async () => {
+  const { calls, round } = grillingExecWorld({ ticketComments: [byViewer(GRILLING_SEND), byViewer(GRILLING_SENT), byViewer(GRILLING_WRITTEN("1 行目\n2 行目"))] });
+  await round();
+  assert.equal(calls.length, 2, calls.join("\n"));
+  assert.equal(calls[0], `comment #21 ${GRILLING_INJECT}`);
+  assert.deepEqual(JSON.parse(calls[1].replace(/^send /, "")), { handle: "term_1", text: "1 行目 2 行目" });
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("grilling の流し込み: タブへの送信が失敗しても印は残り、再起動で再送しない", async () => {
+  const { calls, round } = grillingExecWorld({
+    ticketComments: [byViewer(GRILLING_SEND), byViewer(GRILLING_SENT), byViewer(GRILLING_WRITTEN("B"))],
+    sendOver: async () => { throw new Error("orca down"); },
+  });
+  await assert.rejects(round(), /orca down/);
+  assert.deepEqual(calls, [`comment #21 ${GRILLING_INJECT}`]);
+  await round(new Set());
+  assert.deepEqual(calls, [`comment #21 ${GRILLING_INJECT}`]);
+});
+
+test("grilling の流し込み: 書き戻し前は、本人の返信があっても流し込まない（GitHub の書き戻しだけを読む）", async () => {
+  const { calls, round, state } = grillingExecWorld({ ticketComments: [byViewer(GRILLING_SEND), byViewer(GRILLING_SENT)], replies: { M1: [{ userId: OWNER_ID, content: "B" }] } });
+  await round();
+  assert.ok(!calls.some((c) => c.startsWith("send ")), calls.join("\n"));
+  assert.equal(state.replies.M1.length, 1);
+});
+
+test("grilling の 3 段の流れ: 判断依頼 → 書き戻し → 流し込みを、周ごとに 1 度ずつ。次の入力待ち（別の since）には新しい判断依頼が 1 度出る", async () => {
+  const { calls, round, state } = grillingExecWorld();
+  const kind = (c) => (c.startsWith("comment ") ? c.split(" ")[2] : c.split(" ")[0]);
+  await round();
+  assert.deepEqual(calls.map(kind), ["案内役:", "decision", "案内役:"]);
+  state.replies = { M1: [{ userId: OWNER_ID, content: "B 案" }] };
+  await round(new Set());
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.includes("回答を書き戻した")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("send ")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 1);
+  const before = calls.length;
+  state.sessions = { term_1: hookObs("1760000500000") };
+  await round(new Set());
+  assert.equal(calls.length, before + 3);
+  assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 2);
+});

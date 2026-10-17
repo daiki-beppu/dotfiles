@@ -341,3 +341,42 @@ test("map の行動も同じスナップショットで 2 周しても、行動�
   await runRound(deps, dispatched);
   assert.deepEqual(calls.executed, ["create-map-thread:20"]);
 });
+
+// ---- grilling の判断依頼・書き戻し・流し込み（dry-run の表示） ----
+
+const G_SINCE = "1760000000000";
+const gTicket = (comments) =>
+  issue(21, {
+    title: "公開 API の名前", labels: ["wayfinder:grilling"], assignees: [VIEWER], blockedBy: [],
+    comments: [{ author: VIEWER, body: "案内役: wayfinder を起動した（ターミナル term_1 / 2026-10-17T00:00:00.000Z）" }, ...comments.map((body) => ({ author: VIEWER, body }))],
+  });
+const G_THREAD = { author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" };
+const gDry = (comments, extra = {}) =>
+  mapDry([mapOf([G_THREAD], [21]), gTicket(comments)], {
+    now: "2026-10-17T00:01:00.000Z", discordUserId: "U1",
+    sessions: { term_1: { found: true, waiting: true, waitSource: "hook", waitSince: G_SINCE, idle: false, tail: ["x"] } },
+    ...extra,
+  });
+
+test("dry-run: grilling の判断依頼も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+  const out = await gDry([]);
+  assert.match(out, /request-grilling-decision:20:21:/);
+  assert.match(out, /#20/);
+  assert.match(out, /#21/);
+  assert.doesNotMatch(out, /request-map-decision/);
+});
+
+test("dry-run: 本人の回答の書き戻しも例外にせず、key と ticket の番号を log に表示する", async () => {
+  const sent = [`案内役: Discord に判断依頼を送る（#21 grilling の問い ${G_SINCE}）`, `案内役: Discord に判断依頼を送った（#21 grilling の問い ${G_SINCE} / スレッド 900 / メッセージ M1）`];
+  const out = await gDry(sent, { decisionReplies: { M1: [{ userId: "U1", content: "B 案" }] } });
+  assert.match(out, /write-back-answer:21:/);
+  assert.match(out, /#21/);
+});
+
+test("dry-run: 回答の流し込みも例外にせず、key・ticket の番号・タブの handle を log に表示する", async () => {
+  const sent = [`案内役: Discord に判断依頼を送る（#21 grilling の問い ${G_SINCE}）`, `案内役: Discord に判断依頼を送った（#21 grilling の問い ${G_SINCE} / スレッド 900 / メッセージ M1）`, `案内役: Discord の回答を書き戻した（#21 grilling の問い ${G_SINCE}）\n\nB 案`];
+  const out = await gDry(sent);
+  assert.match(out, /inject-answer:21:/);
+  assert.match(out, /#21/);
+  assert.match(out, /term_1/);
+});

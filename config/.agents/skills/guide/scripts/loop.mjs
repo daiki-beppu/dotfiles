@@ -17,6 +17,9 @@ const DESCRIBE = {
   "create-map-thread": (a) => `${a.key}: map #${a.map} の Discord スレッドを立てる`,
   "notify-human-ticket": (a) => `${a.key}: map #${a.map} のスレッドに人が見る ticket #${a.ticket} を知らせる`,
   "request-map-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.issue} の判断依頼を送る`,
+  "request-grilling-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.ticket} の grilling の問い（判断依頼）を送る`,
+  "write-back-answer": (a) => `${a.key}: 本人の返信を ticket #${a.ticket} のコメントに書き戻す`,
+  "inject-answer": (a) => `${a.key}: ticket #${a.ticket} の回答をタブ ${a.handle} に orca terminal send で流し込む`,
   knowledge: (a) => `${a.key}: 仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,
 };
 const describe = (a) => DESCRIBE[a.kind](a);

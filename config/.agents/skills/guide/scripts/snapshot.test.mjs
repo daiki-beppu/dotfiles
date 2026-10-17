@@ -1,6 +1,7 @@
 // snapshot.mjs のテスト。GitHub・Discord は偽物。
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { decide, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 
 const VIEWER = "me";
@@ -191,4 +192,123 @@ test("sessions: 仕様の工程と wayfinder の ticket が同じ周にあれば
   const { read, observed } = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_1")] }), mapIssue([ticket]), ticket]);
   await read();
   assert.deepEqual([...observed].sort(), ["term_1", "term_t"]);
+});
+
+// ---- grilling の判断依頼への返信の読み取り ----
+
+const G_SENT = (t, message, thread = "T900") => ({ author: VIEWER, body: `案内役: Discord に判断依頼を送った（#${t} grilling の問い 1760000000000 / スレッド ${thread} / メッセージ ${message}）` });
+const G_WRITTEN = (t) => ({ author: VIEWER, body: `案内役: Discord の回答を書き戻した（#${t} grilling の問い 1760000000000）\n\n答え` });
+const grillingTicket = (number, over = {}) => ticketIssue(number, { labels: ["wayfinder:grilling"], ...over });
+
+const buildReplies = (issues, { readReplies = async () => [] } = {}) => {
+  const reads = [];
+  const commentsOf = (n) => issues.find((i) => i.number === n).comments;
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => issues, readPullRequests: () => [], readComments: commentsOf },
+    discord: { readReactions: async () => [], readReplies: async (ref) => { reads.push(ref); return readReplies(ref); } },
+    taktTasks: () => [],
+    now: () => NOW,
+    observeSession: () => ({ found: true, waiting: true, waitSource: "hook", waitSince: "1760000000000", idle: false, tail: ["t"] }),
+  });
+  return { read, reads };
+};
+
+test("decisionReplies: 判断依頼を送り済みで書き戻し前の grilling ticket だけ、スレッドとメッセージの ID で返信を読み、メッセージの ID をキーに入れる", async () => {
+  const replies = [{ userId: "U1", content: "B 案" }];
+  const waiting = grillingTicket(21, { comments: [launched("wayfinder", "term_t"), G_SENT(21, "M1")] });
+  const written = grillingTicket(22, { comments: [launched("wayfinder", "term_t"), G_SENT(22, "M2"), G_WRITTEN(22)] });
+  const unsent = grillingTicket(23);
+  const research = ticketIssue(24, { comments: [launched("wayfinder", "term_t"), G_SENT(24, "M4")] });
+  const { read, reads } = buildReplies([mapIssue([waiting, written, unsent, research]), waiting, written, unsent, research], { readReplies: async () => replies });
+  const snap = await read();
+  assert.deepEqual(reads, [{ threadId: "T900", messageId: "M1" }]);
+  assert.deepEqual(snap.decisionReplies, { M1: replies });
+});
+
+test("decisionReplies: 読む対象が無ければ返信を読まず（discord を呼ばない）、空にする", async () => {
+  const ticket = grillingTicket(21);
+  const { read, reads } = buildReplies([mapIssue([ticket]), ticket]);
+  const snap = await read();
+  assert.deepEqual(reads, []);
+  assert.deepEqual(snap.decisionReplies ?? {}, {});
+});
+
+test("decisionReplies: 返信の取得が失敗したら例外にする（リアクションと同じ。黙って空にしない）", async () => {
+  const ticket = grillingTicket(21, { comments: [launched("wayfinder", "term_t"), G_SENT(21, "M1")] });
+  const { read } = buildReplies([mapIssue([ticket]), ticket], { readReplies: async () => { throw new Error("Discord GET が 500"); } });
+  await assert.rejects(read(), /500/);
+});
+
+test("sessions: 判断依頼の停止の印が map にある grilling ticket も、後の hook の入力待ちを見るために観測し、waitSource・waitSince を保つ", async () => {
+  const ticket = grillingTicket(22);
+  const decision = { author: VIEWER, body: "案内役: Discord に判断依頼を送る（#22 grilling のセッションの停止）" };
+  const { read, reads } = buildReplies([mapIssue([ticket], { comments: [MT_CREATED, decision] }), ticket]);
+  const snap = await read();
+  assert.deepEqual(snap.sessions.term_t, { found: true, waiting: true, waitSource: "hook", waitSince: "1760000000000", idle: false, startedAt: T0, tail: ["t"] });
+  assert.deepEqual(reads, []);
+});
+
+// ---- hook の入力待ちの観測の後で、ticket のコメントを読み直す ----
+
+const G_QUESTION = (text) => ({ author: VIEWER, body: `${QUESTION_HEADING}\n${text}` });
+const S1 = "1760000000000";
+const buildRefresh = (ticket, { later, readComments, waitSince = S1 }) => {
+  const stale = [...ticket.comments];
+  const latest = [...stale, ...later];
+  const calls = [];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: {
+      readIssues: () => [mapIssue([ticket]), { ...ticket, comments: stale }],
+      readPullRequests: () => [],
+      readComments: readComments ?? ((n) => { calls.push(n); return latest; }),
+    },
+    discord: { readReactions: async () => [], readReplies: async () => [] },
+    taktTasks: () => [],
+    now: () => NOW,
+    observeSession: () => ({ found: true, waiting: true, waitSource: "hook", waitSince, idle: false, tail: ["t"] }),
+  });
+  return { read, calls };
+};
+const requestOf = (snap) => decide(snap).find((a) => a.kind === "request-grilling-decision");
+
+test("refresh: 最初の読み取りの後、観測の前に書かれた1件目の問いを、判断依頼の question に入れる", async () => {
+  const { read, calls } = buildRefresh(grillingTicket(21), { later: [G_QUESTION("新しい問い")] });
+  const snap = await read();
+  assert.deepEqual(calls, [21]);
+  assert.equal(requestOf(snap).question, "新しい問い");
+});
+
+test("refresh: 前の問いと前の停止の印があっても、新しい問いを入れる（古い問いは入れない）", async () => {
+  const S0 = "1750000000000";
+  const old = [
+    launched("wayfinder", "term_t"), G_QUESTION("古い問い"),
+    { author: VIEWER, body: `案内役: Discord に判断依頼を送る（#21 grilling の問い ${S0}）` },
+    { ...G_SENT(21, "M0"), body: G_SENT(21, "M0").body.replace("1760000000000", S0) },
+    { author: VIEWER, body: `案内役: Discord の回答を書き戻した（#21 grilling の問い ${S0}）\n\n答え` },
+    { author: VIEWER, body: `案内役: 回答をタブに流し込む（#21 grilling の問い ${S0}）` },
+  ];
+  const { read } = buildRefresh(grillingTicket(21, { comments: old }), { later: [G_QUESTION("新しい問い")] });
+  const question = requestOf(await read()).question;
+  assert.equal(question, "新しい問い");
+  assert.notEqual(question, NO_QUESTION);
+});
+
+test("refresh: 送り済みの停止の grilling と、hook の入力待ちの research では読み直さない。印の無い grilling では1回読み直す", async () => {
+  const sentTicket = grillingTicket(21, { comments: [launched("wayfinder", "term_t"), G_SENT(21, "M1")] });
+  const sentRun = buildRefresh(sentTicket, { later: [] });
+  await sentRun.read();
+  assert.deepEqual(sentRun.calls, []);
+  const research = buildRefresh(ticketIssue(22), { later: [] });
+  await research.read();
+  assert.deepEqual(research.calls, []);
+  const fresh = buildRefresh(grillingTicket(23), { later: [] });
+  await fresh.read();
+  assert.deepEqual(fresh.calls, [23]);
+});
+
+test("refresh: 読み直しの取得が失敗したら例外にする", async () => {
+  const { read } = buildRefresh(grillingTicket(21), { later: [], readComments: () => { throw new Error("gh が 502"); } });
+  await assert.rejects(read(), /502/);
 });

@@ -361,3 +361,80 @@ test("判断依頼: map を渡さなければ従来どおり仕様の見出し�
   assert.ok(calls[0].body.content.includes("仕様 #12"));
   assert.ok(!calls[0].body.content.includes("map #"));
 });
+
+// ---- grilling の判断依頼（問いの中身つき）と本人の返信の読み取り ----
+
+test("判断依頼（grilling の問い）: ticket の題名・リンク・問いの中身・画面の最後の行を本文に含め、メッセージの ID を返す", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M77" }) });
+  const result = await discord.sendDecisionRequest({
+    threadId: "T1", map: 20, issue: 21, title: "公開 API の名前", url: "https://github.com/o/r/issues/21",
+    reason: "grilling が不可逆な判断で止まっている", step: "wayfinder", tab: "wayfinder #21",
+    question: "v2 にするか？\n- A: する\n- B: しない（推奨）", tail: ["❯ 1. A", "  2. B"],
+  });
+  assert.equal(result.messageId, "M77");
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["map #20", "#21", "公開 API の名前", "https://github.com/o/r/issues/21", "v2 にするか？", "B: しない（推奨）", "❯ 1. A", "  2. B", "wayfinder #21"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(content.includes("返信"), `返信で答える案内が無い: ${content}`);
+  assert.ok(!content.includes("undefined"));
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+});
+
+test("判断依頼（grilling の問い）: 問い・理由・画面が長くても 2000 文字以内に収め、題名・リンク・タブは切り落とさず、問いの先頭は残す", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", map: 20, issue: 21, title: "公開 API の名前", url: "https://github.com/o/r/issues/21",
+    reason: "r".repeat(3000), step: "wayfinder", tab: "wayfinder #21",
+    question: `先頭の問い ${"q".repeat(5000)}`, tail: Array.from({ length: 10 }, () => "z".repeat(500)),
+  });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["#21", "公開 API の名前", "https://github.com/o/r/issues/21", "wayfinder #21", "先頭の問い"]) assert.ok(content.includes(part), part);
+});
+
+test("判断依頼（grilling の問い）: 問いが無い既存の呼び出し（question なし）は本文に「問い」の欄も返信の案内も足さない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendDecisionRequest({ threadId: "T1", map: 20, issue: 21, title: "t", url: "u", reason: "入力待ち", step: "wayfinder", tab: "wayfinder #21", tail: ["x"] });
+  assert.ok(!calls[0].body.content.includes("問い:"), calls[0].body.content);
+  assert.ok(!calls[0].body.content.includes("返信"), calls[0].body.content);
+});
+
+test("readReplies: 判断依頼のメッセージへの返信（message_reference が一致）だけを、ID の昇順で { userId, content } にして返す", async () => {
+  const { calls, discord } = adapter({
+    "GET /api/v10/channels/T1/messages": json([
+      { id: "105", content: "後の返信", author: { id: OWNER }, message_reference: { message_id: "M1" } },
+      { id: "103", content: "別のメッセージへの返信", author: { id: OWNER }, message_reference: { message_id: "M0" } },
+      { id: "102", content: "返信ではない普通の書き込み", author: { id: OWNER } },
+      { id: "104", content: "他人の返信", author: { id: "U-other" }, message_reference: { message_id: "M1" } },
+      { id: "101", content: "最初の返信", author: { id: OWNER }, message_reference: { message_id: "M1" } },
+    ]),
+  });
+  const replies = await discord.readReplies({ threadId: "T1", messageId: "M1" });
+  assert.deepEqual(replies, [
+    { userId: OWNER, content: "最初の返信" },
+    { userId: "U-other", content: "他人の返信" },
+    { userId: OWNER, content: "後の返信" },
+  ]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "GET");
+  assert.equal(new URLSearchParams(calls[0].search).get("after"), "M1");
+});
+
+test("readReplies: 返信が無ければ空の配列。読み出しが失敗したら例外にする", async () => {
+  const none = adapter({ "GET /api/v10/channels/T1/messages": json([]) });
+  assert.deepEqual(await none.discord.readReplies({ threadId: "T1", messageId: "M1" }), []);
+  const broken = adapter({ "GET /api/v10/channels/T1/messages": json({ message: "x" }, 403) });
+  await assert.rejects(broken.discord.readReplies({ threadId: "T1", messageId: "M1" }), /403/);
+});
+
+test("readReplies: 100 件を超えて書き込みがあっても、続きのページを読んで本人の返信を見落とさない", async () => {
+  const page1 = Array.from({ length: 100 }, (_, i) => ({ id: String(1001 + i), content: "雑談", author: { id: "U-other" } }));
+  let n = 0;
+  const { calls, discord } = adapter({
+    "GET /api/v10/channels/T1/messages": () => json(++n === 1 ? page1 : [{ id: "1101", content: "遅い返信", author: { id: OWNER }, message_reference: { message_id: "M1" } }]),
+  });
+  assert.deepEqual(await discord.readReplies({ threadId: "T1", messageId: "M1" }), [{ userId: OWNER, content: "遅い返信" }]);
+  assert.deepEqual(calls.map((c) => new URLSearchParams(c.search).get("after")), ["M1", "1100"]);
+});

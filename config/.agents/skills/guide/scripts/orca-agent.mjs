@@ -55,10 +55,12 @@ function errorCode(e) {
   }
 }
 
-// handle のセッションの観測 { found, waiting, idle, tail }。
+// handle のセッションの観測 { found, waiting, waitSource, waitSince, idle, tail }。
 //   found: `orca terminal show` が handle を返し、タブがつながっているか。存在しない handle の応答 terminal_handle_stale と、
 //          閉じたタブ（show は ok のまま connected: false を返す）を false にする。それ以外の失敗は例外
 //   waiting: show の agentWait が null でない（人にしか答えられない入力待ち。Orca が prompt-text / title / hook のどれかで確かめたもの）
+//   waitSource / waitSince: agentWait の source（hook / prompt-text / title。待ちなしは null）と、その since（文字列。無ければ null）。
+//          hook の since は 1 つの入力待ちの識別子として、同じ停止を 1 度だけ扱うのに使う
 //   idle: `orca terminal wait --for tui-idle` が短い待ちで満たされた（手が止まっている）。待ちが timeout（終了コード 1、error.code: "timeout"）なら false
 //   tail: `orca terminal read` の画面の最後の 10 行
 export function observeSession({ cwd, handle }, run = runOrca) {
@@ -75,7 +77,20 @@ export function observeSession({ cwd, handle }, run = runOrca) {
   const read = parseReply(run(["terminal", "read", "--terminal", handle, "--json"], { cwd }), "orca terminal read");
   const tail = read.result?.terminal?.tail;
   if (!Array.isArray(tail)) throw new Error(`orca terminal read の応答に result.terminal.tail が無い（ターミナル ${handle}）`);
-  return { found: true, waiting: terminal.agentWait != null, idle: isIdle({ cwd, handle }, run), tail: tail.slice(-TAIL_LINES) };
+  const wait = terminal.agentWait;
+  return {
+    found: true, waiting: wait != null, waitSource: wait?.source ?? null, waitSince: wait?.since == null ? null : String(wait.since),
+    idle: isIdle({ cwd, handle }, run), tail: tail.slice(-TAIL_LINES),
+  };
+}
+
+// handle のタブへ text を入力して Enter を送る（新しいセッションは作らない）。text はそのまま 1 つの argv で渡す。失敗は例外。
+export function sendToSession({ cwd, handle, text }, run = runOrca) {
+  try {
+    run(["terminal", "send", "--terminal", handle, "--text", text, "--enter", "--json"], { cwd });
+  } catch (e) {
+    throw new Error(`orca terminal send が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
+  }
 }
 
 function isIdle({ cwd, handle }, run) {

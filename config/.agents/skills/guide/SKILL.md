@@ -1,6 +1,6 @@
 ---
 name: guide
-description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送る常駐スクリプト「案内役」を動かす依頼に使う。
+description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送り、grilling の不可逆な判断の問い（AskUserQuestion）には問いつきの判断依頼を送って、本人の Discord の返信を ticket に書き戻し、止まっていたタブへ流し込む常駐スクリプト「案内役」を動かす依頼に使う。
 ---
 
 # 案内役
@@ -20,7 +20,10 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | open な `wayfinder:map` の子（sub-issue）で、open・unblocked（open なブロッカーなし）・未 claim（assignee なし）の ticket が、`wayfinder:research`・`wayfinder:grilling`・`wayfinder:task` のどれかのラベルを持ち、viewer の wayfinder の印（`案内役: wayfinder を起動する` か `案内役: wayfinder を起動した…`）がない。prototype の ticket には起動しない。frontier が複数なら同じ周でそれぞれに起動する | ticket ごとに新しいセッションを `orca agent launch --agent claude` で Orca のタブ（題名 `wayfinder #t`）に対話セッションとして起動する。プロンプトは `/wayfinder #<map> #<ticket>`。task は `git fetch origin` の後に `orca worktree create --base-branch origin/main`（名前 `wayfinder-<ticket>`）で作った worktree で、research と grilling は対象 repo の main checkout で起動する。起動したセッションの停止は下の行で扱う |
 | open な `wayfinder:map` に、知らせること（下の 2 行のどちらか）があり、viewer の map のスレッドの印（`案内役: Discord に map のスレッドを立てる` か `案内役: Discord に map のスレッドを立てた…`）がない | repo 名のチャンネル（承認依頼と同じ）に、題名 `#<map> <map の題名>` の公開スレッドを立て、スレッドの ID を map に印で残す。この周は通知も判断依頼も出さず、次の周以降に出す。1 段目の印だけがあるときは何も出さない |
 | open な `wayfinder:map` のスレッドがあり、frontier（open・unblocked・未 claim）に `wayfinder:prototype` の ticket があり、map に `案内役: Discord に人が見る ticket を知らせる（#t）` がない。人が assign した prototype（frontier の外）には出さない。セッションは起動しない | map のスレッドに「人が見る ticket」として ticket の題名とリンクを送る。ticket ごとに 1 度だけ |
-| open な `wayfinder:map` のスレッドがあり、その子で open の ticket に handle つきの wayfinder の起動の印があり、セッションが止まった（① handle のセッションが Orca に見つからない ② 入力待ち ③ 起動から `--stall-minutes` 分経った。この順で理由を 1 つ選ぶ。ticket が閉じていれば観測も判断依頼もしない） | map のスレッドに、ticket・タブの名前（`wayfinder #t`）・画面の最後の 10 行・理由を送る。原因（`<ticket の種類> のセッションの停止`）ごとに 1 度だけ。印は map に書く |
+| open な `wayfinder:map` のスレッドがあり、その子で open の ticket に handle つきの wayfinder の起動の印があり、セッションが止まった（① handle のセッションが Orca に見つからない ② 入力待ち ③ 起動から `--stall-minutes` 分経った。この順で理由を 1 つ選ぶ。ticket が閉じていれば観測も判断依頼もしない。grilling が hook の入力待ちで止まっているときは下の 3 行で扱い、この行は出さない） | map のスレッドに、ticket・タブの名前（`wayfinder #t`）・画面の最後の 10 行・理由を送る。原因（`<ticket の種類> のセッションの停止`）ごとに 1 度だけ。印は map に書く |
+| open な `wayfinder:map` のスレッドがあり、その子で open の `wayfinder:grilling` の ticket に handle つきの wayfinder の起動の印があり、そのセッションが hook の入力待ち（`orca terminal show` の `agentWait` が `{source:"hook", since:S}`。AskUserQuestion の問い）で、ticket に `案内役: Discord に判断依頼を送る（#t grilling の問い S）` も送った印もない。過去に `grilling のセッションの停止` の印が map にあっても出す。research・task、hook 以外の入力待ち、見つからない、時間切れは従来の停止の判断依頼のまま | map のスレッドに、ticket の題名・リンク・問いの中身（ticket の最後の `## 判断の問い` コメント。無ければ「（問いの記録が ticket に無い）」）・画面の最後の 10 行・タブの名前を送り、このメッセージへの返信で答えるよう促す。同じ停止（S）では 1 度だけ。同じ停止で停止の判断依頼は重ねて出さない。印は ticket に書く |
+| 判断依頼を送った印（メッセージ M つき）があり、同じ S の書き戻しの印がなく、M への返信（`message_reference`）に本人（`guide.discord.user-id`）の本文が空でないものがある | 本人の最も古い返信の本文を、ticket のコメントとして書き戻す（1 行目が印、空行、回答）。本人以外の返信は書き戻さない。S ごとに 1 度だけ |
+| 同じ S の書き戻しの印があり、流し込みの印がなく、起動の印の handle のタブがまだ同じ S の hook の入力待ちである | 書き戻しコメントの本文（GitHub だけを読む。Discord の返信は読まない）を、`orca terminal send --terminal H --text … --enter` でそのタブへ流し込む。改行は空白にして 1 行で送る。セッションは作り直さない。S ごとに 1 度だけ。タブが別の入力待ち（S が違う）になっていれば流し込まない |
 | 承認依頼を送り済みの open な仕様で、承認済みなら親の open な sub-issue の最新の takt タスク（`createdAt` が最も新しいもの）が `failed`（ABORT）、または仕様の最後の Formal Spec コメントが failed | 承認依頼のスレッドに、止まった issue・理由・takt のレポートの場所（`<worktreePath>/.takt/runs`、検証失敗なら検証器の作業ディレクトリ）を送る。原因ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様で、起動の印に handle がある工程（to-tickets など）の結果が GitHub に無く、セッションが止まった（① handle のセッションが Orca に見つからない ②入力待ち（確認・許可）③ 起動から `--stall-minutes`（既定 60）分経った。この順で理由を 1 つ選ぶ） | 承認依頼のスレッドに、工程・仕様・タブの名前（`<工程> #n`）・画面の最後の 10 行・理由を送る。結果は to-tickets なら仕様を指す親 issue、knowledge なら学びの PR、formal-spec なら viewer の Formal Spec コメント。印に handle が無い工程は観測しない。原因（`<工程> のセッションの停止`）ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様の親に handle つきの takt-sequence の起動の印があり、渡した sub-issue のうち open なものが残り、そのどれにも takt の `pending`・`running` のタスクも最新が `failed` のタスクも無く、takt-sequence が止まった（① タブが Orca に見つからない ② 画面の最後の 10 行に `案内役: takt-sequence が終わった` の行がある。この順で理由を 1 つ選ぶ。時間切れと入力待ちは見ない） | 承認依頼のスレッドに、親・open のまま残った sub-issue・タブの名前・画面の最後の 10 行・理由を送る。自動で起動し直さない。原因 `takt-sequence のセッションの停止`（N は親）で 1 度だけ。handle の起動の印が無い（古い形の）親は観測しない |
@@ -64,6 +67,11 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: <工程> を起動した（ターミナル H / T）` | 仕様 | to-tickets 以外の工程でも、Orca のタブで起動して handle を印に書けば、同じ形で停止の観測の対象になる（H は handle、T は起動時刻。起動時刻はこの印から読む） |
 | `案内役: wayfinder を起動する` | wayfinder の ticket | 起動する前に書く（1 段目）。map ではなく起動する ticket に書く。これがある ticket には起動を出さない。起動の成否が不明でも二重に起動しない |
 | `案内役: wayfinder を起動した（ターミナル H / T）` | wayfinder の ticket | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。これがある ticket には起動を出さない。この印がある open な ticket は、停止の観測の対象になる（種類のラベルが research・grilling・task のもの。最後の印の handle を見る）。結果は ticket が閉じたこと |
+| `案内役: Discord に判断依頼を送る（#t grilling の問い S）` | wayfinder の grilling の ticket | 問いつきの判断依頼を送る前に書く。t は ticket、S は停止の識別子（`agentWait.since`）。閉じ括弧まで照合する。これがあれば同じ S には再送しない（送信が失敗しても再送しない） |
+| `案内役: Discord に判断依頼を送った（#t grilling の問い S / スレッド T / メッセージ M）` | wayfinder の grilling の ticket | 送った後に書く。M への本人の返信を毎周 REST で読む（書き戻し前の間だけ） |
+| `案内役: Discord の回答を書き戻した（#t grilling の問い S）` | wayfinder の grilling の ticket | 1 行目が印、空行の後が回答の本文。これがあれば書き戻さない。流し込みの回答はこのコメントの本文から作る |
+| `案内役: 回答をタブに流し込む（#t grilling の問い S）` | wayfinder の grilling の ticket | `orca terminal send` の前に書く。これがあれば再送しない |
+| `## 判断の問い` で始まる 1 行目のコメント | wayfinder の grilling の ticket | grilling のセッションが AskUserQuestion の前に書く（問い・選択肢・推奨）。判断依頼の本文に載せる。最後のものを読む |
 | `案内役: Discord に map のスレッドを立てる` | wayfinder の map | スレッドを立てる前に書く（1 段目）。これがある map には再作成しない。作成の成否が不明でも二重に立てない |
 | `案内役: Discord に map のスレッドを立てた（スレッド T）` | wayfinder の map | 立てた後に書く（2 段目）。T がスレッドの ID。通知と判断依頼の送り先 |
 | `案内役: Discord に人が見る ticket を知らせる（#t）` | wayfinder の map | prototype の ticket t を知らせる前に書く。閉じ括弧まで照合する。これがあれば再送しない |
@@ -81,6 +89,10 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 
 ## 確認が取れていない点
 
+- Orca の CLI には AskUserQuestion の問いの本文を取り出す口が無い（`agentWait` は source と since だけ）。そのため問いは grilling が ticket に書く `## 判断の問い` のコメントから読む。
+- Discord への返信の本文を、特権インテントなしで（Bot をメンションする返信として）REST で読めるか。実 Discord で確かめていない。
+- AskUserQuestion の選択画面に `orca terminal send --text … --enter` で送った文字が、回答として通るか。実機で確かめていない。
+- 1 つの入力待ちのあいだ `agentWait.since` が変わらないか。実機で確かめていない（変わると同じ停止に判断依頼を重ねうる）。
 - アーカイブされた公開スレッドのメッセージのリアクションを REST で読めるか。実 Discord で確かめていない（スレッドは 7 日で自動アーカイブ）。
 - アーカイブされた公開スレッドへ判断依頼を Bot が送信できるか。実 Discord で確かめていない。
 - 検証器の作業ディレクトリは、takt が 1 時間以上使われていないものを次の検証で消す。判断依頼を読む時点で残っていないことがある。

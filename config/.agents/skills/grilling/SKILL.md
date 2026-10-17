@@ -27,6 +27,8 @@ A decision is **irreversible** when it falls in one of these five:
 
 ### Asking an irreversible decision
 
+Before you ask, write a comment on the ticket (the one wayfinder called you for) whose first line is `## 判断の問い`, followed by the question, its options (選択肢), and your recommendation (推奨). The guide reads the last such comment and puts it in the Discord request, because it cannot read the question from the Orca terminal. Write it before calling the AskUserQuestion tool, never after.
+
 Ask each irreversible decision with the AskUserQuestion tool, 1 件ずつ. Write the question with its options (選択肢) and your recommendation (推奨), so the human can answer with 1 回答 and you can proceed. The guide watches for AskUserQuestion to notice that the session is waiting for a human, so every irreversible decision goes through it.
 
 ### Recording a 仮決め

@@ -64,25 +64,46 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
     },
 
     // 承認依頼のスレッド（map があれば map のスレッド）に判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
-    async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail }) {
+    async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail, question }) {
       const head = `判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
       const reportLine = reports === undefined ? "" : `\ntakt のレポート: ${reports}`;
-      // 2000 文字の上限で切れるのは理由と画面だけにする（工程・仕様・タブ・URL・レポートの場所を必ず残す）。
-      const room = Math.max(0, MAX_CONTENT - head.length - reportLine.length - "理由: ".length);
+      // 問い（grilling の判断依頼）があれば、本人が返信で答えられるよう案内を添える。
+      const replyGuide = question === undefined ? "" : "\nこのメッセージに返信で答えてください（本人の返信を ticket に書き戻して、止まったタブへ流し込みます）。";
+      const questionLabel = question === undefined ? "" : "問い:\n\n"; // 問いの後ろの改行を含める
+      // 2000 文字の上限で切れるのは問い・理由・画面だけにする（工程・仕様・タブ・URL・レポートの場所を必ず残す）。
+      const room = Math.max(0, MAX_CONTENT - head.length - reportLine.length - replyGuide.length - questionLabel.length - "理由: ".length);
       const clip = (text, max) => (text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text);
-      const shownReason = clip(reason, tail === undefined ? room : Math.floor(room / 2));
+      const shownQuestion = question === undefined ? "" : clip(question, Math.floor(room / 2));
+      const afterQuestion = room - shownQuestion.length;
+      const shownReason = clip(reason, tail === undefined ? afterQuestion : Math.floor(afterQuestion / 2));
       let screen = "";
       if (tail !== undefined && tail.length > 0) {
         const fence = "```";
         const frame = `\n画面の最後の行:\n${fence}\n\n${fence}`;
-        const left = room - shownReason.length - frame.length;
+        const left = room - shownQuestion.length - shownReason.length - frame.length;
         // 画面の中に ``` が出てもコードブロックが崩れないよう、画面の中の ``` は ˋˋˋ に置き換える。
         if (left > 0) screen = `\n画面の最後の行:\n${fence}\n${clip(tail.join("\n").replaceAll(fence, "ˋˋˋ"), left)}\n${fence}`;
       }
-      await call("POST", `/channels/${threadId}/messages`, {
-        content: `${head}理由: ${shownReason}${screen}${reportLine}`,
+      const message = await call("POST", `/channels/${threadId}/messages`, {
+        content: `${head}${question === undefined ? "" : `${questionLabel.slice(0, -1)}${shownQuestion}\n`}理由: ${shownReason}${screen}${reportLine}${replyGuide}`,
         allowed_mentions: { parse: [] },
       });
+      return { messageId: message.id };
+    },
+
+    // 判断依頼のメッセージへの返信（message_reference が一致するもの）を、ID の昇順で { userId, content } にして返す。誰の返信かは呼び出し側が判定する。
+    async readReplies({ threadId, messageId }) {
+      // after は 1 回に最大 100 件なので、100 件返る間は最後の ID から続きを読む（共有スレッドで他の書き込みが多くても返信を見落とさない）。
+      const newer = (a, b) => (BigInt(a) > BigInt(b) ? 1 : BigInt(a) < BigInt(b) ? -1 : 0);
+      const replies = [];
+      let cursor = messageId;
+      for (;;) {
+        const page = await call("GET", `/channels/${threadId}/messages?after=${cursor}&limit=100`);
+        replies.push(...page.filter((m) => m.message_reference?.message_id === messageId));
+        if (page.length < 100) break;
+        cursor = page.map((m) => m.id).sort(newer).at(-1);
+      }
+      return replies.sort((x, y) => newer(x.id, y.id)).map((m) => ({ userId: m.author.id, content: m.content }));
     },
 
     // ✅ / ❌ のリアクションのうち本人の分だけを返す。
