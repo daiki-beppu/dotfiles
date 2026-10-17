@@ -1,6 +1,6 @@
 # 案内役（guide スキル）
 
-`config/.agents/skills/guide/` の[案内役](../../GLOSSARY.md)に手を入れるとき、特に[工程](../../GLOSSARY.md)の起動・[印](../../GLOSSARY.md)の形・[セッションの停止](../../GLOSSARY.md)の観測・Orca CLI の呼び方を変えるときに読む。工程を Orca の対話セッションで起動する理由は [ADR 0001](../adr/0001-guide-steps-run-as-orca-sessions.md)。遷移と印の一覧は `config/.agents/skills/guide/SKILL.md` にある。
+`config/.agents/skills/guide/` の[案内役](../../GLOSSARY.md)に手を入れるとき、特に[工程](../../GLOSSARY.md)の起動・[印](../../GLOSSARY.md)の形・[セッションの停止](../../GLOSSARY.md)の観測・Orca CLI の呼び方を変えるとき、wayfinder の [map](../../GLOSSARY.md) の遷移（ticket の起動・判断依頼・仮決めの掲載と差し戻し）を変えるときに読む。工程を Orca の対話セッションで起動する理由は [ADR 0001](../adr/0001-guide-steps-run-as-orca-sessions.md)、判断の問いを ticket から読む理由は [ADR 0002](../adr/0002-grilling-writes-question-before-asking.md)。遷移と印の一覧は `config/.agents/skills/guide/SKILL.md` にある。
 
 ## 動いている案内役はマージしたコードを読み直さないので、工程の変更をマージしたら再起動する
 
@@ -17,7 +17,13 @@ gh pr view <N> --json mergedAt
 
 印は起動より先に書く決まりだが、handle は `orca agent launch --json` の応答からしか取れない。そこで、起動の前に `案内役: <工程> を起動する` を書き、起動の後に `案内役: <工程> を起動した（ターミナル <handle> / <ISO 8601>）` を書く。承認依頼の「送る」「送った」と同じ形。1 段目だけが残った仕様（起動の失敗、応答が JSON でない、handle が無い）は、次の周でも再起動しない。
 
-2 段目を手で組み立てると、`decide.mjs` の `LAUNCHED` 正規表現（`^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）`）に一致しなくなる。そうなると停止の観測（`sessionsToObserve`）から黙って漏れる。逆に、この形で書けば工程名を問わず観測の対象になる。#333 の formal-spec は、観測側に手を入れずに停止の検知が効いた。
+2 段目を手で組み立てると、`decide.mjs` の `LAUNCHED` 正規表現（`^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）`）に一致しなくなる。そうなると停止の観測から黙って漏れる。逆に、仕様に書いた印なら、この形で書けば工程名を問わず `sessionsToObserve` の対象になる。#333 の formal-spec は、観測側に手を入れずに停止の検知が効いた。
+
+## 印を同じ形にそろえても、観測されるのは観測側が読む issue の印だけ
+
+`sessionsToObserve` が見るのは、承認依頼を送り済みの open な仕様の印だけ。wayfinder の ticket に同じ形の起動の印を書いても、それだけでは観測されない。ticket の観測は `ticketSessionsToObserve` として別に足した（#347 以降）。
+
+#345 の 1 回目の本文には「これで既存のセッションの停止の観測の対象になる」という見込みの一文があった。review はこれを要件として読み、fix-plan は「判断依頼の送り先（承認依頼のスレッド）が ticket には無い」として続行不能にした（[takt の知識文書](takt.md#takt-は-ticket-本文の地の文も完了の義務として読む)）。印を新しい issue に書く ticket では、観測側のどの関数が読むかまで本文に書く。
 
 ## 新しい印が古い印と前方一致することを前提に、抑止と gate を分けて判定する
 
@@ -42,9 +48,14 @@ gh pr view <N> --json mergedAt
 
 ターンを終えて止まったセッション（「進めてよいですか」と書いて終わる、など）は `waiting: false` のままで、`--stall-minutes`（既定 60 分）でしか拾えない。手が止まっているか（`orca terminal wait --for tui-idle`）は観測に入れているが、停止の条件には使っていない。仕様が停止の条件を入力待ち（確認・許可）と定めているため。許可確認の値を確かめるには、許可スキップを外した環境で起動して許可確認を出させ、`orca terminal show` を取る。
 
-## セッションが見つからないと判定するのは `terminal_handle_stale` のときだけにする
+## セッションが見つからないと判定するのは `terminal_handle_stale` と `connected: false` のときだけにする
 
-存在しない handle に `orca terminal show` を打つと、終了コード 1 で、**stdout** に `{"ok":false,"error":{"code":"terminal_handle_stale"}}` が出る。案内役はこの code のときだけ `found: false` にする。Orca が動いていない、別の code、JSON でない応答などはすべて例外にして、`loop.mjs` の再試行（3 回）に任せる。Orca 側の一時的な失敗まで `found: false` にすると、判断依頼が誤って飛ぶ。
+見つからないセッションの返り方は 2 通りある。
+
+- 閉じたタブの handle: `orca terminal show` は `ok: true` のまま `result.terminal.connected: false` を返す（2026-10-17 に実機で確認。`orca terminal close` の後 15 秒待っても同じ）
+- 存在しない handle: 終了コード 1 で、**stdout** に `{"ok":false,"error":{"code":"terminal_handle_stale"}}` が出る（Orca の再起動後などと見ているが、閉じたタブでは出なかった）
+
+案内役はこの 2 つのときだけ `found: false` にする（`orca-agent.mjs` の `observeSession`）。Orca が動いていない、別の code、JSON でない応答などはすべて例外にして、`loop.mjs` の再試行（3 回）に任せる。Orca 側の一時的な失敗まで `found: false` にすると、判断依頼が誤って飛ぶ。
 
 テスト用の偽物の `orca` も、`execFileSync` と同じく `e.stdout` に JSON を載せて投げる形にする。`orca terminal wait` が待ちきれなかったときも、同じ形で `error.code: "timeout"` が返る。
 
@@ -77,8 +88,51 @@ Orca の Chat UI の設定によっては `outcome.kind` が `structured`（チ�
 
 この条件は to-tickets を出す遷移にだけ足し、takt-sequence・knowledge・merge-auto には足していない（#333）。人が作った親 issue の仕様を、Formal Spec コメントが無いという理由で止めないため。to-tickets を起動済みの古い仕様にも、formal-spec を起動しない。
 
+## hook の入力待ちを観測した grilling の ticket は、判断の問いを読み直す
+
+スナップショットは GitHub を読んでから（`snapshot.mjs` の `readIssues`）Orca を観測する（`observeSession`）。grilling は「[判断の問い](../../GLOSSARY.md)を書く → AskUserQuestion」の順に動くので、この 2 つが GitHub の読み取りと Orca の観測のあいだに起きると、判断依頼には古い問いか「（問いの記録が ticket に無い）」が載る。送った印が残るので、同じ停止には二度と送り直されない。
+
+#349 では ai-antipattern-review がこれを見つけ（裁定で GR-Q-STALE）、`grillingQuestionsToRefresh` で「grilling で、hook の入力待ちで、まだ送っていない停止」の ticket だけコメントを読み直す形にした。この修正だけで 5 iteration・約 19 分かかった。その前の replan は「手順に従ったセッションなら問いは既にある」と判断したが、取得順のためにその前提は成り立っていなかった。2 つの情報源を順に読む遷移を足すときは、間に書かれたものを取りこぼさないかを先に確かめる。問いを Orca から取らない理由は [ADR 0002](../adr/0002-grilling-writes-question-before-asking.md)。
+
+## 判断の回答は判断依頼への返信で受け、仮決めの差し戻しは ❌ で受ける
+
+Bot は特権インテント（MESSAGE_CONTENT）を持たないので、Bot をメンションしていないメッセージの本文は読めない。回答は本文が要るので、判断依頼のメッセージ M への返信（`GET /channels/<thread>/messages?after=<M>&limit=100` を `message_reference.message_id === M` で絞る）として受け、判断依頼の本文に「メンションの無い返信は読めません」と書く。map のスレッドは共有で 100 件を超えうるので、100 件返る間は最後の ID から続きを読む。[仮決めの差し戻し](../../GLOSSARY.md)は本文が要らないので、承認と同じくリアクション（本人の ❌）にし、Bot が ❌ を先に付けておく（#349・#351）。
+
+どちらも実 Discord では確かめていない。#349〜#351 のテストはすべて偽の `fetch`・`execFile`・`orca` で通したもので、`guide/SKILL.md` の「確認が取れていない点」に残っている。
+
+## 回答の流し込みは、`agentWait.since` と 1 行の `orca terminal send` に頼っていて、どちらも実機で確かめていない
+
+判断依頼・書き戻し・流し込みの印は、hook の入力待ちの `agentWait.since` を停止の識別子 S にしている（`案内役: Discord に判断依頼を送る（#t grilling の問い S）`、閉じ括弧まで照合）。同じ入力待ちのあいだに since が変わると、判断依頼が重なる。
+
+流し込みは `orca terminal send --terminal <h> --text <回答> --enter --json` で、回答の改行は空白にして 1 行で送る（`execute.mjs`）。改行のまま送ると TUI の入力が途中で確定するおそれがあるため。改行つきの元の回答は、GitHub の書き戻しのコメントに残る。AskUserQuestion の選択画面に送った文字が回答として通るかは、まだ確かめていない。live-mindmap で 1 回流すときは、この 2 点を最初に見る。
+
+## 仮決めは閉じた ticket に載るので、map の子のコメントは状態を問わず読む
+
+wayfinder は resolution コメントを書いた直後に ticket を閉じる。#350 の前の `github.mjs` は open な子のコメントしか読まず、テストも「closed な子の comments は読まない」を固定していたので、そのままでは[仮決め](../../GLOSSARY.md)が 1 件も読めなかった。今は、コメントは全ての子から、blocked_by は open な子だけから読む。閉じた子の数だけ読み取りが増えるので、差し戻しのリアクションも閉じた ticket の分だけ毎周読む。
+
+## 仮決めの読み取りは、1 件でも形から外れたらそのコメントからは 1 件も読まない
+
+`## 仮決め` 節は、`### <問い>` ごとに `- 答え:`・`- 振り分け:`（⓪ か ③）・`- 理由:`・`- 根拠:` の 4 行がこの順に並ぶ（正本は `wayfinder/SKILL.md`）。#350 では、形から外れた仮決めを部分的に拾うより、そのコメントを丸ごと掲載しない方を選んだ。誤った仮決めを流すと、人が差し戻すかどうかの判断を誤るため。最初の `###` より前に本文がある節、閉じていないコードフェンス（開いた記号と同じ記号でだけ閉じたと数える）も 0 件にする。Discord の 2000 文字に収めるため、短い項目から順に文字数を割り当て、題名・リンク・番号は切らない。
+
+## 開き直した ticket は、差し戻しの書き戻しの印で回を区切り、起動と観測の両方を切り替える
+
+開き直した ticket には前の回の起動の印が残っているので、そのままでは新しいセッションが起動しない。前の回の handle を観測すると、閉じたタブとして `found: false` になり、「見つからない」の誤った判断依頼が出る。#351 では、最後の `案内役: Discord で仮決めが差し戻された（#t 仮決め n）` より後の印だけを今の[回](../../GLOSSARY.md)として数える `currentCycle` を作り、起動の判定（dispatched の key は初回 `wayfinder:t`、開き直した後は `wayfinder:t:k`）と `ticketSessionsToObserve` の両方がこれを使う。境界を 2 か所で別々に数えると食い違う。開き直しの印を別に設ける案は、解き直して再び閉じた状態と区別できないので捨てた。
+
+差し戻しは「書き戻しの印 → `state=open` → assignee を外す」を 1 つの行動にし、同じ ticket の複数の仮決めは 1 回にまとめる。1 件ずつ扱うと 2 件目が次の回に回り、新しいセッションがその差し戻しを知らないまま解いてしまう。
+
+## task の ticket を開き直すと、worktree 名 `wayfinder-<ticket>` が前の回と衝突しうる
+
+task のセッションは `orca worktree create --name wayfinder-<ticket>` で作った worktree で起動する（`wayfinder.mjs`）。開き直した task を新しい回で起動すると、前の回の worktree が残っていれば同じ名前になる。`orca worktree create` が既にある名前で失敗するのか、別名で作るのか、再利用するのかは確かめていない。#351 の companion が should_fix として指摘したが、implement は「設計判断が要る」として直さず、マージ後に追う issue も無い。task の差し戻しを初めて流すときに、`orca worktree create` の応答を見る。
+
+## 差分の無い takt の run は PR ができず、別の ABORT があると takt-sequence の停止も知らせない
+
+実験や調査だけの ticket は、takt の run が completed でも repo に差分が無く、PR が作られない。takt-sequence はこれを `PR なし`（人の手が要る）として扱い、閉じるのは人になる。案内役の `decideSequenceStalls` は、open な sub-issue のどれかが実行中か、最新のタスクが failed なら何も出さない。#352 は 07:15Z に completed で終わったが、同じ親の #348 が failed だったので判断依頼は出ず、人が報告をコメントに写して閉じたのは約 7 時間後の 14:22Z だった。成果物（`dbt/`）は `.takt/runs/…/reports` の中にしか無く、takt-cleanup で消える。差分の無い ticket は、報告を issue のコメントに写して閉じるところまでを本文に書いておく。
+
 ## 出典
 
+- 仕様 [#306](https://github.com/daiki-beppu/dotfiles/issues/306)、親 issue [#344](https://github.com/daiki-beppu/dotfiles/issues/344)
+- [#345](https://github.com/daiki-beppu/dotfiles/issues/345) / [#356](https://github.com/daiki-beppu/dotfiles/pull/356)（frontier の ticket の起動）、[#347](https://github.com/daiki-beppu/dotfiles/issues/347) / [#358](https://github.com/daiki-beppu/dotfiles/pull/358)（map のスレッドと人が見る ticket）、[#349](https://github.com/daiki-beppu/dotfiles/issues/349) / [#365](https://github.com/daiki-beppu/dotfiles/pull/365)（判断依頼と流し込み）、[#350](https://github.com/daiki-beppu/dotfiles/issues/350) / [#367](https://github.com/daiki-beppu/dotfiles/pull/367)（仮決めの掲載）、[#351](https://github.com/daiki-beppu/dotfiles/issues/351) / [#368](https://github.com/daiki-beppu/dotfiles/pull/368)（仮決めの差し戻し）、[#352](https://github.com/daiki-beppu/dotfiles/issues/352)（振り分けの効き目の実験）
+- 各 PR の takt の run（`takt-worktrees/20261017T0500-345-…`・`…0607-345-…`・`…0715-347-…`・`…0902-349-…`・`…1018-350-…`・`…1112-351-…`・`…0642-352-…` の `.takt/runs/*/`）
 - 仕様 [#325](https://github.com/daiki-beppu/dotfiles/issues/325)、親 issue [#329](https://github.com/daiki-beppu/dotfiles/issues/329)
 - [#330](https://github.com/daiki-beppu/dotfiles/issues/330) / [#335](https://github.com/daiki-beppu/dotfiles/pull/335)（to-tickets の Orca 起動）
 - [#331](https://github.com/daiki-beppu/dotfiles/issues/331) / [#337](https://github.com/daiki-beppu/dotfiles/pull/337)（セッションの停止の観測）
