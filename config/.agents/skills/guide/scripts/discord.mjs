@@ -67,8 +67,8 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
     async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail, question }) {
       const head = `判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
       const reportLine = reports === undefined ? "" : `\ntakt のレポート: ${reports}`;
-      // 問い（grilling の判断依頼）があれば、本人が返信で答えられるよう案内を添える。
-      const replyGuide = question === undefined ? "" : "\nこのメッセージに返信で答えてください（本人の返信を ticket に書き戻して、止まったタブへ流し込みます）。";
+      // 問い（grilling の判断依頼）があれば、本人が返信で答えられるよう案内を添える。特権インテントを使わない Bot は、メンションの無い返信の本文を受け取れないので、条件も伝える。
+      const replyGuide = question === undefined ? "" : "\nこのメッセージに返信で答えてください（本人の返信を ticket に書き戻して、止まったタブへ流し込みます）。返信のメンション（@）をオンのまま返信するか、Bot をメンションしてください。メンションの無い返信は読めません。";
       const questionLabel = question === undefined ? "" : "問い:\n\n"; // 問いの後ろの改行を含める
       // 2000 文字の上限で切れるのは問い・理由・画面だけにする（工程・仕様・タブ・URL・レポートの場所を必ず残す）。
       const room = Math.max(0, MAX_CONTENT - head.length - reportLine.length - replyGuide.length - questionLabel.length - "理由: ".length);

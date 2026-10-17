@@ -378,6 +378,7 @@ test("判断依頼（grilling の問い）: ticket の題名・リンク・問�
     assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
   }
   assert.ok(content.includes("返信"), `返信で答える案内が無い: ${content}`);
+  assert.ok(content.includes("メンション"), `メンションの条件の案内が無い: ${content}`);
   assert.ok(!content.includes("undefined"));
   assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
 });
