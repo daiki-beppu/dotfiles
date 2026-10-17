@@ -9,6 +9,7 @@
 //   査読と修正・push）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
 //   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたか、現在の head で例外により 2 回落ちたら止める。止まったあとに PR の head が変われば、流し直したときにレビューからやり直す。
 //   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
+// - 予約済みで BEHIND の PR は揃えない。align-behind.mjs を別のタブで常駐させておく（揃える仕組みはそちらに一本化した）。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
@@ -112,11 +113,8 @@ function stage(n, tasks) {
     sh("gh", ["pr", "merge", t.prUrl, "--auto", "--squash"]);
     event(n, `自動マージ予約: ${label(n)} ${t.prUrl}`);
   } else if (pr.mergeStateStatus === "BEHIND") {
-    // main の ruleset が「最新にしてから」だと、予約済みの PR は main が進むたびに BEHIND で止まり、GitHub は自動では揃えない。
-    // 揃えるたびに出したいので event でなく log
-    try { sh("gh", ["pr", "update-branch", t.prUrl]); }
-    catch { event(n, `競合修正待ち: ${label(n)} ${t.prUrl}`); return "stuck"; }
-    log(`main に揃えた: ${label(n)} ${t.prUrl}`);
+    // 予約済みの BEHIND は align-behind.mjs が作者を問わず 1 件ずつ揃える。ここでも揃えると 2 つの仕組みが同じ PR を揃えて空回りする
+    event(n, `main に揃うのを待つ: ${label(n)} ${t.prUrl}`);
   }
   return "waiting";
 }
