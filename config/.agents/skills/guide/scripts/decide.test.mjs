@@ -7,6 +7,9 @@ const REPO = "daiki-beppu/live-mindmap";
 const VIEWER = "daiki-beppu";
 
 const STARTED = "案内役: to-tickets を起動した";
+// 新しい印（Orca のタブで起動）: 起動前と、handle と起動時刻つきの起動後。STARTED（handle なし）と FINISHED は旧版が書いた古い印。
+const LAUNCHING = "案内役: to-tickets を起動する";
+const LAUNCHED = "案内役: to-tickets を起動した（ターミナル term_1 / 2026-10-17T00:00:00.000Z）";
 const FINISHED = (code) => `案内役: to-tickets が終わった（exit ${code}）`;
 const HANDED = (...nums) => `案内役: takt-sequence に渡した ${nums.map((n) => `#${n}`).join(" ")}`;
 
@@ -200,6 +203,82 @@ test("何もない: 全て渡し済み・投入済みの状態では空を返す
   const s = withParent({ taktIssues: [21, 22] });
   s.issues[1].comments = [byViewer(HANDED(21, 22))];
   assert.deepEqual(flow(decide(s)), []);
+});
+
+// ---- Orca のタブで起動した to-tickets: 新しい印があれば出さず、終わりは親ができたかで判定する（終了コードは使わない） ----
+
+test("新しい印: 起動前の印だけでも（親が無くても）to-tickets を出さない", () => {
+  assert.deepEqual(flow(decide(snapshot([spec(12, { comments: [byViewer(LAUNCHING)] })]))), []);
+});
+
+test("新しい印: 起動後の印（handle と時刻つき）があれば to-tickets を出さない", () => {
+  assert.deepEqual(flow(decide(snapshot([spec(12, { comments: [byViewer(LAUNCHING), byViewer(LAUNCHED)] })]))), []);
+});
+
+test("新しい印: 他人の印・viewer の引用の印だけなら止めず to-tickets を出す", () => {
+  const s = snapshot([spec(12, { comments: [{ author: "someone", body: LAUNCHING }, byViewer(`> ${LAUNCHED}`)] })]);
+  assert.deepEqual(flow(decide(s)), [toTickets(12)]);
+});
+
+test("新しい印: 親（仕様を指す行と sub-issue）ができたら、終了マーカー無しで takt-sequence に渡す", () => {
+  const s = withParent();
+  s.issues[0].comments = [byViewer(LAUNCHING), byViewer(LAUNCHED)];
+  assert.deepEqual(flow(decide(s)), [taktSequence(20, [21, 22])]);
+});
+
+test("新しい印: 起動前の印だけの仕様でも、親ができれば渡す（終わりは親の有無で判定する）", () => {
+  const s = withParent();
+  s.issues[0].comments = [byViewer(LAUNCHING)];
+  assert.deepEqual(flow(decide(s)), [taktSequence(20, [21, 22])]);
+});
+
+test("新しい印: 親が無い間は渡す先が無く、to-tickets も二重に出さない", () => {
+  const s = snapshot([spec(12, { comments: [byViewer(LAUNCHING), byViewer(LAUNCHED)] }), issue(20, { body: "仕様: #12", subIssues: [] })]);
+  assert.deepEqual(flow(decide(s)), []);
+});
+
+test("新しい印: handle なしの古い起動の印（「（ターミナル」が続かない）は新しい印として読まず、親があっても渡さない", () => {
+  const s = withParent();
+  s.issues[0].comments = [byViewer(STARTED)];
+  assert.deepEqual(flow(decide(s)), []);
+});
+
+test("古い印: exit 0 の親は渡す／exit 0 以外の親は渡さない／どの古い印でも to-tickets を二重に出さない", () => {
+  const withComments = (comments) => { const s = withParent(); s.issues[0].comments = comments; return s; };
+  assert.deepEqual(flow(decide(withComments([byViewer(STARTED), byViewer(FINISHED(0))]))), [taktSequence(20, [21, 22])]);
+  assert.deepEqual(flow(decide(withComments([byViewer(STARTED), byViewer(FINISHED(1))]))), []);
+  for (const comments of [[byViewer(STARTED)], [byViewer(STARTED), byViewer(FINISHED(0))], [byViewer(STARTED), byViewer(FINISHED(1))]]) {
+    assert.deepEqual(flow(decide(snapshot([spec(12, { comments })]))), [], comments.map((c) => c.body).join(" / "));
+  }
+});
+
+test("新しい印と古い印の exit 0 以外が混ざっても、古い印の規則（exit 0 以外は渡さない）を保つ", () => {
+  const s = withParent();
+  s.issues[0].comments = [byViewer(STARTED), byViewer(FINISHED(1)), byViewer(LAUNCHING), byViewer(LAUNCHED)];
+  assert.deepEqual(flow(decide(s)), []);
+});
+
+test("同じスナップショットで 2 周しても二重に出さない（to-tickets・takt-sequence）", () => {
+  const once = (s, dispatched) => flow(decide({ ...s, dispatched: [...dispatched] }));
+  const noParent = snapshot([spec(12)]);
+  const first = once(noParent, []);
+  assert.deepEqual(first, [toTickets(12)]);
+  assert.deepEqual(once(noParent, first.map((a) => a.key)), []);
+
+  const s = withParent();
+  s.issues[0].comments = [byViewer(LAUNCHING), byViewer(LAUNCHED)];
+  const handed = once(s, []);
+  assert.deepEqual(handed, [taktSequence(20, [21, 22])]);
+  assert.deepEqual(once(s, handed.map((a) => a.key)), []);
+});
+
+test("新しい印: sub-issue がすべて閉じていれば knowledge を出す（gate が閉じたままにならない）", () => {
+  const s = snapshot([
+    spec(12, { comments: [byViewer(LAUNCHING), byViewer(LAUNCHED)] }),
+    issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "CLOSED" }, { number: 22, state: "CLOSED" }] }),
+  ]);
+  const k = decide(s).filter((a) => a.kind === "knowledge");
+  assert.deepEqual(k.map((a) => ({ spec: a.spec, parents: a.parents, subIssues: a.subIssues })), [{ spec: 12, parents: [20], subIssues: [21, 22] }]);
 });
 
 // ---- 再起動しても二重にしない（状態は GitHub のマーカー、dispatched は空） ----

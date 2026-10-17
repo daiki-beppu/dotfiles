@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { decide } from "./decide.mjs";
 import { createExecute } from "./execute.mjs";
 import { runRound } from "./loop.mjs";
+import { launchToTickets } from "./to-tickets.mjs";
 
 const REPO = "o/r";
 const VIEWER = "me";
@@ -14,13 +15,29 @@ const SENT_COMMENTS = [
 ];
 const issue = (number, over = {}) => ({ number, state: "OPEN", labels: [], body: "", comments: [], subIssues: [], ...over });
 
+const LAUNCHED_AT = "2026-10-17T00:00:00.000Z";
+const NOW = () => new Date(LAUNCHED_AT);
+// 実際の `orca agent launch --json` の応答の形（handle は result.outcome.handle）
+const launchReply = (handle = "term_1") =>
+  JSON.stringify({ result: { outcome: { kind: "terminal", handle }, receipt: { detail: "launched" }, worktreeId: "wt_1" } });
+// 偽の orca: 呼ばれた argv を calls に `orca <args>` で記録し、サブコマンドごとの応答（文字列）を返す。reply が Error なら投げる。
+const fakeOrca = (calls, { launch = launchReply(), rename = "{}" } = {}) => (args) => {
+  calls.push(`orca ${args.join(" ")}`);
+  (calls.argvs ??= []).push(args);
+  const reply = args[0] === "agent" ? launch : rename;
+  if (reply instanceof Error) throw reply;
+  return reply;
+};
+const orcaArgv = (calls) => calls.argvs ?? [];
+
 // 偽の GitHub: comment が書いた内容を、次の読み出しで viewer のコメントとして返す。
 const world = (issues, over = {}) => {
   const calls = [];
   const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); } };
   const deps = {
     github, cwd: "/x", repo: REPO,
-    runToTickets: async ({ spec }) => { calls.push(`to-tickets #${spec}`); return { code: 0, logFile: "l" }; },
+    launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
+    now: NOW,
     startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
     ...over,
   };
@@ -29,22 +46,92 @@ const world = (issues, over = {}) => {
   return { calls, round };
 };
 
-test("to-tickets: 起動マーカー → 起動 → 終了マーカーの順に実行し、新しい dispatched で再起動しても出ない", async () => {
+const BEFORE = "comment #12 案内役: to-tickets を起動する";
+const AFTER = `comment #12 案内役: to-tickets を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`;
+
+test("to-tickets: 起動前の印 → orca agent launch → タブ題名 → handle と時刻つきの印の順に実行し、新しい dispatched で再起動しても出ない", async () => {
   const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
   const { calls, round } = world(issues);
   await round();
-  assert.deepEqual(calls, ["comment #12 案内役: to-tickets を起動した", "to-tickets #12", "comment #12 案内役: to-tickets が終わった（exit 0）"]);
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0], BEFORE);
+  assert.ok(calls[1].startsWith("orca agent launch "), calls[1]);
+  assert.ok(calls[2].startsWith("orca terminal rename "), calls[2]);
+  assert.equal(calls[3], AFTER);
   await round(new Set());
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 4);
 });
 
-test("to-tickets が失敗しても、起動・終了マーカーは残り、再起動で再度起動しない", async () => {
+test("to-tickets: orca agent launch に claude・main checkout の worktree・プロンプトを渡し、--allowedTools は渡さない", async () => {
   const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
-  const { calls, round } = world(issues, { runToTickets: async () => ({ code: 1, logFile: "l" }) });
-  await assert.rejects(round(), /exit 1/);
+  const { calls, round } = world(issues);
+  await round();
+  const launch = orcaArgv(calls)[0];
+  assert.deepEqual(launch.slice(0, 7), ["agent", "launch", "--agent", "claude", "--worktree", "path:/x", "--prompt"]);
+  assert.equal(launch.at(-1), "--json");
+  const prompt = launch[7];
+  assert.equal(prompt.split("\n")[0], "/to-tickets #12");
+  assert.match(prompt, /分割案の確認は省いて/);
+  assert.match(prompt, /仕様: #12/);
+  assert.match(prompt, /gh-subissues/);
+  assert.ok(!launch.includes("--allowedTools"));
+  assert.ok(!orcaArgv(calls).flat().includes("--allowedTools"));
+});
+
+test("to-tickets: 起動の応答の handle でタブの題名に工程と仕様の番号を入れる", async () => {
+  const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
+  const { calls, round } = world(issues);
+  await round();
+  const rename = orcaArgv(calls)[1];
+  assert.deepEqual(rename.slice(0, 4), ["terminal", "rename", "--terminal", "term_1"]);
+  const title = rename[rename.indexOf("--title") + 1];
+  assert.match(title, /to-tickets/);
+  assert.match(title, /#12/);
+});
+
+test("to-tickets: 起動後の印の handle は応答から取り、時刻は注入した now の ISO 8601", async () => {
+  const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
+  const { calls, round } = world(issues, {
+    launchToTickets: (a) => launchToTickets(a, fakeOrca(calls, { launch: launchReply("term_99") })),
+    now: () => new Date("2026-01-02T03:04:05.678Z"),
+  });
+  await round();
+  assert.equal(calls.at(-1), "comment #12 案内役: to-tickets を起動した（ターミナル term_99 / 2026-01-02T03:04:05.678Z）");
+});
+
+test("to-tickets: 応答から handle が取れなければ例外で止まり、起動後の印は書かず、再起動で再度起動しない", async () => {
+  for (const launch of ['{"result":{"outcome":{}}}', "launched OK (not json)", '{"result":{"outcome":{"handle":""}}}']) {
+    const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
+    const { calls, round } = world(issues, { launchToTickets: (a) => launchToTickets(a, fakeOrca(calls, { launch })) });
+    await assert.rejects(round(), /handle/, launch);
+    assert.equal(calls[0], BEFORE, "印は起動より先");
+    assert.equal(orcaArgv(calls).length, 1, "rename まで進まない");
+    assert.ok(!calls.some((c) => c.startsWith("comment #12 案内役: to-tickets を起動した（")), launch);
+    // 起動前の印は GitHub に残っている
+    assert.ok(issues[0].comments.some((c) => c.body === "案内役: to-tickets を起動する"));
+    const before = calls.length;
+    await round(new Set());
+    assert.equal(calls.length, before, "流し直しても再起動しない");
+  }
+});
+
+test("to-tickets: orca agent launch 自体が失敗しても起動前の印は残り、再起動で再度起動しない", async () => {
+  const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
+  const { calls, round } = world(issues, { launchToTickets: (a) => launchToTickets(a, fakeOrca(calls, { launch: new Error("orca down") })) });
+  await assert.rejects(round(), /orca down/);
   assert.equal(calls.length, 2);
+  assert.equal(calls[0], BEFORE);
   await round(new Set());
   assert.equal(calls.length, 2);
+});
+
+test("to-tickets: タブ題名の変更が失敗したら例外で止まり、起動後の印は書かない", async () => {
+  const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] })];
+  const { calls, round } = world(issues, { launchToTickets: (a) => launchToTickets(a, fakeOrca(calls, { rename: new Error("rename failed") })) });
+  await assert.rejects(round(), /rename failed|term_1/);
+  assert.ok(!calls.some((c) => c.startsWith("comment #12 案内役: to-tickets を起動した（")));
+  await round(new Set());
+  assert.equal(orcaArgv(calls).filter((a) => a[1] === "launch").length, 1, "再起動しない");
 });
 
 test("takt-sequence: 渡したマーカーを起動より先に書き、再起動しても渡さない", async () => {
@@ -85,7 +172,8 @@ const approvalWorld = (issues, discordOver = {}) => {
   };
   const deps = {
     github, discord, cwd: "/x", repo: APPROVAL_REPO,
-    runToTickets: async ({ spec }) => { calls.push(`to-tickets #${spec}`); return { code: 0, logFile: "l" }; },
+    launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
+    now: NOW,
     startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
   };
   const round = (dispatched = new Set()) =>
@@ -150,7 +238,12 @@ test("承認: 本人の ✅ で spec-approved ラベルを付け、コメント�
   await round();
   assert.deepEqual(calls, ["label #12 spec-approved"]);
   await round(new Set());
-  assert.deepEqual(calls, ["label #12 spec-approved", "comment #12 案内役: to-tickets を起動した", "to-tickets #12", "comment #12 案内役: to-tickets が終わった（exit 0）"]);
+  assert.equal(calls.length, 5);
+  assert.equal(calls[0], "label #12 spec-approved");
+  assert.equal(calls[1], BEFORE);
+  assert.ok(calls[2].startsWith("orca agent launch "));
+  assert.ok(calls[3].startsWith("orca terminal rename "));
+  assert.equal(calls[4], AFTER);
 });
 
 test("差し戻し: 本人の ❌ で issue にコメントを 1 件書き（ラベルは付けない）、再起動しても繰り返さない", async () => {
@@ -196,7 +289,7 @@ const knowledgeWorld = (over = {}) => {
       pullRequests.push({ number: 50, state: "OPEN", author: VIEWER, body: "概要\n学びの元の仕様: #12\n", autoMerge: false });
       return { code: 0, logFile: "l" };
     },
-    runToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchToTickets: async () => assert.fail("to-tickets は起動しない"),
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
     ...over,
   };
@@ -296,7 +389,7 @@ const decisionWorld = (sendOver) => {
   };
   const deps = {
     github, discord, cwd: "/x", repo: REPO,
-    runToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchToTickets: async () => assert.fail("to-tickets は起動しない"),
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
   };
   const round = (dispatched = new Set()) =>
