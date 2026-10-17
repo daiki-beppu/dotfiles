@@ -2,7 +2,8 @@
 // I/O・時刻・環境変数は読まない（import も持たない）。LLM も使わず、ラベルと状態だけで決める。
 //
 // snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
-//             reactions: [{ emoji, userId }] }], taktIssues: [number], dispatched: [key],
+//             reactions: [{ emoji, userId }], assignees: [login], blockedBy: [{ number, state }] }]
+//   assignees と blockedBy は wayfinder の map の open な子 ticket だけが持つ（それ以外は空）, taktIssues: [number], dispatched: [key],
 //             taktTasks: [{ issue, kind, createdAt, step, error, worktreePath }] }
 //   fromSpec: 指定があれば、番号がそれ以上の仕様だけを扱う（既存の仕様が多い repo に向けるとき、新しい仕様だけを流すため）
 // 行動: { kind: "request-approval", key, spec, title } | { kind: "approve-spec", key, spec } | { kind: "reject-spec", key, spec }
@@ -10,6 +11,8 @@
 //     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
 //     | { kind: "knowledge", key, spec, parents, subIssues }   （snapshot.pullRequests: [{ number, state, author, body, autoMerge }]）
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
+//     | { kind: "wayfinder", key, map, ticket, type }
+//       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, step, tab, tail }
@@ -31,6 +34,11 @@ export const launchedMarker = (step, handle, launchedAt) => `案内役: ${step} 
 const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）/;
 // Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
 export const tabTitle = (step, spec) => `${step} #${spec}`;
+// wayfinder の ticket の印も 2 段（起動前 / launchedMarker("wayfinder", …)）。どちらも ticket の issue に書く。
+// 起動したセッションの停止の観測は ticket では行わない（RESULT_OF に wayfinder を入れない。sessionsToObserve は仕様の印だけを読む）。
+export const MARKER_WAYFINDER_LAUNCHING = "案内役: wayfinder を起動する";
+const WAYFINDER_LAUNCHED_PREFIX = "案内役: wayfinder を起動した";
+const WAYFINDER_TYPES = ["research", "grilling", "task"];
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
 // takt-sequence も 2 段の印: 起動前に「渡した」（二重に渡さない）、起動後に launchedMarker("takt-sequence", …) を親に書く。
 // 起動のコマンドは takt-sequence の後に SEQUENCE_DONE の行を出す。画面にこの行があれば takt-sequence は終わっている。
@@ -236,6 +244,31 @@ function decideDecisionRequests(snapshot, dispatched) {
   return actions;
 }
 
+// open な wayfinder:map の子 ticket のうち、frontier（open・unblocked・未 claim）にある research・grilling・task ごとの起動。
+// prototype と、起動の印（viewer の 1 段目か 2 段目）がある ticket には出さない。map の番号の昇順、map の子の順。
+function decideWayfinder(snapshot, dispatched) {
+  const { viewer, issues } = snapshot;
+  const actions = [];
+  const seen = new Set();
+  const maps = issues.filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map")).sort((a, b) => a.number - b.number);
+  for (const map of maps) {
+    for (const child of map.subIssues ?? []) {
+      const ticket = issues.find((i) => i.number === child.number);
+      if (ticket === undefined || ticket.state !== "OPEN") continue;
+      const type = WAYFINDER_TYPES.find((t) => hasLabel(ticket, `wayfinder:${t}`));
+      if (type === undefined) continue;
+      if ((ticket.assignees ?? []).length > 0) continue;
+      if ((ticket.blockedBy ?? []).some((b) => b.state === "OPEN")) continue;
+      if (markers(ticket, viewer).some((b) => b.startsWith(MARKER_WAYFINDER_LAUNCHING) || b.startsWith(WAYFINDER_LAUNCHED_PREFIX))) continue;
+      const key = `wayfinder:${ticket.number}`;
+      if (dispatched.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      actions.push({ kind: "wayfinder", key, map: map.number, ticket: ticket.number, type });
+    }
+  }
+  return actions;
+}
+
 // 工程ごとの結果（GitHub に出るもの）。表に無い工程は結果を判定できないので観測しない。
 const RESULT_OF = {
   "to-tickets": (snapshot, spec) =>
@@ -420,6 +453,7 @@ export function decide(snapshot) {
   }
   return [
     ...actions,
+    ...decideWayfinder(snapshot, dispatched),
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),

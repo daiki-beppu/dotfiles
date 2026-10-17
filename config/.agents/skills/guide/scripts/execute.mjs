@@ -7,12 +7,13 @@ import {
   MARKER_HANDED_PREFIX,
   MARKER_KNOWLEDGE_LAUNCHING,
   MARKER_REJECTED,
+  MARKER_WAYFINDER_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
   launchedMarker,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, taktRunDirs }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -44,6 +45,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchKnowledge({ cwd, spec: action.spec, parents: action.parents, subIssues: action.subIssues, runDirs });
       github.comment(action.spec, launchedMarker("knowledge", handle, launchedAt));
+    } else if (action.kind === "wayfinder") {
+      // to-tickets と同じ 2 段の印を、map ではなく起動する ticket に書く（1 ticket 1 セッション）。
+      github.comment(action.ticket, MARKER_WAYFINDER_LAUNCHING);
+      const launchedAt = now().toISOString();
+      const { handle } = await launchWayfinder({ cwd, map: action.map, ticket: action.ticket, type: action.type });
+      github.comment(action.ticket, launchedMarker("wayfinder", handle, launchedAt));
     } else if (action.kind === "merge-auto") {
       github.mergeAuto(action.pr);
     } else if (action.kind === "request-decision") {

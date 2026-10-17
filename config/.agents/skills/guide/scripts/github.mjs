@@ -14,14 +14,17 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
     }
   };
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
+  const readComments = (number) =>
+    paged(`repos/${repo}/issues/${number}/comments?per_page=100`).map((c) => ({ author: c.user?.login, body: c.body ?? "" }));
 
   return {
     viewer: () => JSON.parse(gh(["api", "user"])).login,
     repoName: () => JSON.parse(gh(["repo", "view", "--json", "nameWithOwner"])).nameWithOwner,
 
     // PR を除いた全 issue。コメントは spec ラベル付きと sub-issue を持つ issue だけ、sub-issue は持つ issue だけ読む。
+    // 加えて、open な wayfinder:map の open な子 ticket だけ、コメント（起動の印）と blocked by を読む（それ以外の issue の読み取りは増やさない）。
     readIssues() {
-      return paged(`repos/${repo}/issues?state=all&per_page=100`)
+      const issues = paged(`repos/${repo}/issues?state=all&per_page=100`)
         .filter((i) => !i.pull_request)
         .map((i) => {
           const labels = i.labels.map((l) => (typeof l === "string" ? l : l.name));
@@ -33,14 +36,28 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
             state: i.state.toUpperCase(),
             labels,
             body: i.body ?? "",
-            comments: wantsComments
-              ? paged(`repos/${repo}/issues/${i.number}/comments?per_page=100`).map((c) => ({ author: c.user?.login, body: c.body ?? "" }))
-              : [],
+            assignees: (i.assignees ?? []).map((a) => a.login),
+            blockedBy: [],
+            comments: wantsComments ? readComments(i.number) : [],
             subIssues: hasSubs
               ? paged(`repos/${repo}/issues/${i.number}/sub_issues?per_page=100`).map((s) => ({ number: s.number, state: s.state.toUpperCase() }))
               : [],
+            commentsRead: wantsComments,
           };
         });
+      const byNumber = new Map(issues.map((i) => [i.number, i]));
+      const frontierChildren = new Set(
+        issues
+          .filter((i) => i.state === "OPEN" && i.labels.includes("wayfinder:map"))
+          .flatMap((m) => m.subIssues.filter((s) => s.state === "OPEN").map((s) => s.number)),
+      );
+      for (const n of frontierChildren) {
+        const child = byNumber.get(n);
+        if (child === undefined || child.state !== "OPEN") continue;
+        if (!child.commentsRead) child.comments = readComments(n);
+        child.blockedBy = paged(`repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`).map((b) => ({ number: b.number, state: b.state.toUpperCase() }));
+      }
+      return issues.map(({ commentsRead, ...issue }) => issue);
     },
 
     // 全状態の PR。学びの PR の照合（decide.mjs の knowledgePrOf）に使う。

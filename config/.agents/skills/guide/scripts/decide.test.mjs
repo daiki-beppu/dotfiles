@@ -1392,3 +1392,119 @@ test("takt-sequence の停止: 終わりの行は行全体で照合する。起�
   assert.deepEqual(seqStalls(decide(seqWorld({ sessions: { term_s: obs({ tail: [commandLine, "投入: #22"] }) } }))), []);
   assert.equal(seqStalls(decide(seqWorld({ sessions: { term_s: obs({ tail: [`  ${SEQUENCE_DONE}（exit 1）  `] }) } }))).length, 1);
 });
+
+// ---- wayfinder: open な map の frontier（open・unblocked・未 claim）にある research・grilling・task の ticket ----
+const WF_LAUNCHING = "案内役: wayfinder を起動する";
+const WF_LAUNCHED = "案内役: wayfinder を起動した（ターミナル term_1 / 2026-10-17T00:00:00.000Z）";
+const wfAction = (ticket, type, map = 20) => ({ kind: "wayfinder", key: `wayfinder:${ticket}`, map, ticket, type });
+const wfActions = (actions) => actions.filter((a) => a.kind === "wayfinder");
+const wfTicket = (number, type, over = {}) =>
+  issue(number, { labels: [`wayfinder:${type}`], assignees: [], blockedBy: [], ...over });
+const wfWorld = (children, { map = {}, over = {} } = {}) =>
+  snapshot(
+    [
+      issue(20, { labels: ["wayfinder:map"], subIssues: children.map((c) => ({ number: c.number, state: c.state })), ...map }),
+      ...children,
+    ],
+    over,
+  );
+
+test("wayfinder: frontier の research・grilling・task それぞれに、map 順で type つきの起動を出す", () => {
+  const s = wfWorld([wfTicket(21, "research"), wfTicket(22, "grilling"), wfTicket(23, "task")]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(21, "research"), wfAction(22, "grilling"), wfAction(23, "task")]);
+});
+
+test("wayfinder: 子が 1 件だけでも、frontier の全件に出す（最初の 1 件で止めない）", () => {
+  const s = wfWorld([wfTicket(21, "research"), wfTicket(22, "research")]);
+  assert.equal(wfActions(decide(s)).length, 2);
+});
+
+test("wayfinder: map が CLOSED なら、その子には出さない", () => {
+  const s = wfWorld([wfTicket(21, "task")], { map: { state: "CLOSED" } });
+  assert.deepEqual(wfActions(decide(s)), []);
+});
+
+test("wayfinder: 子が CLOSED なら出さない", () => {
+  const s = wfWorld([wfTicket(21, "task", { state: "CLOSED" }), wfTicket(22, "task")]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(22, "task")]);
+});
+
+test("wayfinder: claim 済み（assignee あり）の ticket には出さない", () => {
+  const s = wfWorld([wfTicket(21, "research", { assignees: ["daiki-beppu"] }), wfTicket(22, "research")]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(22, "research")]);
+});
+
+test("wayfinder: open なブロッカーがある ticket には出さない。ブロッカーがすべて閉じていれば出す", () => {
+  const s = wfWorld([
+    wfTicket(21, "task", { blockedBy: [{ number: 9, state: "OPEN" }] }),
+    wfTicket(22, "task", { blockedBy: [{ number: 9, state: "CLOSED" }, { number: 10, state: "OPEN" }] }),
+    wfTicket(23, "task", { blockedBy: [{ number: 9, state: "CLOSED" }, { number: 10, state: "CLOSED" }] }),
+  ]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(23, "task")]);
+});
+
+test("wayfinder: prototype ticket と、種類のラベルが無い ticket、wayfinder:map など別の wayfinder ラベルの ticket には出さない", () => {
+  const s = wfWorld([
+    wfTicket(21, "prototype"),
+    issue(22, { assignees: [], blockedBy: [] }),
+    issue(23, { labels: ["wayfinder:map"], assignees: [], blockedBy: [] }),
+    wfTicket(24, "research"),
+  ]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(24, "research")]);
+});
+
+test("wayfinder: map の子でない issue には、種類のラベルがあっても出さない", () => {
+  const s = snapshot([issue(20, { labels: ["wayfinder:map"], subIssues: [] }), wfTicket(21, "task")]);
+  assert.deepEqual(wfActions(decide(s)), []);
+});
+
+test("wayfinder: 起動前の印だけ・起動後の印だけ、どちらでも出さない（viewer の印）", () => {
+  const s = wfWorld([
+    wfTicket(21, "task", { comments: [byViewer(WF_LAUNCHING)] }),
+    wfTicket(22, "task", { comments: [byViewer(WF_LAUNCHED)] }),
+    wfTicket(23, "task"),
+  ]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(23, "task")]);
+});
+
+test("wayfinder: viewer 以外のコメントと、行の途中に印の字面があるだけのコメントは印とみなさない", () => {
+  const s = wfWorld([
+    wfTicket(23, "task", { comments: [{ author: "someone", body: WF_LAUNCHING }, byViewer(`メモ: ${WF_LAUNCHING}`), { author: "someone", body: WF_LAUNCHED }] }),
+  ]);
+  assert.deepEqual(wfActions(decide(s)), [wfAction(23, "task")]);
+});
+
+test("wayfinder: dispatched に key があれば出さない。同じスナップショットで印を足して 2 周しても二重に出ない", () => {
+  const s = wfWorld([wfTicket(21, "research")], { over: { dispatched: ["wayfinder:21"] } });
+  assert.deepEqual(wfActions(decide(s)), []);
+  const first = wfWorld([wfTicket(21, "research")]);
+  assert.equal(wfActions(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 21).comments.push(byViewer(WF_LAUNCHING));
+  assert.deepEqual(wfActions(decide(first)), []);
+});
+
+test("wayfinder: 複数の map があっても、各 map の frontier に 1 回ずつ出す。同じ ticket を 2 度出さない", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(30, { labels: ["wayfinder:map"], subIssues: [{ number: 21, state: "OPEN" }, { number: 31, state: "OPEN" }] }),
+    wfTicket(21, "research"),
+    wfTicket(31, "task"),
+  ]);
+  const keys = wfActions(decide(s)).map((a) => a.key);
+  assert.deepEqual([...keys].sort(), ["wayfinder:21", "wayfinder:31"]);
+});
+
+test("wayfinder: 起動後の印があっても、停止の観測（sessionsToObserve）と判断依頼の対象にしない", () => {
+  const s = wfWorld(
+    [wfTicket(21, "task", { comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED)] })],
+    { over: { now: "2026-10-17T05:00:00.000Z", sessions: { term_1: { found: false, waiting: false, idle: false, tail: [] } } } },
+  );
+  assert.deepEqual(sessionsToObserve(s), []);
+  assert.deepEqual(decide(s).filter((a) => a.kind === "request-decision"), []);
+});
+
+test("wayfinder: 既存の遷移（承認依頼）は wayfinder の map があっても変わらない", () => {
+  const base = snapshot([specBare(12)]);
+  const withMap = snapshot([specBare(12), issue(20, { labels: ["wayfinder:map"] })]);
+  assert.deepEqual(decide(withMap), decide(base));
+});
