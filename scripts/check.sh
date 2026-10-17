@@ -265,7 +265,8 @@ check_guide() {
     config/.agents/skills/guide/scripts/keychain.test.mjs \
     config/.agents/skills/guide/scripts/snapshot.test.mjs \
     config/.agents/skills/guide/scripts/github.test.mjs \
-    config/.agents/skills/guide/scripts/takt.test.mjs
+    config/.agents/skills/guide/scripts/takt.test.mjs \
+    config/.agents/skills/takt/scripts/align-decide.test.mjs
 }
 
 # ---------------------------------------------------------------------------
