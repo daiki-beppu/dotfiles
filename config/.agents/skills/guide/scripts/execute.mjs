@@ -1,7 +1,8 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
-// 外部の操作（GitHub・Discord・to-tickets・knowledge・takt-sequence）は注入する。
+// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence）は注入する。
 import {
   MARKER_APPROVAL_SENDING,
+  MARKER_FORMAL_SPEC_LAUNCHING,
   MARKER_APPROVAL_SENT_PREFIX,
   MARKER_HANDED_PREFIX,
   MARKER_KNOWLEDGE_LAUNCHING,
@@ -11,7 +12,7 @@ import {
   launchedMarker,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, now, startTaktSequence, launchKnowledge, taktRunDirs }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, taktRunDirs }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -24,6 +25,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, now
       github.addLabel(action.spec, "spec-approved");
     } else if (action.kind === "reject-spec") {
       github.comment(action.spec, MARKER_REJECTED);
+    } else if (action.kind === "formal-spec") {
+      // to-tickets と同じ 2 段の印。結果は仕様の Formal Spec コメントで、次の周以降に判定する。
+      github.comment(action.spec, MARKER_FORMAL_SPEC_LAUNCHING);
+      const launchedAt = now().toISOString();
+      const { handle } = await launchFormalSpec({ cwd, spec: action.spec });
+      github.comment(action.spec, launchedMarker("formal-spec", handle, launchedAt));
     } else if (action.kind === "to-tickets") {
       // 起動前の印 → 起動 → handle と起動時刻の印。handle は起動の応答からしか取れないので 2 段に分ける。
       github.comment(action.spec, MARKER_TO_TICKETS_LAUNCHING);

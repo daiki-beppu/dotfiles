@@ -23,8 +23,14 @@ const issue = (number, over = {}) => ({
   subIssues: [],
   ...over,
 });
-const spec = (number, over = {}) => issue(number, { labels: ["spec", "spec-approved"], ...over });
 const byViewer = (body) => ({ author: VIEWER, body });
+// formal-spec: 起動前の印と、viewer の passed の結果。to-tickets の流れを見るテストは、formal-spec が済んだ仕様（spec）を使う。
+// formal-spec の遷移そのものを見るテストは、印も結果も無い仕様（specBare）から組み立てる。
+const FS_LAUNCHING = "案内役: formal-spec を起動する";
+const FS_PASSED = "## Formal Spec（takt 0.71.0 の検証器で passed）";
+const FS_DONE = [byViewer(FS_LAUNCHING), byViewer(FS_PASSED)];
+const specBare = (number, over = {}) => issue(number, { labels: ["spec", "spec-approved"], ...over });
+const spec = (number, over = {}) => specBare(number, { ...over, comments: [...FS_DONE, ...(over.comments ?? [])] });
 const snapshot = (issues, over = {}) => ({
   repo: REPO,
   viewer: VIEWER,
@@ -395,7 +401,7 @@ const OWNER = "U-owner";
 const react = (emoji, userId = OWNER) => ({ emoji, userId });
 const pending = (n, over = {}) => issue(n, { title: "仕様A", labels: ["spec"], ...over });
 const requested = (n, reactions = [], over = {}) =>
-  pending(n, { comments: [byViewer(SENDING), byViewer(SENT())], reactions, ...over });
+  pending(n, { reactions, ...over, comments: [...(over.comments ?? [byViewer(SENDING), byViewer(SENT())]), ...FS_DONE] });
 const withOwner = (issues, over = {}) => snapshot(issues, { discordUserId: OWNER, ...over });
 const requestApproval = (n, title = "仕様A") => ({ kind: "request-approval", key: `request-approval:${n}`, spec: n, title });
 const approveSpec = (n) => ({ kind: "approve-spec", key: `approve-spec:${n}`, spec: n });
@@ -1032,7 +1038,7 @@ test("停止: 汎用 — handle つきの knowledge の印は、学びの PR が
 
 test("停止: 汎用 — handle つきの formal-spec の印は、viewer の Formal Spec コメントが無ければ出し、あれば（failed でも）この原因では出さない", () => {
   const mark = byViewer("案内役: formal-spec を起動した（ターミナル term_f / " + T0 + "）");
-  const w = (extra = []) => snapshot([spec(12, { comments: [...SENT_ALL, mark, ...extra] })], { sessions: { term_f: obs({ found: false }) }, now: at(1) });
+  const w = (extra = []) => snapshot([specBare(12, { comments: [...SENT_ALL, mark, ...extra] })], { sessions: { term_f: obs({ found: false }) }, now: at(1) });
   const [a, ...rest] = stalls(decide(w()));
   assert.deepEqual(rest, []);
   assert.equal(a.cause, STALL_CAUSE("formal-spec"));
@@ -1104,4 +1110,169 @@ test("launchedMarker / tabTitle: 起動の印は handle と時刻を持ち、to-
   assert.equal(launchedMarker("to-tickets", "term_1", T0), LAUNCHED);
   assert.equal(launchedMarker("knowledge", "t", T0), `案内役: knowledge を起動した（ターミナル t / ${T0}）`);
   assert.equal(tabTitle("to-tickets", 12), "to-tickets #12");
+});
+
+// ---- formal-spec: 承認依頼を送った仕様に毎回起動し、結果が出るまで to-tickets を待つ ----
+
+const FS_LAUNCHED = "案内役: formal-spec を起動した（ターミナル term_f / 2026-10-17T00:00:00.000Z）";
+const FS_FAILED = "## Formal Spec（takt 0.71.0 の検証器で failed）\n破れた性質: P1\n検証器の作業ディレクトリ: /c/run1";
+const FS_NA = "## Formal Spec（対象外）\n状態遷移を持たない文書の変更だけ。";
+const formalSpec = (n) => ({ kind: "formal-spec", key: `formal-spec:${n}`, spec: n });
+const formalSpecs = (actions) => actions.filter((a) => a.kind === "formal-spec");
+// 承認依頼は送り済み。comments は送った印の後ろに足す。formal-spec の印も結果も無い仕様（基準の状態）
+const sentSpec = (n, { comments = [], ...over } = {}) => specBare(n, { comments: [byViewer(SENDING), byViewer(SENT()), ...comments], ...over });
+
+test("formal-spec 起動: 承認依頼を送った仕様で、起動の印が無ければ出す（承認済みでも未承認でも）", () => {
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12)]))), [formalSpec(12)]);
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12, { labels: ["spec"] })]))), [formalSpec(12)]);
+});
+
+test("formal-spec 起動: 他人の印と viewer の引用の印は数えず、出す", () => {
+  const comments = [{ author: "someone", body: FS_LAUNCHING }, { author: "someone", body: FS_LAUNCHED }, byViewer(`> ${FS_LAUNCHING}`), byViewer(`> ${FS_LAUNCHED}`)];
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12, { comments })]))), [formalSpec(12)]);
+});
+
+test("formal-spec 起動: 承認依頼を送る前（「送った」の印が無い）は出さない", () => {
+  assert.deepEqual(formalSpecs(decide(snapshot([specBare(12)]))), []);
+  assert.deepEqual(formalSpecs(decide(snapshot([specBare(12, { comments: [byViewer(SENDING)] })]))), []);
+  assert.deepEqual(formalSpecs(decide(snapshot([specBare(12, { comments: [byViewer(SENDING), { author: "someone", body: SENT() }] })]))), []);
+});
+
+test("formal-spec 起動: viewer の起動前の印、または起動後の印があれば出さない（起動の成否が不明でも二重に起動しない）", () => {
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12, { comments: [byViewer(FS_LAUNCHING)] })]))), []);
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12, { comments: [byViewer(FS_LAUNCHING), byViewer(FS_LAUNCHED)] })]))), []);
+});
+
+test("formal-spec 起動: 結果の Formal Spec コメントだけがあり起動の印が無い仕様にも出す（出すかどうかは印で決める）", () => {
+  assert.deepEqual(formalSpecs(decide(snapshot([sentSpec(12, { comments: [byViewer(FS_PASSED)] })]))), [formalSpec(12)]);
+});
+
+test("formal-spec 起動: fromSpec の範囲外・CLOSED の仕様には出さず、範囲内には出す", () => {
+  const s = snapshot([sentSpec(11), sentSpec(12), sentSpec(13, { state: "CLOSED" })], { fromSpec: 12 });
+  assert.deepEqual(formalSpecs(decide(s)), [formalSpec(12)]);
+});
+
+test("formal-spec 起動: spec ラベルが無い issue には出さない", () => {
+  assert.deepEqual(formalSpecs(decide(snapshot([issue(12, { labels: [], comments: [byViewer(SENDING), byViewer(SENT())] })]))), []);
+});
+
+test("formal-spec 起動: 複数の仕様には仕様番号の昇順で出し、印のある仕様は飛ばす", () => {
+  const s = snapshot([sentSpec(30), sentSpec(20, { comments: [byViewer(FS_LAUNCHING)] }), sentSpec(12)]);
+  assert.deepEqual(formalSpecs(decide(s)), [formalSpec(12), formalSpec(30)]);
+});
+
+test("formal-spec 起動: to-tickets を起動済みの古い仕様（起動前の印・起動後の印・handle なしの印・終了の印）には出さず、to-tickets の条件も変えない", () => {
+  const oldMarks = [[LAUNCHING], [LAUNCHING, LAUNCHED], [STARTED], [STARTED, FINISHED(0)], [STARTED, FINISHED(1)], [FINISHED(0)]];
+  for (const marks of oldMarks) {
+    const actions = decide(snapshot([sentSpec(12, { comments: marks.map(byViewer) })]));
+    assert.deepEqual(formalSpecs(actions), [], marks.join(" / "));
+    assert.deepEqual(flow(actions), [], `${marks.join(" / ")}: to-tickets は印があれば従来どおり出ない`);
+  }
+});
+
+test("formal-spec 起動: 古い仕様の takt-sequence は従来どおり（exit 0 なら渡し、exit 1 や古い起動の印だけなら渡さない）。Formal Spec コメントは要らない", () => {
+  const withMarks = (marks) => snapshot([
+    sentSpec(12, { comments: marks.map(byViewer) }),
+    issue(20, { body: "仕様: #12", subIssues: openSubs(21, 22) }),
+  ]);
+  assert.deepEqual(flow(decide(withMarks([STARTED, FINISHED(0)]))), [taktSequence(20, [21, 22])]);
+  assert.deepEqual(flow(decide(withMarks([STARTED, FINISHED(1)]))), []);
+  assert.deepEqual(flow(decide(withMarks([STARTED]))), []);
+  assert.deepEqual(flow(decide(withMarks([LAUNCHING, LAUNCHED]))), [taktSequence(20, [21, 22])]);
+});
+
+test("formal-spec 起動: 同じスナップショットで 2 周しても二重に出さない", () => {
+  const s = snapshot([sentSpec(12), sentSpec(13)]);
+  const first = formalSpecs(decide(s));
+  assert.deepEqual(first, [formalSpec(12), formalSpec(13)]);
+  assert.deepEqual(formalSpecs(decide({ ...s, dispatched: first.map((a) => a.key) })), []);
+  assert.deepEqual(formalSpecs(decide({ ...s, dispatched: ["formal-spec:12"] })), [formalSpec(13)]);
+});
+
+test("formal-spec 起動: 承認の✅は formal-spec の実行中（起動の印のみで結果が無い）でも受け付けて approve-spec を出す", () => {
+  const s = withOwner([sentSpec(12, { labels: ["spec"], reactions: [react("✅")], comments: [byViewer(FS_LAUNCHING), byViewer(FS_LAUNCHED)] })]);
+  assert.deepEqual(decide(s), [approveSpec(12)]);
+});
+
+// ---- to-tickets の条件: viewer の最後の Formal Spec コメントが passed か対象外 ----
+
+const ttWith = (...fsBodies) => snapshot([sentSpec(12, { comments: [byViewer(FS_LAUNCHING), ...fsBodies] })]);
+
+test("to-tickets の条件: Formal Spec コメントがまだ無ければ、承認済みでも出さない", () => {
+  assert.deepEqual(flow(decide(ttWith())), []);
+  assert.deepEqual(flow(decide(snapshot([specBare(12)]))), []);
+});
+
+test("to-tickets の条件: 最後の Formal Spec コメントが passed なら出す", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer(FS_PASSED)))), [toTickets(12)]);
+});
+
+test("to-tickets の条件: 最後の Formal Spec コメントが対象外（2 行目以降に理由）でも出す", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer(FS_NA)))), [toTickets(12)]);
+  assert.deepEqual(flow(decide(ttWith(byViewer("## Formal Spec（対象外）")))), [toTickets(12)]);
+});
+
+test("to-tickets の条件: 最後が failed なら出さない（判断依頼は既存の遷移が送る）", () => {
+  const actions = decide(ttWith(byViewer(FS_FAILED)));
+  assert.deepEqual(flow(actions), []);
+  const [d, ...rest] = actions.filter((a) => a.kind === "request-decision");
+  assert.deepEqual(rest, []);
+  assert.equal(d.cause, "formal-spec の検証失敗");
+  assert.equal(d.reports, "/c/run1");
+});
+
+test("to-tickets の条件: failed の後に passed へ書き換わったら（同じコメントの本文が変わったら）出す", () => {
+  const s = ttWith(byViewer(FS_FAILED));
+  assert.deepEqual(flow(decide(s)), []);
+  s.issues[0].comments.at(-1).body = FS_PASSED;
+  assert.deepEqual(flow(decide(s)), [toTickets(12)]);
+});
+
+test("to-tickets の条件: failed の後に対象外へ書き換わっても出す", () => {
+  const s = ttWith(byViewer(FS_FAILED));
+  s.issues[0].comments.at(-1).body = FS_NA;
+  assert.deepEqual(flow(decide(s)), [toTickets(12)]);
+});
+
+test("to-tickets の条件: 古い passed があっても最後が failed なら出さない（最後だけを見る）", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer(FS_PASSED), byViewer(FS_FAILED)))), []);
+});
+
+test("to-tickets の条件: 古い failed があっても最後が passed なら出す", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer(FS_FAILED), byViewer(FS_PASSED)))), [toTickets(12)]);
+});
+
+test("to-tickets の条件: 1 行目以外の passed・他人のコメント・viewer の引用は数えず、出さない", () => {
+  const s = ttWith(
+    byViewer(`メモ\n${FS_PASSED}`),
+    { author: "someone", body: FS_PASSED },
+    byViewer(`> ${FS_PASSED}`),
+    { author: "someone", body: FS_NA },
+  );
+  assert.deepEqual(flow(decide(s)), []);
+});
+
+test("to-tickets の条件: passed でも対象外でも failed でもない Formal Spec コメントでは出さない", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer("## Formal Spec（takt 0.71.0 の検証器で error）")))), []);
+  assert.deepEqual(flow(decide(ttWith(byViewer("## Formal Spec（対象外の理由を確認中）")))), []);
+});
+
+test("to-tickets の条件: 他人の passed が最後にあっても、viewer の最後が failed なら出さない", () => {
+  assert.deepEqual(flow(decide(ttWith(byViewer(FS_FAILED), { author: "someone", body: FS_PASSED }))), []);
+});
+
+test("to-tickets の条件: 条件が揃った後の dispatched で 2 周しても二重に出さない", () => {
+  const s = ttWith(byViewer(FS_PASSED));
+  const first = flow(decide(s));
+  assert.deepEqual(first, [toTickets(12)]);
+  assert.deepEqual(flow(decide({ ...s, dispatched: first.map((a) => a.key) })), []);
+});
+
+test("to-tickets の条件: 未承認の仕様は passed でも出さない（承認の条件は変わらない）", () => {
+  assert.deepEqual(flow(decide(snapshot([sentSpec(12, { labels: ["spec"], comments: [byViewer(FS_LAUNCHING), byViewer(FS_PASSED)] })]))), []);
+});
+
+test("to-tickets の条件: 親ができた後の takt-sequence には Formal Spec の条件を掛けない（人が作った親の受け渡し）", () => {
+  const s = snapshot([sentSpec(12), issue(20, { body: "仕様: #12", subIssues: openSubs(21) })]);
+  assert.deepEqual(flow(decide(s)), [taktSequence(20, [21])]);
 });

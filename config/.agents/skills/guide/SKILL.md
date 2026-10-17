@@ -12,7 +12,8 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | open な `spec` があり、承認依頼をまだ送っていない | Discord に repo 名のチャンネル（無ければ作る）とスレッドを立て、題名と issue のリンクを送る |
 | 承認依頼を送り済みで、本人の ✅ だけが付いている（`spec-approved` なし） | `spec-approved` ラベルを付ける（repo に無ければ GitHub が作る） |
 | 承認依頼を送り済みで、本人の ❌ だけが付いている（差し戻しコメントなし。`spec-approved` の有無は問わない） | 差し戻しのコメントを書く |
-| `spec` と `spec-approved` が付いた open な仕様があり、その親 issue（本文に `仕様: #n` だけの行があり、sub-issue を持つ）がない | `orca agent launch` で Orca のタブに `to-tickets` を対話セッションとして起動する（タブ題名 `to-tickets #n`）。親 issue と sub-issue ができたら終わりで、終了コードは見ない |
+| 承認依頼を送り済みの open な仕様で、viewer の formal-spec の印（`案内役: formal-spec を起動する` か `案内役: formal-spec を起動した…`）がなく、to-tickets を起動済み（起動の印か終了の印）でもない。承認（`spec-approved`）は待たない | `orca agent launch --agent claude` で Orca のタブ（題名 `formal-spec #n`）に `formal-spec` を対話セッションとして起動する。確認待ちにせず結果のコメントまで進める。毎回起動する。結果は仕様の Formal Spec コメントで判定する |
+| `spec` と `spec-approved` が付いた open な仕様があり、その親 issue（本文に `仕様: #n` だけの行があり、sub-issue を持つ）がなく、viewer の最後の Formal Spec コメントが passed（1 行目が `## Formal Spec（… で passed）`）または対象外（1 行目が `## Formal Spec（対象外）`）。Formal Spec コメントが無いか最後が failed なら待つ。to-tickets を起動済みの古い仕様は従来どおり | `orca agent launch` で Orca のタブに `to-tickets` を対話セッションとして起動する（タブ題名 `to-tickets #n`）。親 issue と sub-issue ができたら終わりで、終了コードは見ない |
 | 親 issue と sub-issue がそろい、まだ takt に渡していない | open な sub-issue を `takt-sequence` に渡す（Orca の新しいタブ） |
 | 承認済みの open な仕様の親 issue の sub-issue がすべて closed で、学びの PR（viewer が作り、本文に `学びの元の仕様: #n` だけの行がある PR。状態は問わない）がまだなく、knowledge の起動の印もない | `orca agent launch --agent claude` で Orca のタブ（題名 `knowledge #n`）に `knowledge` を対話セッションとして起動する（devlog は起動しない）。終わるまで待たない。学びの PR ができたら、次の周以降に下の行で自動マージを予約する |
 | 同じ条件で、学びの PR が OPEN で自動マージが未予約（起動の印の有無は問わない。起動した周の次以降の通常の経路） | knowledge は起動せず、`gh pr merge <N> --auto --squash` だけを実行する |
@@ -31,7 +32,7 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - `--from <n>`: 番号が n 以上の仕様だけを扱い、それより前の仕様には承認依頼も後続の行動も出さない。手で起票し終えた仕様が残っている repo に向けるとき、新しい仕様だけを流すのに使う（指定しなければ open な仕様をすべて扱う）。
 
 - `--dry-run`: 1 周だけ読み、観測した要約と行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
-- 前提: `gh` が認証済み。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（to-tickets と knowledge の起動に使う）。
+- 前提: `gh` が認証済み。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge の起動に使う）。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
 
 ## 状態
@@ -43,6 +44,10 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: Discord に承認依頼を送る` | 仕様 | 承認依頼を送る前に書く。これがある仕様には再送しない |
 | `案内役: Discord に承認依頼を送った（スレッド T / メッセージ M）` | 仕様 | 送り済み。T と M のメッセージのリアクションを毎周 REST で読む |
 | `案内役: Discord で差し戻された` | 仕様 | 差し戻しを記録した。これがある仕様には繰り返さない |
+| `案内役: formal-spec を起動する` | 仕様 | 起動する前に書く（1 段目）。これがある仕様には formal-spec を出さない。起動の成否が不明でも二重に起動しない |
+| `案内役: formal-spec を起動した（ターミナル H / T）` | 仕様 | 起動した後に書く（2 段目。H は handle、T は起動時刻）。結果は Formal Spec コメントで判定し、結果が無いままセッションが止まれば停止の観測の対象になる |
+| `## Formal Spec（takt <版> の検証器で passed）` で始まる 1 行目のコメント | 仕様 | 検証が通った。viewer の最後の Formal Spec コメントがこれなら to-tickets を出せる |
+| `## Formal Spec（対象外）` で始まる 1 行目のコメント | 仕様 | 形式化する価値が無い仕様。理由が 2 行目以降に続く。viewer の最後の Formal Spec コメントがこれでも to-tickets を出せる |
 | `案内役: to-tickets を起動する` | 仕様 | 起動する前に書く（1 段目）。これがある仕様には to-tickets を出さない。起動の成否が不明でも二重に起動しない |
 | `案内役: to-tickets を起動した（ターミナル H / T）` | 仕様 | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。handle が応答から取れなければ書かずに案内役が止まる。終わりはこの印ではなく、仕様を指す親 issue ができたかで判定する（判定は時刻を読まない） |
 | `案内役: to-tickets を起動した`（「（ターミナル」が続かない。古い版の印） | 仕様 | 読み取りだけ残す。これがある仕様には to-tickets を出さず、親は takt に渡さない |

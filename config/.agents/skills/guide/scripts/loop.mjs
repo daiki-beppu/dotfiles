@@ -7,6 +7,7 @@ const DESCRIBE = {
   "request-approval": (a) => `${a.key}: 仕様 #${a.spec} の承認依頼を Discord に送る`,
   "approve-spec": (a) => `${a.key}: 仕様 #${a.spec} に spec-approved を付ける`,
   "reject-spec": (a) => `${a.key}: 仕様 #${a.spec} に差し戻しのコメントを書く`,
+  "formal-spec": (a) => `${a.key}: 仕様 #${a.spec} の形式検証 formal-spec を Orca のタブで起動する`,
   "to-tickets": (a) => `${a.key}: 仕様 #${a.spec} を to-tickets で親 issue と sub-issue にする`,
   "takt-sequence": (a) => `${a.key}: 親 #${a.parent} の sub-issue ${a.issues.map((n) => `#${n}`).join(" ")} を takt-sequence に渡す`,
   "merge-auto": (a) => `${a.key}: 仕様 #${a.spec} の学びの PR #${a.pr} に自動マージを予約する`,

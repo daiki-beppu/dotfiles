@@ -20,7 +20,9 @@ const issue = (number, over = {}) => ({
 const SENDING = "案内役: Discord に承認依頼を送る";
 const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
 const sentComments = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: SENT }];
-const spec = (number) => issue(number, { labels: ["spec", "spec-approved"], comments: sentComments });
+// formal-spec は起動済みで passed（to-tickets の流れだけを見る）
+const formalSpecDone = [{ author: VIEWER, body: "案内役: formal-spec を起動する" }, { author: VIEWER, body: "## Formal Spec（takt 0.71.0 の検証器で passed）" }];
+const spec = (number) => issue(number, { labels: ["spec", "spec-approved"], comments: [...sentComments, ...formalSpecDone] });
 
 // GitHub 上の状態が周をまたいで変わらない固定のスナップショット（dispatched はループが足す）。
 const fixed = () => ({
@@ -177,8 +179,8 @@ const approvalSnapshot = async () => ({
   taktIssues: [],
   issues: [
     issue(12, { labels: ["spec"] }),
-    issue(13, { labels: ["spec"], comments: sentComments, reactions: [{ emoji: "✅", userId: "U1" }] }),
-    issue(14, { labels: ["spec"], comments: sentComments, reactions: [{ emoji: "❌", userId: "U1" }] }),
+    issue(13, { labels: ["spec"], comments: [...sentComments, ...formalSpecDone], reactions: [{ emoji: "✅", userId: "U1" }] }),
+    issue(14, { labels: ["spec"], comments: [...sentComments, ...formalSpecDone], reactions: [{ emoji: "❌", userId: "U1" }] }),
   ],
 });
 
@@ -254,4 +256,21 @@ test("dry-run: 判断依頼の行動を説明つきで表示し、例外にな�
   const actions = await runRound({ readSnapshot, execute: async () => assert.fail("dry-run は実行しない"), log: (l) => logs.push(l), dryRun: true }, new Set());
   assert.ok(actions.some((a) => a.kind === "request-decision" && a.spec === 12 && a.issue === 21));
   assert.ok(logs.some((l) => l.includes("#12") && l.includes("#21")), logs.join("\n"));
+});
+
+test("formal-spec: 承認依頼を送った仕様では execute に formal-spec の行動を渡し、2 周しても 1 回だけ。dry-run の表示にも仕様の番号と formal-spec が出る", async () => {
+  const sentOnly = () => ({ repo: REPO, viewer: VIEWER, issues: [issue(12, { labels: ["spec"], comments: sentComments })], taktIssues: [] });
+  const { calls, deps } = fakes({ readSnapshot: async () => sentOnly() });
+  const dispatched = new Set();
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  assert.deepEqual(calls.executed, ["formal-spec:12"]);
+  assert.ok(calls.logs.some((l) => l.includes("formal-spec:12")));
+
+  const dry = fakes({ readSnapshot: async () => sentOnly() });
+  await runRound({ ...dry.deps, dryRun: true }, new Set());
+  assert.deepEqual(dry.calls.executed, []);
+  const line = dry.calls.logs.find((l) => l.includes("formal-spec:12"));
+  assert.ok(line, dry.calls.logs.join("\n"));
+  assert.match(line, /#12/);
 });
