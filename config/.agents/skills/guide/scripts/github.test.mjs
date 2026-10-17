@@ -100,6 +100,7 @@ const wfRoutes = (over = {}) => ({
   "repos/o/r/issues/20/comments": [],
   "repos/o/r/issues/21/comments": [{ user: { login: "me" }, body: "案内役: wayfinder を起動する" }],
   "repos/o/r/issues/22/comments": [],
+  "repos/o/r/issues/23/comments": [{ user: { login: "me" }, body: "## 仮決め\n\n### Q\n- 答え: A\n- 振り分け: ⓪\n- 理由: R\n- 根拠: なし" }],
   "repos/o/r/issues/21/dependencies/blocked_by": [{ number: 9, state: "open" }],
   "repos/o/r/issues/22/dependencies/blocked_by": [{ number: 9, state: "closed" }],
   ...over,
@@ -135,11 +136,18 @@ test("readIssues: map と子の labels と state を保つ", () => {
   assert.equal(by(23).state, "CLOSED");
 });
 
-test("readIssues: map の子でない issue と、closed な子の comments・blocked_by は読まない", () => {
+test("readIssues: map の子でない issue は読まない。closed な子の blocked_by は読まない", () => {
   const { paths } = readWf();
-  for (const n of [23, 30]) {
-    assert.ok(!paths.some((p) => p.startsWith(`repos/o/r/issues/${n}/`)), `#${n} を読んだ: ${paths.join(", ")}`);
-  }
+  assert.ok(!paths.some((p) => p.startsWith("repos/o/r/issues/30/")), `#30 を読んだ: ${paths.join(", ")}`);
+  assert.ok(!paths.some((p) => p.startsWith("repos/o/r/issues/23/dependencies")), `#23 の blocked_by を読んだ: ${paths.join(", ")}`);
+});
+
+test("readIssues: open な map の closed な子の comments（resolution コメント）を {author, body} で読む", () => {
+  const { by } = readWf();
+  assert.equal(by(23).comments.length, 1);
+  assert.equal(by(23).comments[0].author, "me");
+  assert.ok(by(23).comments[0].body.startsWith("## 仮決め"));
+  assert.deepEqual(by(23).blockedBy, []);
 });
 
 test("readIssues: map の子でない issue の assignees は空、blockedBy は空配列", () => {
@@ -154,6 +162,7 @@ test("readIssues: closed な map の子は読まない", () => {
   const { paths, execFile } = routed(routes);
   createGithub({ repo: "o/r", cwd: "/x", execFile }).readIssues();
   assert.ok(!paths.some((p) => p.includes("/dependencies/blocked_by")), paths.join(", "));
+  assert.ok(!paths.some((p) => p.startsWith("repos/o/r/issues/23/")), paths.join(", "));
 });
 
 test("readIssues: spec で既にコメントを読んだ子は、コメントを読み直さない", () => {

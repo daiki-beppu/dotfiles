@@ -380,3 +380,22 @@ test("dry-run: 回答の流し込みも例外にせず、key・ticket の番号�
   assert.match(out, /#21/);
   assert.match(out, /term_1/);
 });
+
+test("dry-run: 仮決めの掲載の行動も例外にせず、execute を呼ばず、key を含めて log に表示する", async () => {
+  const body = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: なし\n";
+  const logs = [];
+  const deps = {
+    readSnapshot: async () => ({
+      repo: REPO, viewer: VIEWER, taktIssues: [],
+      issues: [
+        issue(20, { title: "地図", labels: ["wayfinder:map"], subIssues: [{ number: 21, state: "CLOSED" }], comments: [{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }] }),
+        issue(21, { title: "parser を選ぶ", state: "CLOSED", labels: ["wayfinder:grilling"], assignees: [], blockedBy: [], comments: [{ author: VIEWER, body }] }),
+      ],
+    }),
+    execute: async () => assert.fail("dry-run では execute を呼ばない"),
+    log: (line) => logs.push(String(line)),
+    dryRun: true,
+  };
+  await runRound(deps, new Set());
+  assert.ok(logs.some((l) => l.includes("post-provisional-decision:20:21:1")), logs.join("\n"));
+});

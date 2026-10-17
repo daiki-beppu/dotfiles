@@ -2259,3 +2259,169 @@ test("保留: 保留を外した map は、次の周からまた起動を出す"
   held.issues.find((i) => i.number === 20).labels = ["wayfinder:map"];
   assert.deepEqual(wfActions(decide(held)), [wfAction(21, "research")]);
 });
+
+// ---- 仮決め: map の子 ticket の resolution コメントの `## 仮決め` 節を、仮決めごとに map のスレッドへ流す ----
+const PD_SENDING = (t, n) => `案内役: Discord に仮決めを流す（#${t} 仮決め ${n}）`;
+const PD_SENT = (t, n, thread = "900", message = "M1") => `案内役: Discord に仮決めを流した（#${t} 仮決め ${n} / スレッド ${thread} / メッセージ ${message}）`;
+const pdItem = (q, a, { triage = "⓪", reason = "後で替えられる", evidence = "なし" } = {}) =>
+  `### ${q}\n- 答え: ${a}\n- 振り分け: ${triage}\n- 理由: ${reason}\n- 根拠: ${evidence}`;
+const pdComment = (...items) => `## 結果\n\n調べた。\n\n## 仮決め\n\n${items.join("\n\n")}\n`;
+const posts = (actions) => actions.filter((a) => a.kind === "post-provisional-decision");
+const pdWorld = (ticketOver, { mapComments = threaded(), map = {}, over = {}, type = "grilling" } = {}) =>
+  mapWorld([wfTicket(21, type, { title: "parser を選ぶ", state: "CLOSED", ...ticketOver })], { mapComments, map, over });
+const two = pdComment(pdItem("どの parser？", "既存", { reason: "後で替えられる" }), pdItem("名前は？", "foo", { triage: "③", reason: "内部名", evidence: "[ADR](docs/adr/1.md)" }));
+
+test("仮決め: 閉じた ticket の resolution に仮決めが 2 件あれば、仮決めごとに 1 件ずつ、題名・問い・答え・理由・根拠つきで map のスレッドへ出す", () => {
+  const found = posts(decide(pdWorld({ comments: [byViewer(two)] })));
+  assert.deepEqual(found, [
+    {
+      kind: "post-provisional-decision", key: "post-provisional-decision:20:21:1", map: 20, ticket: 21, n: 1, threadId: "900",
+      title: "parser を選ぶ", question: "どの parser？", answer: "既存", reason: "後で替えられる", evidence: "なし",
+    },
+    {
+      kind: "post-provisional-decision", key: "post-provisional-decision:20:21:2", map: 20, ticket: 21, n: 2, threadId: "900",
+      title: "parser を選ぶ", question: "名前は？", answer: "foo", reason: "内部名", evidence: "[ADR](docs/adr/1.md)",
+    },
+  ]);
+});
+
+test("仮決め: open な ticket の resolution でも出す。task の ticket でも出す", () => {
+  assert.equal(posts(decide(pdWorld({ state: "OPEN", comments: [byViewer(two)] }, { type: "task" }))).length, 2);
+});
+
+test("仮決め: 「## 次」など次の `## ` 見出し以降は仮決めとして読まない", () => {
+  const body = `${pdComment(pdItem("Q1", "A1"))}\n## 次\n\n${pdItem("Q2", "A2")}\n`;
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))).map((a) => a.question), ["Q1"]);
+});
+
+test("仮決め: 掲載の一周目は 1 度だけ出る。同じ周の中で重複しない", () => {
+  const keys = posts(decide(pdWorld({ comments: [byViewer(two)] }))).map((a) => a.key);
+  assert.deepEqual(keys, [...new Set(keys)]);
+});
+
+test("仮決め: 仮決めの節が無い resolution には出さない。節が空の resolution にも出さない", () => {
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer("## 結果\n\n調べた。\n")] }))), []);
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer("## 仮決め\n\n")] }))), []);
+  assert.deepEqual(posts(decide(pdWorld({ comments: [] }))), []);
+});
+
+test("仮決め: 送る前の印がある仮決めには出さない。他の仮決めは出す", () => {
+  const found = posts(decide(pdWorld({ comments: [byViewer(two), byViewer(PD_SENDING(21, 1))] })));
+  assert.deepEqual(found.map((a) => a.n), [2]);
+});
+
+test("仮決め: 送った後の印（スレッドとメッセージの ID つき）がある仮決めには出さない", () => {
+  const found = posts(decide(pdWorld({ comments: [byViewer(two), byViewer(PD_SENDING(21, 1)), byViewer(PD_SENT(21, 1)), byViewer(PD_SENDING(21, 2)), byViewer(PD_SENT(21, 2))] })));
+  assert.deepEqual(found, []);
+});
+
+test("仮決め: 送った後の印だけがあっても出さない", () => {
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(two), byViewer(PD_SENT(21, 1)), byViewer(PD_SENT(21, 2))] }))), []);
+});
+
+test("仮決め: dispatched に key があれば出さない。同じ周の 2 周目も、印を足せば二重に出ない", () => {
+  const s = pdWorld({ comments: [byViewer(two)] }, { over: { dispatched: ["post-provisional-decision:20:21:1"] } });
+  assert.deepEqual(posts(decide(s)).map((a) => a.n), [2]);
+  const first = pdWorld({ comments: [byViewer(pdComment(pdItem("Q", "A")))] });
+  assert.equal(posts(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 21).comments.push(byViewer(PD_SENDING(21, 1)));
+  assert.deepEqual(posts(decide(first)), []);
+});
+
+test("仮決め: 別の ticket（#21 は #2 に前方一致しない）・他人・行の途中の印では掲載済みとみなさない", () => {
+  const s = mapWorld([wfTicket(2, "task", { title: "t2", state: "CLOSED", comments: [
+    byViewer(pdComment(pdItem("Q", "A"))),
+    byViewer(PD_SENDING(21, 1)),
+    { author: "someone", body: PD_SENDING(2, 1) },
+    { author: "someone", body: PD_SENT(2, 1) },
+    byViewer(`メモ: ${PD_SENDING(2, 1)}`),
+    byViewer(`${PD_SENDING(2, 1)} 続き`),
+  ] })], { mapComments: threaded() });
+  assert.deepEqual(posts(decide(s)).map((a) => [a.ticket, a.n]), [[2, 1]]);
+});
+
+test("仮決め: 別の仮決め番号の印では掲載済みとみなさない", () => {
+  const s = pdWorld({ comments: [byViewer(pdComment(pdItem("Q", "A"))), byViewer(PD_SENDING(21, 11)), byViewer(PD_SENT(21, 2))] });
+  assert.deepEqual(posts(decide(s)).map((a) => a.n), [1]);
+});
+
+test("仮決め: viewer 以外が書いた resolution は仮決めとして読まない", () => {
+  assert.deepEqual(posts(decide(pdWorld({ comments: [{ author: "someone", body: two }] }))), []);
+});
+
+test("仮決め: コードフェンス（``` と ~~~、閉じ忘れ）の中の `## 仮決め` は数えない", () => {
+  const inner = `## 仮決め\n\n${pdItem("Q", "A")}`;
+  for (const body of [`\`\`\`markdown\n${inner}\n\`\`\``, `~~~\n${inner}\n~~~`, `\`\`\`\n${inner}`]) {
+    assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))), [], body);
+  }
+});
+
+test("仮決め: 形に合わない仮決めが 1 件でもある resolution は、正しい仮決めも含めて 0 件にする", () => {
+  const ok = pdItem("Q1", "A1");
+  const bad = [
+    "### Q2\n- 答え: A\n- 理由: R\n- 振り分け: ⓪\n- 根拠: なし",
+    "### Q2\n- 答え: A\n- 振り分け: ①\n- 理由: R\n- 根拠: なし",
+    "### Q2\n- 答え: A\n- 振り分け: ⓪\n- 理由: R",
+    "### Q2\n- 答え: A\n- 振り分け: ⓪\n- 理由: R\n- 根拠: なし\n- 補足: 余分",
+    "### Q2\n- 答え:\n- 振り分け: ⓪\n- 理由: R\n- 根拠: なし",
+    "### Q2\n- 振り分け: ⓪\n- 答え: A\n- 理由: R\n- 根拠: なし",
+  ];
+  for (const b of bad) {
+    assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(pdComment(ok, b))] }))), [], b);
+  }
+});
+
+test("仮決め: `###` の問いが 1 つも無い節は 0 件", () => {
+  const body = "## 仮決め\n\n- 答え: A\n- 振り分け: ⓪\n- 理由: R\n- 根拠: なし\n";
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))), []);
+});
+
+test("仮決め: 振り分けは ⓪ と ③ を受け入れる。CRLF の本文も読める", () => {
+  const body = pdComment(pdItem("Q1", "A1", { triage: "⓪" }), pdItem("Q2", "A2", { triage: "③" })).replace(/\n/g, "\r\n");
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))).map((a) => a.question), ["Q1", "Q2"]);
+});
+
+test("仮決め: 複数のコメントに仮決めがあるとき、番号は ticket の中で通しになる。形に合わないコメントは番号を使わない", () => {
+  const s = pdWorld({ comments: [byViewer(pdComment(pdItem("Q1", "A1"))), byViewer(pdComment("### 壊れ\n- 答え: A")), byViewer(pdComment(pdItem("Q2", "A2")))] });
+  assert.deepEqual(posts(decide(s)).map((a) => [a.n, a.question]), [[1, "Q1"], [2, "Q2"]]);
+});
+
+test("仮決め: map のスレッドが無ければ、掲載の代わりにスレッドを立てる行動を 1 件だけ出す", () => {
+  const actions = decide(pdWorld({ comments: [byViewer(two)] }, { mapComments: [] }));
+  assert.deepEqual(posts(actions), []);
+  assert.deepEqual(creates(actions), [createThread()]);
+});
+
+test("仮決め: スレッドの「立てる」印だけがあるときは、掲載もスレッド作成も出さない", () => {
+  const actions = decide(pdWorld({ comments: [byViewer(two)] }, { mapComments: [byViewer(MT_CREATING)] }));
+  assert.deepEqual(posts(actions), []);
+  assert.deepEqual(creates(actions), []);
+});
+
+test("仮決め: 掲載済みで他に知らせることが無ければ、スレッドが無くてもスレッドは立てない", () => {
+  const s = pdWorld({ comments: [byViewer(pdComment(pdItem("Q", "A"))), byViewer(PD_SENT(21, 1))] }, { mapComments: [] });
+  assert.deepEqual(creates(decide(s)), []);
+});
+
+test("仮決め: 保留の map・閉じた map・map の子でない ticket には出さない", () => {
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(two)] }, { map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(two)] }, { map: { state: "CLOSED" } }))), []);
+  const orphan = snapshot([issue(20, { labels: ["wayfinder:map"], title: "地図", comments: threaded(), subIssues: [] }), wfTicket(21, "task", { state: "CLOSED", comments: [byViewer(two)] })]);
+  assert.deepEqual(posts(decide(orphan)), []);
+});
+
+test("仮決め: 複数の map の子になっている ticket は、最初の map にだけ出す", () => {
+  const ticket = wfTicket(21, "task", { state: "CLOSED", comments: [byViewer(pdComment(pdItem("Q", "A")))] });
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], title: "地図", comments: threaded(), subIssues: [{ number: 21, state: "CLOSED" }] }),
+    issue(30, { labels: ["wayfinder:map"], title: "別", comments: threaded(), subIssues: [{ number: 21, state: "CLOSED" }] }),
+    ticket,
+  ]);
+  assert.deepEqual(posts(decide(s)).map((a) => [a.map, a.ticket]), [[20, 21]]);
+});
+
+test("仮決め: 既存の遷移（prototype の通知）は、仮決めがあっても変わらない", () => {
+  const s = mapWorld([wfTicket(21, "prototype", { title: "試作" }), wfTicket(22, "task", { state: "CLOSED", comments: [byViewer(two)] })], { mapComments: threaded() });
+  assert.deepEqual(notifies(decide(s)).map((a) => a.ticket), [21]);
+  assert.equal(posts(decide(s)).length, 2);
+});

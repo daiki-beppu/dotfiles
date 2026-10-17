@@ -63,6 +63,31 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       });
     },
 
+    // grilling・task の仮決め 1 件を map のスレッドに流す。ID は差し戻しの受け付けに使うので返す。
+    // 2000 文字の上限で切れるのは問い・答え・理由・根拠だけにする（題名・リンク・番号を必ず残す）。
+    async sendProvisionalDecision({ threadId, map, ticket, title, url, question, answer, reason, evidence }) {
+      const head = `仮決め: map #${map} の #${ticket} ${title}\n${url}\n`;
+      const labels = ["判断: ", "\n→ ", "\n理由: ", "\n根拠: "];
+      const room = Math.max(0, MAX_CONTENT - head.length - labels.reduce((n, l) => n + l.length, 0));
+      const values = [question, answer, reason, evidence];
+      // 短い項目から順に、残りを均等に割り当てる（長い項目だけが切られる）。
+      const shown = [];
+      let left = room;
+      [...values.keys()]
+        .sort((a, b) => values[a].length - values[b].length)
+        .forEach((i, k, order) => {
+          const max = Math.floor(left / (order.length - k));
+          const v = values[i];
+          shown[i] = v.length > max ? `${v.slice(0, Math.max(0, max - 1))}…` : v;
+          left -= shown[i].length;
+        });
+      const message = await call("POST", `/channels/${threadId}/messages`, {
+        content: `${head}${labels.map((l, i) => `${l}${shown[i]}`).join("")}`,
+        allowed_mentions: { parse: [] },
+      });
+      return { messageId: message.id };
+    },
+
     // 承認依頼のスレッド（map があれば map のスレッド）に判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
     async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail, question }) {
       const head = `判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
