@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SEQUENCE_DONE } from "./decide.mjs";
+import { SPLIT_DOWN } from "./pane.mjs";
 import { mergeTasks, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 // レビュー失敗の判断依頼で読むレポートの読み取り（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
 import * as T from "./takt.mjs";
@@ -37,7 +38,7 @@ test("taktTasks: タスクを issue・kind・createdAt・step・error・worktree
   ]);
 });
 
-test("startTaktSequence: Orca の新しいタブで起動し、応答の result.terminal.handle を返す。takt-sequence の後に終わりの行を出す", () => {
+test("startTaktSequence: terminal が無ければ、今のとおり Orca の新しいタブ（orca terminal create）で起動し、応答の result.terminal.handle を返す。takt-sequence の後に終わりの行を出す", () => {
   const calls = [];
   const run = (args, opts) => {
     calls.push({ args, opts });
@@ -55,6 +56,27 @@ test("startTaktSequence: Orca の新しいタブで起動し、応答の result.
 test("startTaktSequence: 応答から handle が取れなければ、応答の頭を入れて例外にする", () => {
   assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => "not json"), /handle が取れない.*not json/);
   assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => JSON.stringify({ ok: true, result: {} })), /result\.terminal\.handle/);
+});
+
+test("startTaktSequence: terminal（案内役のペインの handle）があれば、そのペインを下へ分割して起動し、応答の result.split.handle を返す", () => {
+  const calls = [];
+  const run = (args, opts) => {
+    calls.push({ args, opts });
+    return JSON.stringify({ ok: true, result: { split: { handle: "term_pane" } } });
+  };
+  assert.deepEqual(startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21, 22], terminal: "term_guide" }, run), { handle: "term_pane" });
+  const [{ args, opts }] = calls;
+  assert.equal(calls.length, 1);
+  assert.deepEqual(args.slice(0, 7), ["terminal", "split", "--terminal", "term_guide", "--direction", SPLIT_DOWN, "--command"]);
+  assert.match(args[7], /takt-sequence\.mjs' '21' '22'; echo "案内役: takt-sequence が終わった（exit \$\?）"$/);
+  assert.deepEqual(args.slice(8), ["--json"]);
+  assert.ok(!args.includes("create"));
+  assert.equal(opts.cwd, "/w");
+});
+
+test("startTaktSequence: 分割の応答から result.split.handle が取れなければ、例外にする", () => {
+  const reply = JSON.stringify({ ok: true, result: { terminal: { handle: "term_x" } } });
+  assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21], terminal: "term_guide" }, () => reply), /orca terminal split.*result\.split\.handle/);
 });
 
 // merge タスクの記録。TaskRunner の項目は takt list --format json に出ないので、takt-node.sh 経由のスクリプトの JSON を受け取る（実行は偽物を注入）。

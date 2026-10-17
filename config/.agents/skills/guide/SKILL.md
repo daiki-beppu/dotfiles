@@ -55,6 +55,16 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - 前提: `gh` が認証済み。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
 
+takt watch・align-behind と一緒に立てるときは、`guide.mjs` の代わりに `desk.mjs` を同じ場所で流す。Orca の新しいタブに、左に takt watch、右に案内役、案内役の下に align-behind のペインを作る。案内役の引数はそのまま案内役に渡す。
+
+```sh
+node <skill>/scripts/desk.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60]
+```
+
+- 案内役には自分のペインの handle を `--terminal <handle>` で渡す。`--terminal` を受けた案内役は、takt-sequence を新しいタブではなく、自分のペインを下へ分割して起動する（案内役と align-behind の間に入る）。応答の `result.split.handle` を起動の印に書く。
+- 既に動いているものは二重に起動しない。cwd が repo root の takt watch があれば左のペインを作らず、案内役が最初のペインになる。align-behind があれば、そのペインを作らない。案内役が動いていれば何も作らず、PID を出して終了コード 2 で止まる（止めてから流し直す）。
+- 分割の向きは `scripts/pane.mjs` の定数だけで決まる。並びが図と違えば、そこを直す。
+
 ## 状態
 
 state ファイルは持たない。済んだ行動は GitHub のコメント（`gh` の認証ユーザーが書き、本文が次の接頭辞で始まるもの）で表す。毎周読み直すので、止めて流し直しても続きから動く。

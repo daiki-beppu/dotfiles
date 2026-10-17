@@ -270,6 +270,7 @@ check_guide() {
     config/.agents/skills/guide/scripts/takt.test.mjs \
     config/.agents/skills/guide/scripts/wayfinder.test.mjs \
     config/.agents/skills/guide/scripts/review-fix.test.mjs \
+    config/.agents/skills/guide/scripts/desk.test.mjs \
     config/.agents/skills/takt/scripts/align-decide.test.mjs \
     config/.agents/skills/takt/scripts/lint-issue.test.mjs \
     config/.agents/skills/takt/scripts/review-stage.test.mjs
