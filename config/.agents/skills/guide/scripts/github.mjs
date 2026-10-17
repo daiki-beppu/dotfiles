@@ -3,8 +3,16 @@
 import { execFileSync } from "node:child_process";
 
 export function createGithub({ repo, cwd, execFile = execFileSync }) {
-  const gh = (args) =>
-    execFile("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, timeout: 120_000 });
+  // 失敗したら gh の stderr の 1 行目をメッセージの 1 行目に足す（案内役は止まるとき 1 行目だけを出すので、原因が見えるように）。
+  const gh = (args) => {
+    try {
+      return execFile("gh", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024, timeout: 120_000 });
+    } catch (e) {
+      const detail = String(e.stderr ?? "").trim().split("\n")[0];
+      if (detail) e.message = `${String(e.message).split("\n")[0]}: ${detail}`;
+      throw e;
+    }
+  };
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
 
   return {
@@ -54,8 +62,9 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
       gh(["api", `repos/${repo}/issues/${number}/comments`, "-f", `body=${body}`]);
     },
 
+    // REST で付ける。repo にまだ無いラベルは GitHub が作るので、spec-approved を前もって用意しなくてよい（gh issue edit は無いラベルで失敗する）。
     addLabel(number, label) {
-      gh(["issue", "edit", String(number), "--repo", repo, "--add-label", label]);
+      gh(["api", `repos/${repo}/issues/${number}/labels`, "-f", `labels[]=${label}`]);
     },
   };
 }

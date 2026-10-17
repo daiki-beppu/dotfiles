@@ -35,3 +35,28 @@ test("readPullRequests: REST の auto_merge が null かどうかを autoMerge �
   ]);
   assert.equal(calls[0].args[1], "repos/o/r/pulls?state=all&per_page=100");
 });
+
+test("addLabel: REST の labels に POST する（無いラベルは GitHub が作る）", () => {
+  const { calls, execFile } = fakeGh(() => "[]");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).addLabel(12, "spec-approved");
+  assert.deepEqual(calls, [{ cmd: "gh", args: ["api", "repos/o/r/issues/12/labels", "-f", "labels[]=spec-approved"], cwd: "/x" }]);
+});
+
+test("失敗: gh の stderr の 1 行目を、例外のメッセージの 1 行目に足す", () => {
+  const execFile = () => {
+    const e = new Error("Command failed: gh api repos/o/r/issues/12/comments\nlong output");
+    e.stderr = "HTTP 404: Not Found (https://api.github.com/repos/o/r/issues/12/comments)\nmore";
+    throw e;
+  };
+  assert.throws(
+    () => createGithub({ repo: "o/r", cwd: "/x", execFile }).comment(12, "x"),
+    (e) => e.message.split("\n")[0] === "Command failed: gh api repos/o/r/issues/12/comments: HTTP 404: Not Found (https://api.github.com/repos/o/r/issues/12/comments)",
+  );
+});
+
+test("失敗: stderr が空なら、メッセージを変えずに投げ直す", () => {
+  const execFile = () => {
+    throw new Error("spawn gh ENOENT");
+  };
+  assert.throws(() => createGithub({ repo: "o/r", cwd: "/x", execFile }).viewer(), { message: "spawn gh ENOENT" });
+});
