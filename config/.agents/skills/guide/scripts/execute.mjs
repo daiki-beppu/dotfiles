@@ -18,6 +18,8 @@ import {
   grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
+  provisionalSendingMarker,
+  provisionalSentMarker,
 } from "./decide.mjs";
 
 export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession }) {
@@ -91,6 +93,21 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         title: action.title,
         url: `https://github.com/${repo}/issues/${action.ticket}`,
       });
+    } else if (action.kind === "post-provisional-decision") {
+      // 送る前の印 → 送信 → スレッドとメッセージの ID つきの印。印は ticket に書き、送信より先（再起動しても再送しない）。ID は差し戻しの受け付けに使う。
+      github.comment(action.ticket, provisionalSendingMarker(action.ticket, action.n));
+      const { messageId } = await discord.sendProvisionalDecision({
+        threadId: action.threadId,
+        map: action.map,
+        ticket: action.ticket,
+        title: action.title,
+        url: `https://github.com/${repo}/issues/${action.ticket}`,
+        question: action.question,
+        answer: action.answer,
+        reason: action.reason,
+        evidence: action.evidence,
+      });
+      github.comment(action.ticket, provisionalSentMarker(action.ticket, action.n, action.threadId, messageId));
     } else if (action.kind === "request-map-decision") {
       // 仕様の判断依頼と同じ印の形を、map に書く。
       github.comment(action.map, decisionMarker(action.issue, action.cause));

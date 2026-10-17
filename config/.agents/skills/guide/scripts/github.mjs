@@ -23,7 +23,7 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
     repoName: () => JSON.parse(gh(["repo", "view", "--json", "nameWithOwner"])).nameWithOwner,
 
     // PR を除いた全 issue。コメントは spec ラベル付きと sub-issue を持つ issue だけ、sub-issue は持つ issue だけ読む。
-    // 加えて、open な wayfinder:map の open な子 ticket だけ、コメント（起動の印）と blocked by を読む（それ以外の issue の読み取りは増やさない）。
+    // 加えて、open な wayfinder:map の子 ticket は、状態によらずコメント（起動の印・resolution）を読み、open な子だけ blocked by も読む（それ以外の issue の読み取りは増やさない）。
     readIssues() {
       const issues = paged(`repos/${repo}/issues?state=all&per_page=100`)
         .filter((i) => !i.pull_request)
@@ -47,15 +47,16 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
           };
         });
       const byNumber = new Map(issues.map((i) => [i.number, i]));
-      const frontierChildren = new Set(
+      const mapChildren = new Set(
         issues
           .filter((i) => i.state === "OPEN" && i.labels.includes("wayfinder:map"))
-          .flatMap((m) => m.subIssues.filter((s) => s.state === "OPEN").map((s) => s.number)),
+          .flatMap((m) => m.subIssues.map((s) => s.number)),
       );
-      for (const n of frontierChildren) {
+      for (const n of mapChildren) {
         const child = byNumber.get(n);
-        if (child === undefined || child.state !== "OPEN") continue;
+        if (child === undefined) continue;
         if (!child.commentsRead) child.comments = readComments(n);
+        if (child.state !== "OPEN") continue;
         child.blockedBy = paged(`repos/${repo}/issues/${n}/dependencies/blocked_by?per_page=100`).map((b) => ({ number: b.number, state: b.state.toUpperCase() }));
       }
       return issues.map(({ commentsRead, ...issue }) => issue);

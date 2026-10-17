@@ -19,6 +19,8 @@
 //       （wayfinder で起動した ticket のセッションが止まった。map のスレッドへ判断依頼を送る。印は map に書く）
 //     | { kind: "request-grilling-decision", key, map, ticket, since, title, threadId, tab, tail, question }
 //       （grilling のセッションが hook の入力待ち（AskUserQuestion）。map のスレッドへ問いつきの判断依頼を送る。印は ticket に書く）
+//     | { kind: "post-provisional-decision", key, map, ticket, n, title, threadId, question, answer, reason, evidence }
+//       （子 ticket の viewer のコメントの `## 仮決め` の 1 件を、map のスレッドへ流す。印は ticket に書く）
 //     | { kind: "write-back-answer", key, ticket, since, answer }   （判断依頼への本人の返信を ticket のコメントに書き戻す）
 //     | { kind: "inject-answer", key, ticket, since, handle, answer }   （書き戻しの後、同じ停止のままのタブへ回答を流し込む）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
@@ -487,6 +489,91 @@ function grillingMarks(ticket, viewer) {
   return { sending, sent, written, injected };
 }
 
+// 仮決め（grilling・task が resolution コメントの `## 仮決め` 節に書く）を map のスレッドへ流す 2 段の印。印は ticket に書く。n は ticket の中の仮決めの通し番号（1 始まり）。
+// 閉じ括弧まで含めて照合する（#2 が #21 に前方一致しないように）。
+export const PROVISIONAL_HEADING = "## 仮決め";
+export const provisionalSendingMarker = (ticket, n) => `案内役: Discord に仮決めを流す（#${ticket} 仮決め ${n}）`;
+export const provisionalSentMarker = (ticket, n, threadId, messageId) =>
+  `案内役: Discord に仮決めを流した（#${ticket} 仮決め ${n} / スレッド ${threadId} / メッセージ ${messageId}）`;
+const PROVISIONAL_SENDING = /^案内役: Discord に仮決めを流す（#(\d+) 仮決め (\d+)）$/;
+const PROVISIONAL_SENT = /^案内役: Discord に仮決めを流した（#(\d+) 仮決め (\d+) \/ スレッド [^\s/）]+ \/ メッセージ [^\s/）]+）$/;
+const PROVISIONAL_FIELDS = [
+  ["answer", /^- 答え: (\S.*)$/],
+  ["triage", /^- 振り分け: (⓪|③)$/],
+  ["reason", /^- 理由: (\S.*)$/],
+  ["evidence", /^- 根拠: (\S.*)$/],
+];
+const FENCE = /^\s*(`{3,}|~{3,})/;
+
+// 1 件分（`### 問い` の次の行から次の `###` の前まで）を { question, answer, triage, reason, evidence } にする。形に合わなければ null。
+function parseProvisional(question, lines) {
+  const body = lines.map((l) => l.trimEnd()).filter((l) => l.trim() !== "");
+  if (question === "" || body.length !== PROVISIONAL_FIELDS.length) return null;
+  const item = { question };
+  for (const [i, [name, re]] of PROVISIONAL_FIELDS.entries()) {
+    const m = re.exec(body[i]);
+    if (m === null) return null;
+    item[name] = m[1].trim();
+  }
+  return item;
+}
+
+// 1 つのコメントの `## 仮決め` 節（コードフェンスの外の見出しから、次の `## ` 見出しか末尾まで）の仮決め。
+// 形に合わない仮決めが 1 件でもあれば、そのコメントは 0 件。
+function provisionalsOfComment(body) {
+  const items = [];
+  let fence = null; // 開いているコードフェンスの記号の並び（``` か ~~~ を 3 個以上）。閉じるのは同じ記号で、開始行以上の長さの行
+  let section = null; // 節の中: { question, lines } の現在の項目
+  let inSection = false;
+  let bad = false;
+  const close = () => {
+    if (section === null) return;
+    const item = parseProvisional(section.question, section.lines);
+    if (item === null) bad = true;
+    else items.push(item);
+    section = null;
+  };
+  for (const line of body.split(/\r?\n/)) {
+    const opener = FENCE.exec(line)?.[1];
+    if (opener !== undefined && (fence === null || (opener[0] === fence[0] && opener.length >= fence.length))) {
+      fence = fence === null ? opener : null;
+      if (inSection && section !== null) section.lines.push(line);
+      else if (inSection && line.trim() !== "") bad = true;
+      continue;
+    }
+    if (fence === null && /^## /.test(line)) {
+      close();
+      inSection = line.trimEnd() === PROVISIONAL_HEADING;
+      continue;
+    }
+    if (!inSection) continue;
+    if (fence === null && line.startsWith("### ")) {
+      close();
+      section = { question: line.slice(4).trim(), lines: [] };
+    } else if (section !== null) section.lines.push(line);
+    else if (line.trim() !== "") bad = true; // 最初の `###` より前に本文がある節は形に合わない
+  }
+  close();
+  return bad ? [] : items;
+}
+
+// ticket の resolution（viewer のコメント）の仮決め。形に合うコメントの仮決めを、コメントの順に ticket の中で 1 から通し番号を振る。
+export function provisionalDecisions(ticket, viewer) {
+  return markers(ticket, viewer)
+    .flatMap(provisionalsOfComment)
+    .map((item, i) => ({ n: i + 1, ...item }));
+}
+
+// ticket に書いた仮決めの印（送る前・送った後）の仮決め番号。別の ticket・他人の印は数えない。
+function provisionalMarks(ticket, viewer) {
+  const done = new Set();
+  for (const body of markers(ticket, viewer)) {
+    const m = PROVISIONAL_SENDING.exec(body) ?? PROVISIONAL_SENT.exec(body);
+    if (m && Number(m[1]) === ticket.number) done.add(Number(m[2]));
+  }
+  return done;
+}
+
 // viewer の最後の「判断の問い」コメント（1 行目が見出し）の 2 行目以降。無ければ NO_QUESTION。
 function lastQuestion(ticket, viewer) {
   const body = markers(ticket, viewer)
@@ -573,6 +660,24 @@ function decideMapNotices(snapshot, dispatched) {
     const key = `notify-human-ticket:${map.number}:${ticket.number}`;
     if (dispatched.has(key) || markers(map, viewer).includes(humanTicketMarker(ticket.number))) continue;
     noticesOf(map).push({ kind: "notify-human-ticket", key, map: map.number, ticket: ticket.number, title: ticket.title });
+  }
+  // 仮決め: map の子 ticket（状態は問わない。resolution を書いた直後に閉じるため）の仮決めを、まだ流していなければ 1 件ずつ。
+  const seenChildren = new Set();
+  for (const map of openMaps(snapshot)) {
+    for (const child of map.subIssues ?? []) {
+      const ticket = issues.find((i) => i.number === child.number);
+      if (ticket === undefined || seenChildren.has(ticket.number)) continue;
+      seenChildren.add(ticket.number);
+      const done = provisionalMarks(ticket, viewer);
+      for (const p of provisionalDecisions(ticket, viewer)) {
+        const key = `post-provisional-decision:${map.number}:${ticket.number}:${p.n}`;
+        if (done.has(p.n) || dispatched.has(key)) continue;
+        noticesOf(map).push({
+          kind: "post-provisional-decision", key, map: map.number, ticket: ticket.number, n: p.n, title: ticket.title,
+          question: p.question, answer: p.answer, reason: p.reason, evidence: p.evidence,
+        });
+      }
+    }
   }
   for (const { map: mapNumber, ticket, type, handle, startedAt } of ticketSessionsToObserve(snapshot)) {
     const observation = snapshot.sessions?.[handle];

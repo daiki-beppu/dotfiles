@@ -439,3 +439,38 @@ test("readReplies: 100 件を超えて書き込みがあっても、続きのペ
   assert.deepEqual(await discord.readReplies({ threadId: "T1", messageId: "M1" }), [{ userId: OWNER, content: "遅い返信" }]);
   assert.deepEqual(calls.map((c) => new URLSearchParams(c.search).get("after")), ["M1", "1100"]);
 });
+
+// ---- 仮決めの掲載 ----
+
+const PD_REQ = {
+  threadId: "T1", map: 20, ticket: 21, title: "parser を選ぶ", url: "https://github.com/o/r/issues/21",
+  question: "どの parser を使うか？", answer: "既存の parser", reason: "後で替えられるから", evidence: "[ADR](docs/adr/1.md)",
+};
+
+test("仮決め: map のスレッドに、ticket の題名・リンク・判断（問いと答え）・理由・根拠を本文に入れて 1 件送り、メッセージの ID を返す", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M55" }) });
+  const result = await discord.sendProvisionalDecision(PD_REQ);
+  assert.deepEqual(result, { messageId: "M55" });
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["仮決め", "#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21", "どの parser を使うか？", "既存の parser", "後で替えられるから", "[ADR](docs/adr/1.md)"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(!content.includes("undefined"));
+});
+
+test("仮決め: メンション通知が飛ばない。送信が失敗したら例外にする", async () => {
+  const ok = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await ok.discord.sendProvisionalDecision({ ...PD_REQ, title: "@everyone", answer: "@here" });
+  assert.deepEqual(ok.calls[0].body.allowed_mentions, { parse: [] });
+  const down = adapter({ "POST /api/v10/channels/T1/messages": json({ message: "x" }, 403) });
+  await assert.rejects(down.discord.sendProvisionalDecision(PD_REQ), /403/);
+});
+
+test("仮決め: 問い・答え・理由・根拠が長くても 2000 文字以内に収め、題名とリンクと map・ticket の番号は切り落とさない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendProvisionalDecision({ ...PD_REQ, question: "q".repeat(3000), answer: "a".repeat(3000), reason: "r".repeat(3000), evidence: "e".repeat(3000) });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["#20", "#21", "parser を選ぶ", "https://github.com/o/r/issues/21"]) assert.ok(content.includes(part), part);
+});

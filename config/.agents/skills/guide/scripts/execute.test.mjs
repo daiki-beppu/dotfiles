@@ -1045,3 +1045,83 @@ test("grilling の 3 段の流れ: 判断依頼 → 書き戻し → 流し込�
   assert.equal(calls.length, before + 3);
   assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 2);
 });
+
+// ---- 仮決めの掲載: 送る前の印 → 送信 → スレッドとメッセージの ID つきの印（印は ticket に書く）----
+const PD_BODY = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: [ADR](docs/adr/1.md)\n";
+const PD_SENDING_MARKER = "案内役: Discord に仮決めを流す（#21 仮決め 1）";
+const PD_SENT_MARKER = "案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド T900 / メッセージ M42）";
+const pdTicket = (over = {}) => wfTicket(21, "grilling", { title: "parser を選ぶ", state: "CLOSED", comments: [byViewer(PD_BODY)], ...over });
+// 送信は world の calls（コメントと同じ順序つきの記録）に載せる。
+const pdWorld = (issues, { fail = false, reply = "M42" } = {}) => {
+  const w = mapNoticeWorld(issues, {
+    discordOver: {
+      sendProvisionalDecision: async (req) => {
+        w.calls.push(`provisional ${JSON.stringify(req)}`);
+        if (fail) throw new Error("discord down");
+        return { messageId: reply };
+      },
+    },
+  });
+  return w;
+};
+const pdReq = (call) => JSON.parse(call.replace(/^provisional /, ""));
+
+test("仮決め: 送る前の印を ticket に書く → map のスレッドへ題名・リンク・判断・理由・根拠つきで送る → スレッドとメッセージの ID つきの印を ticket に書く、の順に実行する", async () => {
+  const { calls, round } = pdWorld(mapIssues([pdTicket()], [byViewer(MT_CREATED)]));
+  await round();
+  assert.equal(calls.length, 3, calls.join("\n"));
+  assert.equal(calls[0], `comment #21 ${PD_SENDING_MARKER}`);
+  assert.deepEqual(pdReq(calls[1]), {
+    threadId: "T900", map: 20, ticket: 21, title: "parser を選ぶ", url: "https://github.com/o/r/issues/21",
+    question: "どの parser？", answer: "既存", reason: "後で替えられる", evidence: "[ADR](docs/adr/1.md)",
+  });
+  assert.equal(calls[2], `comment #21 ${PD_SENT_MARKER}`);
+});
+
+test("仮決め: 仮決めが 2 件なら、1 件ずつ「印 → 送信 → ID つきの印」を実行し、番号ごとの印を書く", async () => {
+  const body = `${PD_BODY}\n### 名前は？\n- 答え: foo\n- 振り分け: ③\n- 理由: 内部名\n- 根拠: なし\n`;
+  const { calls, round } = pdWorld(mapIssues([pdTicket({ comments: [byViewer(body)] })], [byViewer(MT_CREATED)]));
+  await round();
+  assert.equal(calls.filter((c) => c.startsWith("provisional ")).length, 2);
+  assert.ok(calls.includes("comment #21 案内役: Discord に仮決めを流す（#21 仮決め 2）"), calls.join("\n"));
+  assert.ok(calls.includes("comment #21 案内役: Discord に仮決めを流した（#21 仮決め 2 / スレッド T900 / メッセージ M42）"), calls.join("\n"));
+  const first = calls.findIndex((c) => c === `comment #21 ${PD_SENDING_MARKER}`);
+  assert.ok(first >= 0 && calls[first + 1].startsWith("provisional "), calls.join("\n"));
+});
+
+test("仮決め: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = pdWorld(mapIssues([pdTicket()], [byViewer(MT_CREATED)]));
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("provisional ")).length, 1);
+  assert.equal(calls.length, 3);
+});
+
+test("仮決め: 送信が失敗したら ID つきの印は書かず、送る前の印は残り、再起動で再送しない", async () => {
+  const { calls, round } = pdWorld(mapIssues([pdTicket()], [byViewer(MT_CREATED)]), { fail: true });
+  await assert.rejects(round(), /discord down/);
+  assert.ok(!calls.some((c) => c.startsWith("comment #21 案内役: Discord に仮決めを流した")), calls.join("\n"));
+  assert.equal(calls[0], `comment #21 ${PD_SENDING_MARKER}`);
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("provisional ")).length, 1);
+});
+
+test("仮決め: 印は map ではなく ticket に書く。仮決めの無い resolution では何も送らず何も書かない", async () => {
+  const w = pdWorld(mapIssues([pdTicket()], [byViewer(MT_CREATED)]));
+  await w.round();
+  assert.ok(w.calls.filter((c) => c.startsWith("comment ")).every((c) => c.startsWith("comment #21 ")), w.calls.join("\n"));
+  const none = pdWorld(mapIssues([pdTicket({ comments: [byViewer("## 結果\n\n調べた。")] })], [byViewer(MT_CREATED)]));
+  await none.round();
+  assert.deepEqual(none.calls, []);
+});
+
+test("仮決め: map のスレッドが無ければ、先にスレッドを立て、次の周で掲載する", async () => {
+  const { calls, round } = pdWorld(mapIssues([pdTicket()]));
+  await round();
+  assert.ok(!calls.some((c) => c.startsWith("provisional ")));
+  assert.ok(calls.some((c) => c.startsWith("thread ")), calls.join("\n"));
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("provisional ")).length, 1);
+  assert.equal(pdReq(calls.find((c) => c.startsWith("provisional "))).threadId, "T900");
+});
