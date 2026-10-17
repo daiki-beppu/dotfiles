@@ -1,6 +1,6 @@
 # 案内役（guide スキル）
 
-`config/.agents/skills/guide/` の[案内役](../../GLOSSARY.md)に手を入れるとき、特に[工程](../../GLOSSARY.md)の起動・[印](../../GLOSSARY.md)の形・[セッションの停止](../../GLOSSARY.md)の観測・Orca CLI の呼び方を変えるとき、wayfinder の [map](../../GLOSSARY.md) の遷移（ticket の起動・判断依頼・仮決めの掲載と差し戻し）を変えるときに読む。工程を Orca の対話セッションで起動する理由は [ADR 0001](../adr/0001-guide-steps-run-as-orca-sessions.md)、判断の問いを ticket から読む理由は [ADR 0002](../adr/0002-grilling-writes-question-before-asking.md)。遷移と印の一覧は `config/.agents/skills/guide/SKILL.md` にある。
+`config/.agents/skills/guide/` の[案内役](../../GLOSSARY.md)に手を入れるとき、特に[工程](../../GLOSSARY.md)の起動・[印](../../GLOSSARY.md)の形・[セッションの停止](../../GLOSSARY.md)の観測・Orca CLI の呼び方を変えるとき、wayfinder の [map](../../GLOSSARY.md) の遷移（ticket の起動・判断依頼・仮決めの掲載と差し戻し）を変えるとき、takt のレビューが失敗した PR の[修正のセッション](../../GLOSSARY.md)（review-fix）と、その判断依頼を変えるときに読む。工程を Orca の対話セッションで起動する理由は [ADR 0001](../adr/0001-guide-steps-run-as-orca-sessions.md)、判断の問いを ticket から読む理由は [ADR 0002](../adr/0002-grilling-writes-question-before-asking.md)。遷移と印の一覧は `config/.agents/skills/guide/SKILL.md` にある。
 
 ## 動いている案内役はマージしたコードを読み直さないので、工程の変更をマージしたら再起動する
 
@@ -128,6 +128,52 @@ task のセッションは `orca worktree create --name wayfinder-<ticket>` で�
 
 実験や調査だけの ticket は、takt の run が completed でも repo に差分が無く、PR が作られない。takt-sequence はこれを `PR なし`（人の手が要る）として扱い、閉じるのは人になる。案内役の `decideSequenceStalls` は、open な sub-issue のどれかが実行中か、最新のタスクが failed なら何も出さない。#352 は 07:15Z に completed で終わったが、同じ親の #348 が failed だったので判断依頼は出ず、人が報告をコメントに写して閉じたのは約 7 時間後の 14:22Z だった。成果物（`dbt/`）は `.takt/runs/…/reports` の中にしか無く、takt-cleanup で消える。差分の無い ticket は、報告を issue のコメントに写して閉じるところまでを本文に書いておく。
 
+## review-fix は実機で 1 度も起動していないので、最初の 1 回は確かめる点を先に決めておく
+
+仕様 #357 の 4 本の PR（#366・#370・#373・#374）は、どれも PR の評価を通った。#374 は評価が REJECT したが、評価の中の fix で直して push し、そのまま通った（[takt の知識文書](takt.md#同じ規則を別のファイルにもう一度書く-ticket-では正本の場所を本文に書く)）。`TAKT evaluation failed` のコメントが付くのは、評価が自分の fix のループで直しきれなかったときだけなので、[修正のセッション](../../GLOSSARY.md)が起動する場面は、仕様が想定したより少ない。親 issue #359 の完了条件 2（修正の push かやり直しの印で、レビューし直してマージまで進むのを 1 回確かめる）は、2026-10-18 時点で満たしていない。
+
+確かめていないのは次の点で、`guide/SKILL.md` の「確認が取れていない点」にも一部が残っている。
+
+- `orca worktree create --base-branch origin/<branch>` が作るローカルブランチの名前。Orca は worktree のブランチを改名することがあり、同名のローカルブランチを作るなら 2 回目の create が失敗する
+- `orca worktree create --json` の応答の `result.worktree.path`（`wayfinder.test.mjs` と同じ形だと仮定しただけ）
+- `takt-node.sh merge-tasks.mjs` の出力（TaskRunner の `data.merge_task`・`data.pr_number`・`runSlug`）。1 度も実行しておらず、takt 0.71.0 のコードを読んだだけ。空を返すと、判断依頼とプロンプトのレポートの場所が常に「（merge タスクの記録なし）」になる
+- 実際の run の `review-resolution.md` の `## 結果:` と `## 判定不能の理由` の形
+- `gh pr view --json comments` の `createdAt`。欠けると takt-sequence の待ち時間の比較が NaN になり、段階が stuck に倒れる
+
+review-fix の worktree（`review-fix-<PR>-<head の先頭 7 桁>`）を片付ける処理はどこにも無く、起動のたびに残る。
+
+## 証跡を PR に載せてやり直しを頼む分岐は、PR の評価が PR を読めない今は、判断依頼で終わる見込み
+
+`references/review-fix.md` の「証跡が無い」の分岐は、証跡を PR の本文かコメントに載せ、[やり直しの印](../../GLOSSARY.md)を付ける。takt-sequence はそれを見てレビューを起動し直す。ところが、PR の評価は `gh` を実行できず、PR の本文もコメントも読んでいない（[takt の知識文書](takt.md#pr-の評価は-gh-を実行できずpr-の本文もコメントも読まないので証跡は差分に入れる)）。そのため、やり直しても同じ理由で失敗し、「やり直し後の失敗」として判断依頼になると読める。実機ではまだ起きていない。この分岐を効かせるには、評価の run で `gh pr view` を許可するか、証跡を差分（テストやファイル）に入れる形に分岐を変える。
+
+## review-fix の印と照合は `takt/scripts/review-stage.mjs` が正本で、案内役は書き直さずに import する
+
+印の文言（`fixLaunchingMarker`・`fixLaunchedMarker`・`redoMarker`）、照合（`fixLaunchingHead`・`fixLaunchedHead`・`redoHead`）、上限（`FIX_LAUNCH_LIMIT` = 2）は、takt 側の `review-stage.mjs` に置き、`decide.mjs` が import する（#360・#361）。依存の向きは、もとから案内役 → takt（`takt.mjs` が `takt-list.mjs` を import していた）なので、逆向きを作らない。`decide.mjs` の「import を持たない」原則はここで崩していて、冒頭のコメントもそう書き直してある。
+
+印をどれで数えるかは、印ごとに違う。
+
+| 印 | 数え方 |
+| --- | --- |
+| やり直しの印 | head ごとに最初の 1 つ（`find` / `findIndex`） |
+| 2 段目の起動の印（観測する handle） | 最後のもの（`.at(-1)`） |
+| 起動の回数（上限） | head を問わず、1 段目の印の数。2 段目は数えない |
+
+`reviewStage`（takt-sequence）と `classifyReviewPullRequest`（案内役）は、やり直しの印の規則を別々に持っている。#374 では、案内役の側だけが `findLastIndex` で、「やり直し → 失敗 → やり直し」のときに takt-sequence は stuck で止まるのに、案内役は判断依頼を出さなくなっていた。PR の評価が見つけて直した（`CODE-NEW-decide-L987`）。片方を変えたら、もう片方とテストもそろえる。
+
+## review-fix の worktree は、ほかの worktree が head ブランチを持っていれば detach する。偽の git ではこの欠陥が見えない
+
+同じ PR に 2 回目の review-fix を起動すると、前回の worktree が同じローカルブランチを checkout したまま残っている。#361 の最初の実装は `git switch --ignore-other-worktrees --track -C` を無条件に流していたので、2 つの worktree がブランチを共有し、前回の worktree の HEAD と index がずれ、未 push の commit も `-C` のリセットで消えるところだった（`ARCH-NEW-review-fix-L51`。この修正のループに約 24 分）。
+
+今の `launchReviewFix` は、`git worktree list --porcelain` に `branch refs/heads/<branch>` と完全に一致する行があるかで持ち主を判定する。持ち主がいなければ `git switch --track -C <branch> origin/<branch>`、いれば `git switch --detach origin/<branch>` にする。detach のときの push は `git push origin HEAD:<branch>` でしか通らないので、`review-fix.mjs` のプロンプトの頭書きと `references/review-fix.md` の push の指示をそろえておく。
+
+この欠陥は、偽の `git` を注入するテストでは出ない。worktree の作り方を変えるときは、`review-fix.test.mjs` の SCN-P2 の形（本物の git の一時リポジトリ）で確かめる。そのテストは、`GIT_CONFIG_GLOBAL` と `GIT_CONFIG_SYSTEM` を `/dev/null` にし、`commit.gpgsign=false` と `core.hooksPath=/dev/null` を渡して、ユーザーの git の設定を持ち込まない。
+
+## 判断依頼の判定は最新の `review-resolution.md` から読むが、それは final-gate の版のことがある
+
+`takt.mjs` の `readReviewReport` は、merge タスクの run の `reports/` を `.takt-report-internal` を飛ばしてたどり、更新時刻が最も新しい `review-resolution.md` から `## 結果:` と `## 判定不能の理由` を抜く。final-gate は裁定と同じ名前のファイルに書くので、#362 で見た 2 つの run では、読まれるのは final-gate の「# 最終検証結果」だった（[takt の知識文書](takt.md#裁定の原文はfinal-gate-が同じ名前のファイルを上書きするのでhistory-から読む)）。失敗した run の final-gate の版に `## 判定不能の理由` の節があるかは確かめていない。無ければ判断依頼には「（判定不能の理由の記録なし）」が載る。
+
+PR の判断依頼の行動は、`issue` に PR の番号を持ち（URL は `/issues/<PR>`）、sub-issue は `subIssue` で渡す。`execute.mjs` は `action.pr` があるときだけレポートを読み、`discord.mjs` も `pr` の有無で本文を切り替える。#362 の plan は、本文の項目（sub-issue・判定・判定できなかった理由・レポートの場所）を 3 つのレビュー失敗の経路だけにかかると狭め、companion の指摘も範囲外にしていた。review が 3 観点で REJECT し、review-fix のセッションの停止の判断依頼にも同じ項目を足した。「既存の停止の観測にそろえる」は観測のことで、本文の項目を省く根拠にはならない。
+
 ## 出典
 
 - 仕様 [#306](https://github.com/daiki-beppu/dotfiles/issues/306)、親 issue [#344](https://github.com/daiki-beppu/dotfiles/issues/344)
@@ -139,3 +185,6 @@ task のセッションは `orca worktree create --name wayfinder-<ticket>` で�
 - [#332](https://github.com/daiki-beppu/dotfiles/issues/332) / [#338](https://github.com/daiki-beppu/dotfiles/pull/338)（knowledge の Orca 起動）
 - [#333](https://github.com/daiki-beppu/dotfiles/issues/333) / [#339](https://github.com/daiki-beppu/dotfiles/pull/339)（formal-spec と to-tickets の gate）
 - 各 PR の takt の run（`takt-worktrees/20261017T0114-330-…`・`…0146-331-…`・`…0237-332-…`・`…0306-333-…` の `.takt/runs/*/reports/`）
+- 仕様 [#357](https://github.com/daiki-beppu/dotfiles/issues/357)、親 issue [#359](https://github.com/daiki-beppu/dotfiles/issues/359)
+- [#360](https://github.com/daiki-beppu/dotfiles/issues/360) / [#370](https://github.com/daiki-beppu/dotfiles/pull/370)、[#361](https://github.com/daiki-beppu/dotfiles/issues/361) / [#373](https://github.com/daiki-beppu/dotfiles/pull/373)、[#362](https://github.com/daiki-beppu/dotfiles/issues/362) / [#374](https://github.com/daiki-beppu/dotfiles/pull/374)、[#363](https://github.com/daiki-beppu/dotfiles/issues/363) / [#366](https://github.com/daiki-beppu/dotfiles/pull/366)
+- 各 ticket の takt の run（`takt-worktrees/20261017T0821-360-…`・`…1443-360-…`・`…0950-363-…`・`…1519-361-…`・`…1631-362-…` の `.takt/runs/*/`）と、PR の評価の run（`.takt/runs/20261017-*-evaluate-pull-request-{356,366,370,373,374}-usin/`）

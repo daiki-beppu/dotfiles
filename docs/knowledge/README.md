@@ -2,8 +2,8 @@
 
 用語にも ADR にもならない、その領域で作業するときの判断の基準・はまりどころ・確かめ方を、領域ごとにまとめる。用語は [GLOSSARY.md](../../GLOSSARY.md)、判断は [docs/adr/](../adr/) にある。
 
-- [案内役（guide スキル）](guide.md): 工程の起動、印の形、セッションの停止の観測、Orca CLI の呼び方、wayfinder の map の遷移
-- [takt で ticket を流す](takt.md): ticket の本文の書き方と、run の結果の読み方
+- [案内役（guide スキル）](guide.md): 工程の起動、印の形、セッションの停止の観測、Orca CLI の呼び方、wayfinder の map の遷移、レビューが失敗した PR の修正のセッション
+- [takt で ticket を流す](takt.md): ticket の本文の書き方、run と PR の評価の結果の読み方、takt スキルのスクリプトのテスト
 - [wayfinder と grilling のスキル](wayfinder.md): 判断の振り分けの書き方、フォークの名残、効き目の測り方
 
 ## 取り込み済み
@@ -24,3 +24,10 @@
 - [#350](https://github.com/daiki-beppu/dotfiles/issues/350) / [#367](https://github.com/daiki-beppu/dotfiles/pull/367) と takt の run `20261017-101830-…-wbz3a8` → [guide.md](guide.md)、[GLOSSARY.md](../../GLOSSARY.md)（仮決め）
 - [#351](https://github.com/daiki-beppu/dotfiles/issues/351) / [#368](https://github.com/daiki-beppu/dotfiles/pull/368) と takt の run `20261017-111253-…-dh8m6u` → [guide.md](guide.md)、[takt.md](takt.md)、[GLOSSARY.md](../../GLOSSARY.md)（回・仮決めの差し戻し）
 - [#352](https://github.com/daiki-beppu/dotfiles/issues/352) の resolution コメントと takt の run `20261017-064222-…-alwakr` → [wayfinder.md](wayfinder.md)、[guide.md](guide.md)、[takt.md](takt.md)
+- [仕様 #357](https://github.com/daiki-beppu/dotfiles/issues/357) → [GLOSSARY.md](../../GLOSSARY.md)（修正のセッション・やり直しの印・レビューそのものが落ちた・工程）、[guide.md](guide.md)
+- [親 issue #359](https://github.com/daiki-beppu/dotfiles/issues/359) → [guide.md](guide.md)（完了条件 2 が未達）
+- [#360](https://github.com/daiki-beppu/dotfiles/issues/360) / [#370](https://github.com/daiki-beppu/dotfiles/pull/370) と takt の run `20261017-082158-…-l4p6jr`・`…-085650-…-ut3dqi`・`…-085937-…-49uc5e`・`20261017-144356-…-gckn8f`、PR の評価の run `20261017-150716-evaluate-pull-request-370-usin` → [takt.md](takt.md)、[guide.md](guide.md)
+- [#361](https://github.com/daiki-beppu/dotfiles/issues/361) / [#373](https://github.com/daiki-beppu/dotfiles/pull/373) と takt の run `20261017-151949-…-2nk8ph`、PR の評価の run `20261017-161520-evaluate-pull-request-373-usin` → [guide.md](guide.md)
+- [#362](https://github.com/daiki-beppu/dotfiles/issues/362) / [#374](https://github.com/daiki-beppu/dotfiles/pull/374) と takt の run `20261017-163128-…-yo6djh`、PR の評価の run `20261017-172052-evaluate-pull-request-374-usin` → [guide.md](guide.md)、[takt.md](takt.md)
+- [#363](https://github.com/daiki-beppu/dotfiles/issues/363) / [#366](https://github.com/daiki-beppu/dotfiles/pull/366) と takt の run `20261017-095049-…-fkm9uw`、PR の評価の run `20261017-100650-evaluate-pull-request-366-usin` → [takt.md](takt.md)
+- PR #356 の評価の run `20261017-063239-evaluate-pull-request-356-usin`（読み直し） → [takt.md](takt.md)（PR の評価が `gh` を実行できない）
