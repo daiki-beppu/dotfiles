@@ -10,6 +10,7 @@ import {
   MARKER_MAP_THREAD_CREATING,
   MARKER_REJECTED,
   MARKER_WAYFINDER_LAUNCHING,
+  MARKER_TO_SPEC_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
   grillingInjectMarker,
@@ -23,7 +24,7 @@ import {
   provisionalSentMarker,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -48,6 +49,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchToTickets({ cwd, spec: action.spec });
       github.comment(action.spec, launchedMarker("to-tickets", handle, launchedAt));
+    } else if (action.kind === "to-spec") {
+      // to-tickets と同じ 2 段の印を、晴れた map に書く。結果は map を指す仕様の issue で、次の周以降に判定する。
+      github.comment(action.map, MARKER_TO_SPEC_LAUNCHING);
+      const launchedAt = now().toISOString();
+      const { handle } = await launchToSpec({ cwd, map: action.map });
+      github.comment(action.map, launchedMarker("to-spec", handle, launchedAt));
     } else if (action.kind === "knowledge") {
       // to-tickets と同じ 2 段の印。PR は待たない（できたかどうかは次の周以降に merge-auto の遷移が判定する）。
       const runDirs = taktRunDirs(cwd, [...action.subIssues]);

@@ -2602,3 +2602,244 @@ test("開き直した ticket の停止の観測: 書き戻しの後に起動の�
   const fresh = mapWorld([reopened([byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_new"))], { assignees: [VIEWER] })], { mapComments: threaded() });
   assert.deepEqual(D.ticketSessionsToObserve(fresh).map((t) => t.handle), ["term_new"]);
 });
+
+// ---- to-spec: 晴れた map（霧が無く、子がすべて閉じていて、起動の印が無い）に to-spec を起動する ----
+const TS_LAUNCHING = "案内役: to-spec を起動する";
+const TS_LAUNCHED_AT = (handle = "term_s", at0 = T0) => `案内役: to-spec を起動した（ターミナル ${handle} / ${at0}）`;
+const TS_CAUSE = "to-spec のセッションの停止";
+const toSpecAction = (map = 20) => ({ kind: "to-spec", key: `to-spec:${map}`, map });
+const toSpecs = (actions) => actions.filter((a) => a.kind === "to-spec");
+const FOG_TEMPLATE = '## Not yet specified\n\n<!-- see "Fog of war": in-scope fog -->\n\n## Out of scope\n- 決済\n';
+const closedChild = (n) => wfTicket(n, "research", { state: "CLOSED" });
+// map #20（子 #21 #22 が CLOSED）。本文と上書きは引数で変える。
+const clearWorld = ({ body = FOG_TEMPLATE, children = [closedChild(21), closedChild(22)], map = {}, over = {} } = {}) =>
+  mapWorld(children, { map: { body, ...map }, over });
+
+test("to-spec: 霧が無く子がすべて CLOSED で印も無い map に、map 単位の起動を 1 件だけ出す", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld())), [toSpecAction()]);
+});
+
+test("to-spec: 子が CLOSED でも、霧が残っていれば出さない（frontier が空でも）", () => {
+  const body = "## Not yet specified\n\n- 認証方式をどうするか\n\n## Out of scope\n";
+  assert.deepEqual(toSpecs(decide(clearWorld({ body }))), []);
+});
+
+test("to-spec: 霧が無くても、claim 済み・ブロック中の ticket が開いていれば出さない（frontier が空でも）", () => {
+  const claimed = clearWorld({ children: [closedChild(21), wfTicket(22, "task", { assignees: ["daiki-beppu"] })] });
+  assert.deepEqual(wfActions(decide(claimed)), []);
+  assert.deepEqual(toSpecs(decide(claimed)), []);
+  const blocked = clearWorld({ children: [closedChild(21), wfTicket(22, "task", { blockedBy: [{ number: 9, state: "OPEN" }] })] });
+  assert.deepEqual(toSpecs(decide(blocked)), []);
+});
+
+test("to-spec: frontier にまだ着手していない ticket があれば出さない。種類のラベルが無い開いた子でも出さない", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld({ children: [closedChild(21), wfTicket(22, "task")] }))), []);
+  assert.deepEqual(toSpecs(decide(clearWorld({ children: [closedChild(21), issue(22, { assignees: ["x"], blockedBy: [] })] }))), []);
+});
+
+test("to-spec: 子が 0 件の map には出さない（起票の途中の空の map で起動しない）", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld({ children: [] }))), []);
+});
+
+test("to-spec: 起動前の印だけ・起動後の印だけ、どちらでも出さない（viewer が map に書いた印）", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld({ map: { comments: [byViewer(TS_LAUNCHING)] } }))), []);
+  assert.deepEqual(toSpecs(decide(clearWorld({ map: { comments: [byViewer(TS_LAUNCHED_AT())] } }))), []);
+});
+
+test("to-spec: viewer 以外のコメントと、行の途中に印の字面があるだけのコメントは印とみなさない", () => {
+  const comments = [{ author: "someone", body: TS_LAUNCHING }, { author: "someone", body: TS_LAUNCHED_AT() }, byViewer(`メモ: ${TS_LAUNCHING}`)];
+  assert.deepEqual(toSpecs(decide(clearWorld({ map: { comments } }))), [toSpecAction()]);
+});
+
+test("to-spec: dispatched に key があれば出さない。同じスナップショットに印を足した 2 周目でも二重に出ない", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld({ over: { dispatched: ["to-spec:20"] } }))), []);
+  const first = clearWorld();
+  assert.equal(toSpecs(decide(first)).length, 1);
+  first.issues.find((i) => i.number === 20).comments.push(byViewer(TS_LAUNCHING));
+  assert.deepEqual(toSpecs(decide(first)), []);
+});
+
+test("to-spec: 保留（wayfinder:on-hold）の map と CLOSED の map には出さない", () => {
+  assert.deepEqual(toSpecs(decide(clearWorld({ map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
+  assert.deepEqual(toSpecs(decide(clearWorld({ map: { state: "CLOSED" } }))), []);
+});
+
+test("to-spec: ticket 側の wayfinder の印は map の to-spec の印とみなさない", () => {
+  const s = clearWorld({ children: [wfTicket(21, "research", { state: "CLOSED", comments: [byViewer(TS_LAUNCHING)] })] });
+  assert.deepEqual(toSpecs(decide(s)), [toSpecAction()]);
+});
+
+test("to-spec: 複数の map は、晴れたものだけに map 順で 1 件ずつ出す", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], body: FOG_TEMPLATE, subIssues: [{ number: 21, state: "CLOSED" }] }),
+    issue(30, { labels: ["wayfinder:map"], body: "## Not yet specified\n- 残り", subIssues: [{ number: 31, state: "CLOSED" }] }),
+    issue(40, { labels: ["wayfinder:map"], body: "", subIssues: [{ number: 41, state: "CLOSED" }] }),
+    closedChild(21), closedChild(31), closedChild(41),
+  ]);
+  assert.deepEqual(toSpecs(decide(s)), [toSpecAction(20), toSpecAction(40)]);
+});
+
+test("to-spec: 既存の遷移（承認依頼・wayfinder の frontier）は変わらない", () => {
+  const base = snapshot([specBare(12)]);
+  const withClear = snapshot([specBare(12), ...clearWorld().issues]);
+  assert.deepEqual(decide(withClear).filter((a) => a.kind !== "to-spec"), decide(base));
+});
+
+// -- 霧の判定 --
+
+test("霧の判定: HTML コメントと空行だけの節は霧なし。節が無い本文・空の本文も霧なし", () => {
+  assert.equal(D.hasFog(FOG_TEMPLATE), false);
+  assert.equal(D.hasFog("## Not yet specified\n"), false);
+  assert.equal(D.hasFog("## Not yet specified"), false);
+  assert.equal(D.hasFog("## Out of scope\n- 決済\n"), false);
+  assert.equal(D.hasFog(""), false);
+});
+
+test("霧の判定: 複数行の HTML コメントと CRLF の空行・空白だけの行でも霧なし", () => {
+  assert.equal(D.hasFog("## Not yet specified\r\n\r\n<!--\r\n説明\r\n-->\r\n   \r\n## Out of scope\r\n- x"), false);
+  assert.equal(D.hasFog("## Not yet specified\n<!-- a -->\n\n<!-- b\nc -->\n\t\n"), false);
+});
+
+test("霧の判定: コメントの外に 1 行でも文字があれば霧あり（コメントの前後・同じ行の後ろでも）", () => {
+  assert.equal(D.hasFog("## Not yet specified\n<!-- 説明 -->\n- 認証方式をどうするか\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\n- 先に書いた\n<!-- 説明 -->\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\n<!-- 説明 --> 後ろに文字\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\r\n- 認証\r\n"), true);
+});
+
+test("霧の判定: 次の ## 見出しから後ろ（Out of scope など）の中身は霧に数えない。見出し前の中身は数えない", () => {
+  assert.equal(D.hasFog("# 目的\n- 本文\n\n## Not yet specified\n<!-- x -->\n\n## Out of scope\n- 決済\n- 通知\n"), false);
+  assert.equal(D.hasFog("## Not yet specified\n<!-- x -->\n## Next\n- a"), false);
+});
+
+test("霧の判定: 節の中のコードフェンスは中身として数える。フェンスの中の見出し風の行は節の境界にしない", () => {
+  assert.equal(D.hasFog("## Not yet specified\n```\n<!-- x -->\n```\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\n```\n## Out of scope\n```\n"), true);
+  assert.equal(D.hasFog("```\n## Not yet specified\n- 例\n```\n"), false);
+});
+
+test("霧の判定: 閉じていない <!-- は節の末尾まで読めないものとして中身に数えない", () => {
+  assert.equal(D.hasFog("## Not yet specified\n<!-- 閉じ忘れ\n- 見えない行\n"), false);
+  assert.equal(D.hasFog("## Not yet specified\n- 先頭\n<!-- 閉じ忘れ\n"), true);
+});
+
+test("霧の判定: HTML コメントの中の見出し・フェンスは節の境界にしない。コメントの後に残る霧は数える", () => {
+  assert.equal(D.hasFog("## Not yet specified\n<!--\n## 説明\n-->\n- 未決事項\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\n<!--\n```\n-->\n- 未決事項\n"), true);
+  assert.equal(D.hasFog("## Not yet specified\n<!--\n## 説明\n-->\n\n## Out of scope\n- 決済\n"), false);
+  assert.deepEqual(toSpecs(decide(clearWorld({ body: "## Not yet specified\n<!--\n## 説明\n-->\n- 未決事項\n" }))), []);
+});
+
+test("霧の判定: 節が複数あれば、どれか 1 つに中身があれば霧あり", () => {
+  assert.equal(D.hasFog("## Not yet specified\n<!-- a -->\n\n## Not yet specified\n- 残り\n"), true);
+});
+
+test("霧の判定: 見出しの字面が違う行（###、前方一致、行の途中）は節の開始とみなさない", () => {
+  assert.equal(D.hasFog("### Not yet specified\n- a\n"), false);
+  assert.equal(D.hasFog("## Not yet specified later\n- a\n"), false);
+  assert.equal(D.hasFog("メモ ## Not yet specified\n- a\n"), false);
+});
+
+test("霧の判定: 入力の本文は書き換えない（純粋）", () => {
+  const body = FOG_TEMPLATE;
+  D.hasFog(body);
+  assert.equal(body, FOG_TEMPLATE);
+});
+
+// -- to-spec のセッションの観測 --
+
+const TS_MAP = (over = {}) => clearWorld({ map: { comments: threaded(byViewer(TS_LAUNCHING), byViewer(TS_LAUNCHED_AT())), ...over } });
+const specOf = (n, body, labels = ["spec"]) => issue(n, { labels, body });
+const tsStall = (extra = [], { sessions = { term_s: obs() }, now = at(1), over = {}, mapOver = {} } = {}) => {
+  const s = TS_MAP(mapOver);
+  s.issues.push(...extra);
+  return { ...s, sessions, now, ...over };
+};
+
+test("to-spec の観測: 起動後の印（handle と時刻）がある map を、その handle と時刻で返す。複数あれば最後の印", () => {
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP()), [{ map: 20, step: "to-spec", handle: "term_s", startedAt: T0 }]);
+  const twice = TS_MAP({ comments: threaded(byViewer(TS_LAUNCHED_AT("term_old")), byViewer(TS_LAUNCHED_AT("term_new", at(5)))) });
+  assert.deepEqual(D.mapSessionsToObserve(twice).map((t) => [t.handle, t.startedAt]), [["term_new", at(5)]]);
+});
+
+test("to-spec の観測: 起動前の印だけ・印が無い・他人の印・wayfinder の起動後の印しかない map は観測しない", () => {
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP({ comments: threaded(byViewer(TS_LAUNCHING)) })), []);
+  assert.deepEqual(D.mapSessionsToObserve(clearWorld()), []);
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP({ comments: [{ author: "someone", body: TS_LAUNCHED_AT() }] })), []);
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP({ comments: [byViewer(`案内役: wayfinder を起動した（ターミナル term_w / ${T0}）`)] })), []);
+});
+
+test("to-spec の観測: 保留の map と CLOSED の map は観測しない", () => {
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP({ labels: ["wayfinder:map", "wayfinder:on-hold"] })), []);
+  assert.deepEqual(D.mapSessionsToObserve(TS_MAP({ state: "CLOSED" })), []);
+});
+
+test("to-spec の観測: 停止の判断依頼の印が map にあれば観測しない", () => {
+  const marked = TS_MAP({ comments: threaded(byViewer(TS_LAUNCHED_AT()), byViewer(`案内役: Discord に判断依頼を送る（#20 ${TS_CAUSE}）`)) });
+  assert.deepEqual(D.mapSessionsToObserve(marked), []);
+});
+
+test("to-spec の観測: spec ラベルで本文に「元の map: #m」だけの行がある issue ができたら観測しない（状態は問わない）", () => {
+  for (const state of ["OPEN", "CLOSED"]) {
+    const s = TS_MAP();
+    s.issues.push(issue(30, { state, labels: ["spec"], body: "概要\n元の map: #20\n以上" }));
+    assert.deepEqual(D.mapSessionsToObserve(s), [], state);
+  }
+  const crlf = TS_MAP();
+  crlf.issues.push(issue(30, { labels: ["spec", "spec-approved"], body: "概要\r\n元の map: #20  \r\n" }));
+  assert.deepEqual(D.mapSessionsToObserve(crlf), []);
+});
+
+test("to-spec の観測: 別の map を指す行・行の途中の言及・spec ラベルの無い issue・本文に行が無い仕様は結果とみなさない", () => {
+  const s = TS_MAP();
+  s.issues.push(
+    specOf(30, "元の map: #21"),
+    specOf(31, "参考: 元の map: #20 を見た"),
+    specOf(32, "元の map: #200"),
+    specOf(33, "元の map: #20", []),
+    specOf(34, "仕様のみ"),
+  );
+  assert.deepEqual(D.mapSessionsToObserve(s).map((t) => t.map), [20]);
+});
+
+test("to-spec の停止: 見つからない・入力待ち・stallMinutes 経過のどれかで、map のスレッドへ判断依頼を 1 件出す", () => {
+  for (const [label, ctx] of [
+    ["見つからない", { sessions: { term_s: obs({ found: false }) } }],
+    ["入力待ち", { sessions: { term_s: obs({ waiting: true, idle: true }) } }],
+    ["時間切れ", { now: at(61) }],
+  ]) {
+    const [req, ...rest] = mapDecisions(decide(tsStall([], ctx)));
+    assert.equal(rest.length, 0, label);
+    assert.equal(req.kind, "request-map-decision", label);
+    assert.deepEqual([req.map, req.issue, req.cause, req.step, req.tab, req.threadId], [20, 20, TS_CAUSE, "to-spec", "to-spec #20", "900"], label);
+    assert.equal(req.key, `request-map-decision:20:20:${TS_CAUSE}`, label);
+    assert.equal(req.title, "地図", label);
+    assert.equal(typeof req.reason, "string", label);
+    assert.deepEqual(req.tail, ["line1", "line2"], label);
+  }
+});
+
+test("to-spec の停止: 動いている間（見つかり・入力待ちでなく・時間内）は出さない", () => {
+  assert.deepEqual(mapDecisions(decide(tsStall())), []);
+});
+
+test("to-spec の停止: 結果の仕様ができた・判断依頼の印がある・dispatched に key がある・観測が無い場合は出さない", () => {
+  const stale = { sessions: { term_s: obs({ found: false }) } };
+  assert.deepEqual(mapDecisions(decide(tsStall([specOf(30, "元の map: #20")], stale))), []);
+  const marked = tsStall([], { ...stale, mapOver: { comments: threaded(byViewer(TS_LAUNCHED_AT()), byViewer(`案内役: Discord に判断依頼を送る（#20 ${TS_CAUSE}）`)) } });
+  assert.deepEqual(mapDecisions(decide(marked)), []);
+  assert.deepEqual(mapDecisions(decide(tsStall([], { ...stale, over: { dispatched: [`request-map-decision:20:20:${TS_CAUSE}`] } }))), []);
+  assert.deepEqual(mapDecisions(decide(tsStall([], { sessions: {} , now: at(61) }))), []);
+});
+
+test("to-spec の停止: map のスレッドがまだ無ければ、判断依頼より先にスレッドを立てる行動を出す", () => {
+  const s = tsStall([], { sessions: { term_s: obs({ found: false }) }, mapOver: { comments: [byViewer(TS_LAUNCHED_AT())] } });
+  const actions = decide(s);
+  assert.deepEqual(creates(actions), [createThread(20, "地図")]);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("to-spec の停止: 仕様のスレッド向けの request-decision は出さない（仕様がまだ無いので map のスレッドへ送る）", () => {
+  const actions = decide(tsStall([], { sessions: { term_s: obs({ found: false }) } }));
+  assert.deepEqual(actions.filter((a) => a.kind === "request-decision"), []);
+});

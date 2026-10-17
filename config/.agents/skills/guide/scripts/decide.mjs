@@ -13,6 +13,8 @@
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 //     | { kind: "wayfinder", key, map, ticket, type }
 //       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
+//     | { kind: "to-spec", key, map }
+//       （open な map が晴れた: 霧が無く、子がすべて閉じていて、to-spec の起動の印が無い。印は map に書く）
 //     | { kind: "create-map-thread", key, map, title }   （知らせることがある open な map に Discord のスレッドが無い。印は map に書く）
 //     | { kind: "notify-human-ticket", key, map, ticket, title, threadId }   （frontier の prototype ticket を map のスレッドへ知らせる。印は map に書く）
 //     | { kind: "request-map-decision", key, map, issue, cause, title, threadId, reason, step, tab, tail }
@@ -44,6 +46,12 @@ export const launchedMarker = (step, handle, launchedAt) => `案内役: ${step} 
 const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）/;
 // Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
 export const tabTitle = (step, spec) => `${step} #${spec}`;
+// map が晴れたときの to-spec の印も 2 段（起動前 / launchedMarker("to-spec", …)）。どちらも map の issue に書く。
+// 起動したセッションの停止の観測は mapSessionsToObserve が行う。結果は、この map を指す仕様の issue ができたこと。
+export const MARKER_TO_SPEC_LAUNCHING = "案内役: to-spec を起動する";
+const TO_SPEC_LAUNCHED_PREFIX = "案内役: to-spec を起動した";
+// to-spec が作る仕様の本文に書く記録の行の接頭辞。`元の map: #m` だけの行を、map m の結果の印として数える。
+export const MAP_SPEC_PREFIX = "元の map: #";
 // wayfinder の ticket の印も 2 段（起動前 / launchedMarker("wayfinder", …)）。どちらも ticket の issue に書く。
 // 起動したセッションの停止の観測は ticketSessionsToObserve が行う（sessionsToObserve は仕様の印だけを読む）。結果は ticket が閉じたこと。
 export const MARKER_WAYFINDER_LAUNCHING = "案内役: wayfinder を起動する";
@@ -330,6 +338,62 @@ function decideWayfinder(snapshot, dispatched) {
   return actions;
 }
 
+// map の本文の `## Not yet specified` 節に、人に見える中身（霧）が残っているか。
+// HTML コメントと空行は中身に数えない。閉じていない `<!--` は GitHub の表示では後ろが見えないので、節の末尾までコメントとみなす。
+// コードフェンスの中の見出しは節の境界にしない（`## 仮決め` の解析と同じ規則）。
+export function hasFog(body) {
+  if (typeof body !== "string") return false;
+  const sections = [];
+  let fence = null;
+  let inComment = false; // コメントの中の見出し・フェンスは見えないので、節の境界にも中身にも数えない
+  let current = null;
+  for (let line of body.split(/\r?\n/)) {
+    if (inComment) {
+      const end = line.indexOf("-->");
+      if (end < 0) continue;
+      inComment = false;
+      line = line.slice(end + 3);
+    }
+    if (fence === null) {
+      line = line.replace(/<!--[\s\S]*?-->/g, "");
+      const open = line.indexOf("<!--");
+      if (open >= 0) {
+        inComment = true;
+        line = line.slice(0, open);
+      }
+    }
+    const opener = FENCE.exec(line)?.[1];
+    if (opener !== undefined && (fence === null || (opener[0] === fence[0] && opener.length >= fence.length))) {
+      fence = fence === null ? opener : null;
+      if (current !== null) current.push(line);
+      continue;
+    }
+    if (fence === null && /^## /.test(line)) {
+      current = line.trimEnd() === "## Not yet specified" ? [] : null;
+      if (current !== null) sections.push(current);
+      continue;
+    }
+    if (current !== null) current.push(line);
+  }
+  return sections.some((lines) => lines.some((l) => l.trim() !== ""));
+}
+
+// 晴れた map ごとの to-spec の起動。子が 1 件以上あり、すべて閉じていて、霧が無く、viewer の起動の印（1 段目か 2 段目）が無い map だけ。
+// 子が 0 件の map は、起票の途中の map かもしれず、コメントも読まれないので印も見えないため出さない。frontier ではなく子の状態を直接見る
+// （claim 済み・ブロック中の ticket が開いていれば、frontier が空でも待つため）。
+function decideToSpec(snapshot, dispatched) {
+  const actions = [];
+  for (const map of openMaps(snapshot)) {
+    const children = map.subIssues ?? [];
+    if (children.length === 0 || children.some((c) => c.state !== "CLOSED") || hasFog(map.body)) continue;
+    if (markers(map, snapshot.viewer).some((b) => b.startsWith(MARKER_TO_SPEC_LAUNCHING) || b.startsWith(TO_SPEC_LAUNCHED_PREFIX))) continue;
+    const key = `to-spec:${map.number}`;
+    if (dispatched.has(key)) continue;
+    actions.push({ kind: "to-spec", key, map: map.number });
+  }
+  return actions;
+}
+
 // 工程ごとの結果（GitHub に出るもの）。表に無い工程は結果を判定できないので観測しない。
 const RESULT_OF = {
   "to-tickets": (snapshot, spec) =>
@@ -359,6 +423,33 @@ export function sessionsToObserve(snapshot) {
       if (own.includes(decisionMarker(spec.number, stallCause(step)))) continue;
       targets.push({ spec: spec.number, step, handle, startedAt });
     }
+  }
+  return targets;
+}
+
+// to-spec の結果。spec ラベルがあり、本文に `元の map: #m` だけの行がある issue（状態は問わない）。
+const hasSpecOfMap = (snapshot, map) =>
+  snapshot.issues.some(
+    (i) =>
+      isSpec(i) &&
+      typeof i.body === "string" &&
+      i.body.split(/\r?\n/).some((line) => line.trim() === `${MAP_SPEC_PREFIX}${map}`),
+  );
+
+// map で起動した to-spec の観測の対象。open な map に viewer の handle つきの起動の印（最後のもの）があり、結果の仕様がまだ無く、
+// map に停止の判断依頼の印が無いものだけ。仕様はまだ無く承認依頼のスレッドも無いので、sessionsToObserve（仕様の印を読む）とは分ける。
+export function mapSessionsToObserve(snapshot) {
+  const { viewer } = snapshot;
+  const targets = [];
+  for (const map of openMaps(snapshot)) {
+    const own = markers(map, viewer);
+    const launched = own
+      .map((b) => LAUNCHED.exec(b))
+      .filter((m) => m && m[1] === "to-spec")
+      .at(-1);
+    if (launched === undefined || hasSpecOfMap(snapshot, map.number)) continue;
+    if (own.includes(decisionMarker(map.number, stallCause("to-spec")))) continue;
+    targets.push({ map: map.number, step: "to-spec", handle: launched[2], startedAt: launched[3] });
   }
   return targets;
 }
@@ -796,6 +887,20 @@ function decideMapNotices(snapshot, dispatched) {
       reason, step: "wayfinder", tab: tabTitle("wayfinder", ticket), tail: observation.tail ?? [],
     });
   }
+  for (const { map: mapNumber, handle, startedAt } of mapSessionsToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (observation === undefined) continue;
+    const reason = stallReason(observation, startedAt, snapshot);
+    if (reason === null) continue;
+    const cause = stallCause("to-spec");
+    const key = `request-map-decision:${mapNumber}:${mapNumber}:${cause}`;
+    if (dispatched.has(key)) continue;
+    const mapIssue = issues.find((i) => i.number === mapNumber);
+    noticesOf(mapIssue).push({
+      kind: "request-map-decision", key, map: mapNumber, issue: mapNumber, cause, title: mapIssue.title,
+      reason, step: "to-spec", tab: tabTitle("to-spec", mapNumber), tail: observation.tail ?? [],
+    });
+  }
   const actions = [];
   for (const map of openMaps(snapshot)) {
     const pending = notices.get(map.number) ?? [];
@@ -879,6 +984,7 @@ export function decide(snapshot) {
   return [
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
+    ...decideToSpec(snapshot, dispatched),
     ...decideMapNotices(snapshot, dispatched),
     ...decideProvisionalRejections(snapshot, dispatched),
     ...decideGrillingAnswers(snapshot, dispatched),

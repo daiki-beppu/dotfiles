@@ -14,6 +14,7 @@ const DESCRIBE = {
   "request-decision": (a) => `${a.key}: 仕様 #${a.spec} のスレッドに #${a.issue} の判断依頼を送る`,
   wayfinder: (a) =>
     `${a.key}: map #${a.map} の ticket #${a.ticket}（${a.type}）を /wayfinder で Orca のタブに起動する（task は origin/main からの worktree、他は main checkout）`,
+  "to-spec": (a) => `${a.key}: 晴れた map #${a.map} から to-spec を Orca のタブで起動する`,
   "create-map-thread": (a) => `${a.key}: map #${a.map} の Discord スレッドを立てる`,
   "notify-human-ticket": (a) => `${a.key}: map #${a.map} のスレッドに人が見る ticket #${a.ticket} を知らせる`,
   "request-map-decision": (a) => `${a.key}: map #${a.map} のスレッドに ticket #${a.issue} の判断依頼を送る`,
