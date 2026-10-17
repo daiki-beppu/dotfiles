@@ -9,7 +9,7 @@ import {
   MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
   knowledgePrOf,
-  toTicketsLaunchedMarker,
+  launchedMarker,
 } from "./decide.mjs";
 
 export function createExecute({ github, discord, cwd, repo, viewer, launchToTickets, now, startTaktSequence, runKnowledge, taktRunDirs }) {
@@ -30,7 +30,7 @@ export function createExecute({ github, discord, cwd, repo, viewer, launchToTick
       github.comment(action.spec, MARKER_TO_TICKETS_LAUNCHING);
       const launchedAt = now().toISOString();
       const { handle } = await launchToTickets({ cwd, spec: action.spec });
-      github.comment(action.spec, toTicketsLaunchedMarker(handle, launchedAt));
+      github.comment(action.spec, launchedMarker("to-tickets", handle, launchedAt));
     } else if (action.kind === "knowledge") {
       github.comment(action.spec, MARKER_KNOWLEDGE_STARTED);
       const runDirs = taktRunDirs(cwd, [...action.subIssues]);
@@ -52,6 +52,9 @@ export function createExecute({ github, discord, cwd, repo, viewer, launchToTick
         url: `https://github.com/${repo}/issues/${action.issue}`,
         reason: action.reason,
         reports: action.reports,
+        step: action.step,
+        tab: action.tab,
+        tail: action.tail,
       });
     } else if (action.kind === "takt-sequence") {
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

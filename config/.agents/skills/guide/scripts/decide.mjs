@@ -11,6 +11,11 @@
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
+//     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, step, tab, tail }
+//       （Orca で起動した工程のセッションが、結果を GitHub に出さないまま止まった。reports は無く、タブの名前と画面の最後の行を持つ）
+// セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
+//   sessions: { [handle]: { found, waiting, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
+//   waiting は入力待ち（確認・許可）、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
 
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
@@ -18,7 +23,11 @@
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
 const LAUNCHED_PREFIX = `${MARKER_STARTED}（ターミナル `;
-export const toTicketsLaunchedMarker = (handle, launchedAt) => `${LAUNCHED_PREFIX}${handle} / ${launchedAt}）`;
+// Orca のタブで起動した工程の印。工程名・ターミナルの handle・起動時刻を持つ。to-tickets の既存の印と同じ形。
+export const launchedMarker = (step, handle, launchedAt) => `案内役: ${step} を起動した（ターミナル ${handle} / ${launchedAt}）`;
+const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）/;
+// Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
+export const tabTitle = (step, spec) => `${step} #${spec}`;
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
 
 // 承認依頼: 送る前（二重送信の防止）と送った後（スレッドとメッセージの ID を GitHub に残す）の 2 つ。差し戻しは 1 つ。
@@ -30,6 +39,7 @@ export const MARKER_REJECTED = "案内役: Discord で差し戻された";
 export const MARKER_DECISION_PREFIX = "案内役: Discord に判断依頼を送る";
 export const CAUSE_ABORT = "takt の ABORT";
 export const CAUSE_FORMAL_SPEC = "formal-spec の検証失敗";
+const stallCause = (step) => `${step} のセッションの停止`;
 export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
 
 // formal-spec が仕様の issue に書くコメントの 1 行目。末尾が「で failed）」なら検証失敗。
@@ -178,6 +188,70 @@ function decideDecisionRequests(snapshot, dispatched) {
   return actions;
 }
 
+// 工程ごとの結果（GitHub に出るもの）。表に無い工程は結果を判定できないので観測しない。
+const RESULT_OF = {
+  "to-tickets": (snapshot, spec) =>
+    snapshot.issues.some((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number)),
+  knowledge: (snapshot, spec) => knowledgePrOf(snapshot.pullRequests, snapshot.viewer, spec.number) !== null,
+  "formal-spec": (snapshot, spec) =>
+    markers(spec, snapshot.viewer).some((b) => b.split(/\r?\n/)[0].startsWith(FORMAL_SPEC_HEADING)),
+};
+
+const DEFAULT_STALL_MINUTES = 60;
+
+// 起動の印に handle があり、結果がまだ無く、判断依頼を送っていない工程。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
+// 同じ工程の印が複数あれば最後の印を使う（印を消して流し直した後の、新しい handle を見るため）。
+export function sessionsToObserve(snapshot) {
+  const targets = [];
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, snapshot.viewer) === null) continue;
+    const own = markers(spec, snapshot.viewer);
+    const latest = new Map();
+    for (const body of own) {
+      const m = LAUNCHED.exec(body);
+      if (m) latest.set(m[1], { handle: m[2], startedAt: m[3] });
+    }
+    for (const [step, { handle, startedAt }] of latest) {
+      const hasResult = RESULT_OF[step];
+      if (hasResult === undefined || hasResult(snapshot, spec)) continue;
+      if (own.includes(decisionMarker(spec.number, stallCause(step)))) continue;
+      targets.push({ spec: spec.number, step, handle, startedAt });
+    }
+  }
+  return targets;
+}
+
+// 止まった理由を 1 つだけ選ぶ（見つからない → 入力待ち → 時間切れ）。止まっていなければ null。
+function stallReason(observation, startedAt, snapshot) {
+  if (!observation.found) return "起動したセッションが Orca に見つからない";
+  if (observation.waiting) return "セッションが入力待ち（確認・許可）で止まっている";
+  const minutes = snapshot.stallMinutes ?? DEFAULT_STALL_MINUTES;
+  if (Date.parse(snapshot.now) - Date.parse(startedAt) >= minutes * 60_000) {
+    return `起動から ${minutes} 分経っても結果が GitHub に出ていない`;
+  }
+  return null;
+}
+
+// 起動したセッションが結果を出さないまま止まったときの判断依頼。送り先は承認依頼のスレッド。
+function decideSessionStalls(snapshot, dispatched) {
+  const actions = [];
+  for (const { spec, step, handle, startedAt } of sessionsToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (observation === undefined) continue;
+    const reason = stallReason(observation, startedAt, snapshot);
+    if (reason === null) continue;
+    const cause = stallCause(step);
+    const key = `request-decision:${spec}:${spec}:${cause}`;
+    if (dispatched.has(key)) continue;
+    const issue = snapshot.issues.find((i) => i.number === spec);
+    actions.push({
+      kind: "request-decision", key, spec, issue: spec, cause, title: issue.title,
+      threadId: sentApprovalRequest(issue, snapshot.viewer).threadId, reason, step, tab: tabTitle(step, spec), tail: observation.tail ?? [],
+    });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -242,5 +316,5 @@ export function decide(snapshot) {
       });
     }
   }
-  return [...actions, ...decideDecisionRequests(snapshot, dispatched)];
+  return [...actions, ...decideDecisionRequests(snapshot, dispatched), ...decideSessionStalls(snapshot, dispatched)];
 }

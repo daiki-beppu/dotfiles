@@ -1,7 +1,8 @@
 // 案内役の入口。仕様の承認依頼を Discord に送り、承認済みの仕様を to-tickets から takt-sequence まで流す。
-// 使い方（対象 repo の root で）: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--dry-run]
+// 使い方（対象 repo の root で）: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--dry-run]
 // 状態は GitHub の issue（マーカーのコメント）に持つ。止めて流し直しても続きから動く。
 import { setTimeout as sleep } from "node:timers/promises";
+import { parseArgs } from "./args.mjs";
 import { createDiscord } from "./discord.mjs";
 import { createExecute } from "./execute.mjs";
 import { createGithub } from "./github.mjs";
@@ -10,27 +11,17 @@ import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { runKnowledge } from "./knowledge.mjs";
+import { observeSession } from "./orca-agent.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 
 const usage = () => {
-  console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--dry-run]");
+  console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--dry-run]");
   process.exit(2);
 };
 
-let repo;
-let interval = 60;
-let dryRun = false;
-let fromSpec;
-const argv = process.argv.slice(2);
-for (let i = 0; i < argv.length; i++) {
-  const a = argv[i];
-  if (a === "--dry-run") dryRun = true;
-  else if (a === "--interval") interval = Number(argv[++i]);
-  else if (a === "--from") fromSpec = Number(argv[++i]);
-  else if (!a.startsWith("--") && !repo) repo = a;
-  else usage();
-}
-if (!repo || !/^[\w.-]+\/[\w.-]+$/.test(repo) || !(interval > 0) || (fromSpec !== undefined && !(Number.isInteger(fromSpec) && fromSpec > 0))) usage();
+const parsed = parseArgs(process.argv.slice(2));
+if (parsed === null) usage();
+const { repo, interval, dryRun, fromSpec, stallMinutes } = parsed;
 
 const cwd = process.cwd();
 const log = (s) => console.log(new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }), s);
@@ -61,6 +52,9 @@ const readSnapshot = createReadSnapshot({
   github,
   discord,
   taktTasks: () => taktTasks(cwd),
+  now: () => new Date(),
+  stallMinutes,
+  observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
 const execute = createExecute({ github, discord, cwd, repo, viewer, launchToTickets, now: () => new Date(), startTaktSequence, runKnowledge, taktRunDirs });

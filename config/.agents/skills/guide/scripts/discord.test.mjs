@@ -261,3 +261,29 @@ test("判断依頼: 理由が長くても 2000 文字以内に収め、止まっ
   assert.ok(content.endsWith("takt のレポート: /w/21/.takt/runs"));
   assert.ok(content.includes("ABORT"));
 });
+
+test("判断依頼（セッションの停止）: 工程・タブの名前・画面の最後の行・理由を本文に含め、takt のレポートの行は出さない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", spec: 12, issue: 12, title: "仕様A", url: "https://github.com/o/r/issues/12",
+    reason: "入力待ちで手を止めている", step: "to-tickets", tab: "to-tickets #12", tail: ["Allow? (y/n)", "rm -rf build"],
+  });
+  const content = calls[0].body.content;
+  for (const part of ["#12", "to-tickets", "to-tickets #12", "Allow? (y/n)", "rm -rf build", "入力待ちで手を止めている", "https://github.com/o/r/issues/12"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(!content.includes("takt のレポート"));
+  assert.ok(!content.includes("undefined"));
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+});
+
+test("判断依頼（セッションの停止）: 画面と理由が長くても 2000 文字以内に収め、工程・仕様・タブ・URL は切り落とさない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", spec: 12, issue: 12, title: "仕様A", url: "https://github.com/o/r/issues/12",
+    reason: "r".repeat(3000), step: "to-tickets", tab: "to-tickets #12", tail: Array.from({ length: 10 }, () => "z".repeat(500)),
+  });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["#12", "to-tickets #12", "https://github.com/o/r/issues/12", "仕様A"]) assert.ok(content.includes(part), part);
+});
