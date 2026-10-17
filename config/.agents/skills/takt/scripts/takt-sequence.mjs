@@ -7,14 +7,16 @@
 //   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
 // - タスクが PR を作ったら、`takt merge <PR>` を workflows/merge-review-automerge.yaml で流す（base との同期・AI の競合解消・
 //   査読と修正・push）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
-//   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたか、現在の head で例外により 2 回落ちたら止める。止まったあとに PR の head が変われば、流し直したときにレビューからやり直す。
+//   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたら、案内役が修正を起動する（PR に印を書く）のを待つ（--fix-wait 分まで。印は読むだけ）。
+//   印があれば修正中として待ち、push で head が変われば新しい head をレビューする。やり直しの印があれば失敗を数え直してレビューし直す（head ごとに 1 回）。
+//   やり直しの後の失敗・現在の head で 2 回落ちた・起動の印が上限・待ち時間切れは止める。判定は review-stage.mjs。
 //   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
 // - 予約済みで BEHIND の PR は揃えない。align-behind.mjs を別のタブで常駐させておく（揃える仕組みはそちらに一本化した）。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
 // 使い方（repo root で、watch が動いている状態で）:
-//   <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30]
+//   <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
 import { execFileSync, spawn } from "node:child_process";
 import { closeSync, openSync, realpathSync } from "node:fs";
@@ -23,8 +25,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
+import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
 
-const opts = { workflow: "default", base: "main", interval: "30" };
+const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES) };
 const issues = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
@@ -33,8 +36,9 @@ for (let i = 0; i < argv.length; i++) {
   else if (/^#?\d+$/.test(a)) issues.push(issueOf(a));
   else { console.error(`不明な引数: ${a}`); process.exit(2); }
 }
-if (issues.length === 0 || !process.env.TAKT_ROOT) {
-  console.error("usage: takt-node.sh takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30]");
+const fixWait = Number(opts["fix-wait"]);
+if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0) {
+  console.error("usage: takt-node.sh takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
   process.exit(2);
 }
 
@@ -51,8 +55,6 @@ const event = (n, s) => { if (last.get(n) !== s) log(s); last.set(n, s); };
 const active = (t) => t.kind === "pending" || t.kind === "running";
 const SKIP_LABELS = ["help wanted"];
 const REVIEW_WORKFLOW = fileURLToPath(new URL("../workflows/merge-review-automerge.yaml", import.meta.url));
-const REVIEWED = "TAKT review completed";
-const REVIEW_FAILED = "TAKT evaluation failed";
 const FAILED_CHECK = ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"];
 
 sh("takt", ["workflow", "doctor", opts.workflow]);
@@ -121,15 +123,18 @@ function stage(n, tasks) {
 
 // takt merge が走らせているレビューの子プロセス（PR 番号 → プロセス）
 const reviewing = new Map();
-// この実行で起動したレビューの回数（PR 番号 → 回数）。merge タスクを作る前に落ちると takt list に残らないので、ここでも数える
+// この実行で起動したレビューの記録（PR 番号 → [{ head, redo }]）。merge タスクを作る前に落ちると takt list に残らないので、ここでも数える
 const attempts = new Map();
 
-// PR のレビューの段階を返す。reviewed: 済み / waiting: 実行中か今起動した / stuck: 失敗して人の手が要る
+// PR のレビューの段階を返す。判定は review-stage.mjs の純粋な関数に任せ、ここは入力の組み立て・出来事の出力・子プロセスの起動と片付けだけを行う
+// reviewed: 済み / waiting: 実行中か修正待ちか今起動した / stuck: 失敗して人の手が要る
 function reviewStage(n, pr, url, tasks) {
   const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
-  if (pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEWED} for head ${pr.headRefOid};`))) {
-    // 子プロセスが生きている間と merge タスクが running の間は、片付けも自動マージ予約も先送りする
-    if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
+  const { stage, reason, redo } = decideReview({
+    head: pr.headRefOid, viewer, comments: pr.comments, merges, attempts: attempts.get(pr.number) ?? [],
+    running: reviewing.has(pr.number), now: new Date(), waitMinutes: fixWait,
+  });
+  if (stage === "reviewed") {
     // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので、予約の前に片付ける（報告書は repo の .takt/runs に残る）
     for (const m of merges) {
       if (m.worktreePath) deleteBranch(cwd, m);
@@ -137,20 +142,17 @@ function reviewStage(n, pr, url, tasks) {
     }
     return "reviewed";
   }
-  if (reviewing.has(pr.number) || merges.some(active)) return "waiting";
-  // 現在の head に対する失敗だけを数える。止まったあとに PR の head が変われば、レビューからやり直す
-  const failure = pr.comments.filter((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`)).at(-1);
-  const crashes = Math.max(merges.filter((x) => x.kind === "failed" && (x.data?.merge_initial_head_sha === pr.headRefOid || x.data?.merge_pushed_head_sha === pr.headRefOid)).length, attempts.get(pr.number) ?? 0);
-  if (failure || crashes >= 2) {
-    event(n, `レビュー失敗: ${label(n)} ${url} ${failure ? failure.body.split("\n")[0] : "（takt merge が 2 回落ちた。takt list の merge タスクを見る）"}`);
-    return "stuck";
+  if (stage === "stuck") { event(n, `レビュー失敗: ${label(n)} ${url} ${reason}`); return "stuck"; }
+  if (stage === "waiting") {
+    if (reason) event(n, `レビュー修正待ち: ${label(n)} ${url} ${reason}`);
+    return "waiting";
   }
   const logFile = join(tmpdir(), `takt-sequence-review-${pr.number}.log`);
   const fd = openSync(logFile, "a");
   const child = spawn("takt", ["merge", String(pr.number)], { cwd, stdio: ["ignore", fd, fd] });
   closeSync(fd);
   reviewing.set(pr.number, child);
-  attempts.set(pr.number, (attempts.get(pr.number) ?? 0) + 1);
+  attempts.set(pr.number, [...(attempts.get(pr.number) ?? []), { head: pr.headRefOid, redo }]);
   const done = () => reviewing.delete(pr.number);
   child.on("exit", done);
   child.on("error", done);
