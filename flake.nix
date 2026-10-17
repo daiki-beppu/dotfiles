@@ -252,6 +252,7 @@
                     "nvidia-geforce-now"
                     "stablyai/orca/orca" # Orca（エージェント並列実行 IDE）。nixpkgs の orca はスクリーンリーダーで別物
                     "raycast"
+                    "typewhisper" # 音声入力。ローカルの Qwen3 ASR（MLX）で日本語を書き起こす
                     "zoom"
                   ];
 
