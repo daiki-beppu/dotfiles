@@ -1310,14 +1310,14 @@ test("takt-sequence の停止: タブが Orca に見つからなければ 1 件�
   assert.match(a.reason, /#22 #23/);
 });
 
-test("takt-sequence の停止: 終わりの目印が画面にあり、open な sub-issue が残っていれば 1 件。画面の数行つき", () => {
+test("takt-sequence の停止: 終わりの行が画面にあり、open な sub-issue が残っていれば 1 件。画面の数行つき", () => {
   const [a, ...rest] = seqStalls(decide(seqWorld()));
   assert.deepEqual(rest, []);
   assert.match(a.reason, /終わった/);
   assert.deepEqual(a.tail, ["…", `${SEQUENCE_DONE}（exit 0）`, "$"]);
 });
 
-test("takt-sequence の停止: 動いている（目印が無い）なら、時間がどれだけ経っても入力待ちでも出さない", () => {
+test("takt-sequence の停止: 動いている（終わりの行が無い）なら、時間がどれだけ経っても入力待ちでも出さない", () => {
   const running = { term_s: obs({ waiting: true, tail: ["投入: #22"] }) };
   assert.deepEqual(seqStalls(decide(seqWorld({ sessions: running, over: { now: at(9999) } }))), []);
 });
@@ -1385,4 +1385,10 @@ test("sequencesToObserve: 起動の印の handle と時刻、渡したうち ope
 
 test("takt-sequence の停止: to-tickets などの工程の停止の判定には混ざらない（sessionsToObserve に出ない）", () => {
   assert.deepEqual(sessionsToObserve(seqWorld()), []);
+});
+
+test("takt-sequence の停止: 終わりの行は行全体で照合する。起動のコマンド行に含まれる同じ文字列では終わった扱いにしない", () => {
+  const commandLine = `$ '/x/takt-node.sh' '/x/takt-sequence.mjs' '22' '23'; echo "${SEQUENCE_DONE}（exit $?）"`;
+  assert.deepEqual(seqStalls(decide(seqWorld({ sessions: { term_s: obs({ tail: [commandLine, "投入: #22"] }) } }))), []);
+  assert.equal(seqStalls(decide(seqWorld({ sessions: { term_s: obs({ tail: [`  ${SEQUENCE_DONE}（exit 1）  `] }) } }))).length, 1);
 });

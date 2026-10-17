@@ -37,6 +37,8 @@ export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
 export const SEQUENCE_DONE = "案内役: takt-sequence が終わった";
 export const sequenceTabTitle = (repo) => `takt sequence ${repo}`;
 const HANDED_ISSUES = /#(\d+)/g;
+// 終わりの行は行全体で照合する（起動のコマンド行が画面に出ても、そこに含まれる同じ文字列に一致しないように）。
+const SEQUENCE_DONE_LINE = new RegExp(`^${SEQUENCE_DONE}（exit \\d+）$`);
 
 // 承認依頼: 送る前（二重送信の防止）と送った後（スレッドとメッセージの ID を GitHub に残す）の 2 つ。差し戻しは 1 つ。
 export const MARKER_APPROVAL_SENDING = "案内役: Discord に承認依頼を送る";
@@ -324,7 +326,7 @@ export function sequencesToObserve(snapshot) {
 function sequenceStallReason(observation, issues) {
   const left = issues.map((n) => `#${n}`).join(" ");
   if (!observation.found) return `takt-sequence のタブが Orca に見つからない（open のまま: ${left}）`;
-  if ((observation.tail ?? []).some((line) => line.includes(SEQUENCE_DONE))) {
+  if ((observation.tail ?? []).some((line) => SEQUENCE_DONE_LINE.test(line.trim()))) {
     return `takt-sequence が終わったが、sub-issue が open のまま残っている（${left}）`;
   }
   return null;

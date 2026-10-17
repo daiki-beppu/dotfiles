@@ -35,7 +35,7 @@ test("taktTasks: タスクを issue・kind・createdAt・step・error・worktree
   ]);
 });
 
-test("startTaktSequence: Orca の新しいタブで起動し、応答の result.terminal.handle を返す。takt-sequence の後に終わりの目印を出す", () => {
+test("startTaktSequence: Orca の新しいタブで起動し、応答の result.terminal.handle を返す。takt-sequence の後に終わりの行を出す", () => {
   const calls = [];
   const run = (args, opts) => {
     calls.push({ args, opts });

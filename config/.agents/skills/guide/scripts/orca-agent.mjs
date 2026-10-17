@@ -2,22 +2,22 @@
 // run(args, { cwd }) は orca を実行して stdout を返す。テストでは偽物を注入する。
 import { execFileSync } from "node:child_process";
 
-const runOrca = (args, { cwd }) =>
+export const runOrca = (args, { cwd }) =>
   execFileSync("orca", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
 
 const head = (text) => String(text).trim().slice(0, 200);
 
-// `orca agent launch --json` の応答から handle（result.outcome.handle）を取る。
-function handleOf(reply) {
+// orca の --json の応答から handle を取る。command は例外の文言に、path は応答の中の handle の場所（`result.outcome.handle` など）。
+export function handleOf(reply, command = "orca agent launch", path = "result.outcome.handle") {
   let parsed;
   try {
     parsed = JSON.parse(reply);
   } catch {
-    throw new Error(`orca agent launch の応答から handle が取れない（JSON ではない）: ${head(reply)}`);
+    throw new Error(`${command} の応答から handle が取れない（JSON ではない）: ${head(reply)}`);
   }
-  const handle = parsed?.result?.outcome?.handle;
+  const handle = path.split(".").reduce((v, k) => v?.[k], parsed);
   if (typeof handle !== "string" || handle === "") {
-    throw new Error(`orca agent launch の応答から handle が取れない（result.outcome.handle が無い）: ${head(reply)}`);
+    throw new Error(`${command} の応答から handle が取れない（${path} が無い）: ${head(reply)}`);
   }
   return handle;
 }

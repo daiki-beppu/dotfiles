@@ -241,7 +241,7 @@ test("formal-spec: 結果が passed になった次の周で to-tickets を起�
   assert.equal(orcaArgv(calls).filter((a) => a[1] === "launch").length, 2);
 });
 
-test("takt-sequence: 渡したマーカー → 起動 → handle と起動時刻の印の順に書き、再起動しても渡さない", async () => {
+test("takt-sequence: 渡した印 → 起動 → handle と起動時刻の印の順に書き、再起動しても渡さない", async () => {
   const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] }), issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] })];
   const { calls, round } = world(issues);
   await round();
