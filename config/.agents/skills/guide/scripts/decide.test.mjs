@@ -2887,10 +2887,10 @@ const rfMerge = (over = {}) => ({ prNumber: 70, kind: "completed", createdAt: "2
 
 // 仕様 #12 の親 #20 が #21 #22 を takt-sequence に渡した状態。#21 の最新の takt タスクの PR #70 が OPEN。
 // reviewPullRequests は snapshot.mjs が作る形（読み取り対象の PR だけ）。
-const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTasks = [rfMerge()], over = {} } = {}) =>
+const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTasks = [rfMerge()], specComments = SENT_ALL, over = {} } = {}) =>
   snapshot(
     [
-      spec(12, { comments: SENT_ALL }),
+      spec(12, { comments: specComments }),
       issue(20, { body: "仕様: #12", comments: [byViewer(HANDED(21, 22)), byViewer(SEQ_LAUNCHED())], subIssues: openSubs(21, 22) }),
       issue(21),
       issue(22),
@@ -2898,7 +2898,7 @@ const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTa
     {
       taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
       pullRequests: [{ number: 70, state, author: VIEWER, body: "", autoMerge: false, head, headBranch: RF_BRANCH }],
-      reviewPullRequests: [{ issue: 21, number: 70, state, head, headBranch: RF_BRANCH, comments }],
+      reviewPullRequests: [{ spec: 12, issue: 21, number: 70, state, head, headBranch: RF_BRANCH, comments }],
       mergeTasks,
       ...over,
     },
@@ -3007,10 +3007,357 @@ test("review-fix: 同じスナップショットで 2 周しても二重に出�
   assert.deepEqual(reviewFixes(decide(next)), [rfAction(H2, { reports: NO_RECORD })]);
 });
 
-test("review-fix: 判断依頼は足さない（上限に達した・やり直し後の失敗・レビューそのものが落ちた head でも、request-decision を出さない）", () => {
-  const limit = rfWorld({ head: H2, comments: [rfLaunching("4".repeat(40)), rfLaunching("5".repeat(40)), rfFailed(H2)] });
-  const redone = rfWorld({ comments: [rfFailed(H1), rfRedo(H1)] });
-  for (const s of [limit, redone]) assert.deepEqual(decide(s).filter((a) => a.kind === "request-decision" && String(a.cause).includes("review")), []);
+// ---- takt のレビュー失敗の判断依頼（上限・やり直し後の失敗・レビューそのものが落ちた） ----
+
+const RF_CAUSE = "takt のレビュー失敗";
+const reviewDecisions = (actions) => actions.filter((a) => a.kind === "request-review-decision");
+const H3 = "3".repeat(40);
+// 判断依頼の期待値（reason は文言を固定せず、別に確かめる）。レポートの場所は reports に入れる。
+const rdAction = (over = {}) => ({
+  kind: "request-review-decision", key: `request-decision:12:70:${RF_CAUSE}`, spec: 12, issue: 21, pr: 70, head: H1, cause: RF_CAUSE,
+  title: "issue 21", threadId: "555", reports: "/repo/.takt/runs/run-1", ...over,
+});
+const rfRedoAt = (head, minutes) => ({ author: VIEWER, body: redoMarker(head), createdAt: at(minutes) });
+const rfCrashMerge = (minutes, over = {}) => rfMerge({ kind: "failed", createdAt: at(minutes), ...over });
+// 上限（2）に達した状態: 別の head で 2 回起動済み、現在の head（H3）に失敗のコメントがあり、現在の head の印は無い。
+const limitWorld = (over = {}) => rfWorld({ head: H3, comments: [rfLaunching(H1), rfLaunched(H1), rfLaunching(H2), rfLaunched(H2), rfFailed(H3)], mergeTasks: [rfMerge({ initialHead: H3 })], ...over });
+
+test("判断依頼（上限）: 現在の head に失敗のコメントがあり、その head の起動の印もやり直しの印も無く、起動が上限（2）に達していれば、原因 takt のレビュー失敗の判断依頼を 1 件出し、review-fix は出さない", () => {
+  const actions = decide(limitWorld());
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), rdAction({ head: H3 }));
+  assert.match(a.reason, /上限/);
+  assert.match(a.reason, /指摘が残っている/);
+  assert.deepEqual(reviewFixes(actions), []);
+  assert.equal(D.CAUSE_REVIEW_FAILED, RF_CAUSE);
+});
+
+test("判断依頼（上限）: 1 回の起動（1 段目と 2 段目で 1 回）の後なら出さず、review-fix を出す。1 段目の印だけ 2 件でも上限に達したと数える", () => {
+  const one = rfWorld({ head: H2, comments: [rfLaunching(H1), rfLaunched(H1), rfFailed(H2)] });
+  assert.deepEqual(reviewDecisions(decide(one)), []);
+  assert.equal(reviewFixes(decide(one)).length, 1);
+  const halves = rfWorld({ head: H3, comments: [rfLaunching(H1), rfLaunching(H2), rfFailed(H3)] });
+  assert.equal(reviewDecisions(decide(halves)).length, 1);
+});
+
+test("判断依頼（上限）: 現在の head に起動の印（1 段目・2 段目）かやり直しの印があれば、上限に達していても出さない（修正中・やり直し待ち）", () => {
+  const base = [rfLaunching(H1), rfLaunched(H1), rfLaunching(H2), rfLaunched(H2)];
+  for (const mark of [rfLaunching(H3), rfLaunched(H3), rfRedo(H3)]) {
+    const s = rfWorld({ head: H3, comments: [...base, rfFailed(H3), mark], mergeTasks: [] });
+    assert.deepEqual(reviewDecisions(decide(s)), [], mark.body);
+    assert.deepEqual(reviewFixes(decide(s)), [], mark.body);
+  }
+});
+
+test("判断依頼（上限）: 失敗のコメントが viewer 以外のもの、または現在の head のものでなければ出さない。viewer 以外の起動の印は数えない", () => {
+  const two = [rfLaunching(H1), rfLaunched(H1), rfLaunching(H2), rfLaunched(H2)];
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ head: H3, comments: [...two, rfFailed(H3, "someone")], mergeTasks: [] }))), []);
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ head: H3, comments: [...two, rfFailed(H1)], mergeTasks: [] }))), []);
+  const others = [{ author: "someone", body: fixLaunchingMarker(H1) }, { author: "someone", body: fixLaunchingMarker(H2) }, rfFailed(H3)];
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ head: H3, comments: others, mergeTasks: [] }))), []);
+  assert.equal(reviewFixes(decide(rfWorld({ head: H3, comments: others, mergeTasks: [] }))).length, 1);
+});
+
+test("判断依頼（やり直しの後の失敗）: 現在の head のやり直しの印より後に同じ head の失敗のコメントがあれば、判断依頼を 1 件出し、review-fix は出さない", () => {
+  const actions = decide(rfWorld({ comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1)] }));
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), rdAction());
+  assert.match(a.reason, /やり直し/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
+test("判断依頼（やり直しの後の失敗）: 同じ head にやり直しの印が複数あるときは最初の印を基準にする。やり直し → 失敗 → やり直し でも判断依頼を 1 件出し、review-fix は出さない", () => {
+  const actions = decide(rfWorld({ comments: [rfRedo(H1), rfFailed(H1), rfRedo(H1)] }));
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), rdAction());
+  assert.match(a.reason, /やり直し/);
+  assert.match(a.reason, /指摘が残っている/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 同じ head にやり直しの印が複数あるときは最初の印より後の failed を数える", () => {
+  const s = rfWorld({
+    comments: [rfRedoAt(H1, 5), rfRedoAt(H1, 30)],
+    mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)],
+  });
+  const actions = decide(s);
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /2 回落ちた/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
+test("判断依頼（やり直しの後の失敗）: 起動の印がある head でも、やり直しの印より後に失敗していれば出す。上限に達していなくても出す", () => {
+  const s = rfWorld({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfRedo(H1), rfFailed(H1)] });
+  assert.equal(reviewDecisions(decide(s)).length, 1);
+  assert.deepEqual(reviewFixes(decide(s)), []);
+});
+
+test("判断依頼（やり直しの後の失敗）: 失敗がやり直しの印より前だけなら出さない（やり直し待ち）。別の head のやり直しの印の後の失敗や、viewer 以外の失敗では出さない", () => {
+  const waiting = rfWorld({ comments: [rfFailed(H1), rfFailed(H1), rfRedo(H1)] });
+  assert.deepEqual(reviewDecisions(decide(waiting)), []);
+  assert.deepEqual(reviewFixes(decide(waiting)), []);
+  const otherHead = rfWorld({ comments: [rfFailed(H1), rfRedo(H2), rfFailed(H1)] });
+  assert.deepEqual(reviewDecisions(decide(otherHead)), []);
+  assert.equal(reviewFixes(decide(otherHead)).length, 1);
+  const stranger = rfWorld({ comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1, "someone")] });
+  assert.deepEqual(reviewDecisions(decide(stranger)), []);
+  const strangerRedo = rfWorld({ comments: [rfFailed(H1), { author: "someone", body: redoMarker(H1) }, rfFailed(H1)] });
+  assert.deepEqual(reviewDecisions(decide(strangerRedo)), []);
+});
+
+test("判断依頼（やり直しの後の失敗）: やり直しの印の後に別の head の失敗しかなければ、現在の head の判断依頼は出ない", () => {
+  const s = rfWorld({ head: H2, comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1)] });
+  assert.deepEqual(reviewDecisions(decide(s)), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 失敗・完了のコメントが無く、現在の head で merge タスクが 2 回 failed なら、判断依頼を 1 件出し、review-fix は出さない。レポートの場所は最新の merge タスクから取る", () => {
+  const tasks = [rfCrashMerge(10, { reports: "/repo/.takt/runs/first" }), rfCrashMerge(40, { reports: "/repo/.takt/runs/second" })];
+  const actions = decide(rfWorld({ comments: [], mergeTasks: tasks }));
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), rdAction({ reports: "/repo/.takt/runs/second" }));
+  assert.match(a.reason, /2 回落ちた/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 現在の head を pushedHead として扱った failed の merge タスクも数える。別の head・別の PR のタスクは数えない", () => {
+  const pushed = rfWorld({ comments: [], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20, { initialHead: H2, pushedHead: H1 })] });
+  assert.equal(reviewDecisions(decide(pushed)).length, 1);
+  const mixed = rfWorld({ comments: [], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20, { initialHead: H2 }), rfCrashMerge(30, { prNumber: 71 })] });
+  assert.deepEqual(reviewDecisions(decide(mixed)), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: failed が 1 件、failed 以外（completed）が 2 件、merge タスクが 0 件のときは出さない（普通の失敗・成功を落ちたと誤判定しない）", () => {
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ comments: [], mergeTasks: [rfCrashMerge(10)] }))), []);
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ comments: [], mergeTasks: [rfMerge(), rfMerge({ createdAt: at(40) })] }))), []);
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ comments: [], mergeTasks: [] }))), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 完了のコメントがある head、実行中・待機中の merge タスクがある head では、failed が 2 件あっても出さない", () => {
+  const two = [rfCrashMerge(10), rfCrashMerge(20)];
+  const reviewed = rfWorld({ comments: [byViewer(`TAKT review completed for head ${H1}; ok`)], mergeTasks: two });
+  assert.deepEqual(reviewDecisions(decide(reviewed)), []);
+  for (const kind of ["running", "pending"]) {
+    const busy = rfWorld({ comments: [], mergeTasks: [...two, rfMerge({ kind, createdAt: at(30) })] });
+    assert.deepEqual(reviewDecisions(decide(busy)), [], kind);
+  }
+  const strangerDone = rfWorld({ comments: [{ author: "someone", body: `TAKT review completed for head ${H1}; ok` }], mergeTasks: two });
+  assert.equal(reviewDecisions(decide(strangerDone)).length, 1);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 現在の head に失敗のコメントがあり、やり直しの印が無ければ、failed が 2 件でも出さない（上限・修正の経路に任せる）", () => {
+  const s = rfWorld({ comments: [rfFailed(H1)], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)] });
+  assert.deepEqual(reviewDecisions(decide(s)), []);
+  assert.equal(reviewFixes(decide(s)).length, 1);
+});
+
+test("判断依頼（レビューそのものが落ちた）: やり直しの印より前の failed の merge タスクは数えない。印より後に 2 件あれば出す", () => {
+  const redo = rfRedoAt(H1, 25);
+  const before = rfWorld({ comments: [redo], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)] });
+  assert.deepEqual(reviewDecisions(decide(before)), []);
+  const oneAfter = rfWorld({ comments: [redo], mergeTasks: [rfCrashMerge(10), rfCrashMerge(40)] });
+  assert.deepEqual(reviewDecisions(decide(oneAfter)), []);
+  const twoAfter = rfWorld({ comments: [redo], mergeTasks: [rfCrashMerge(10), rfCrashMerge(30), rfCrashMerge(40)] });
+  assert.equal(reviewDecisions(decide(twoAfter)).length, 1);
+  assert.deepEqual(reviewFixes(decide(twoAfter)), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: やり直しの印の後の failed が 2 件でも、同じ head のやり直しの印より後に失敗のコメントがあれば、判断依頼は 1 件だけ（二重に出さない）", () => {
+  const s = rfWorld({
+    comments: [rfFailed(H1), rfRedoAt(H1, 25), rfFailed(H1)],
+    mergeTasks: [rfCrashMerge(30), rfCrashMerge(40)],
+  });
+  assert.equal(reviewDecisions(decide(s)).length, 1);
+});
+
+test("判断依頼: PR が OPEN でなければ、どの経路でも出さない", () => {
+  for (const state of ["CLOSED", "MERGED"]) {
+    assert.deepEqual(reviewDecisions(decide(limitWorld({ state }))), [], state);
+    assert.deepEqual(reviewDecisions(decide(rfWorld({ state, comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1)] }))), [], state);
+    assert.deepEqual(reviewDecisions(decide(rfWorld({ state, comments: [], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)] }))), [], state);
+  }
+});
+
+test("判断依頼: 同じスナップショットで 2 周しても二重に出さない（dispatched のキーで止める）。経路ごとに同じ原因なので、同じ PR の別 head では同じキーになる", () => {
+  for (const s of [
+    limitWorld(),
+    rfWorld({ comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1)] }),
+    rfWorld({ comments: [], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)] }),
+  ]) {
+    const [first] = reviewDecisions(decide(s));
+    assert.deepEqual(reviewDecisions(decide({ ...s, dispatched: [first.key] })), []);
+    assert.equal(reviewDecisions(decide(s))[0].key, first.key);
+  }
+});
+
+test("判断依頼: 仕様に同じ PR・同じ原因の送信の印があれば、dispatched が空でも出さない（印は行動より先に書くので、再起動後も二重に送らない）", () => {
+  const marker = byViewer(decisionMarker(70, RF_CAUSE));
+  assert.equal(marker.body, "案内役: Discord に判断依頼を送る（#70 takt のレビュー失敗）");
+  assert.deepEqual(reviewDecisions(decide(limitWorld({ specComments: [...SENT_ALL, marker] }))), []);
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ comments: [rfFailed(H1), rfRedo(H1), rfFailed(H1)], specComments: [...SENT_ALL, marker] }))), []);
+  assert.deepEqual(reviewDecisions(decide(rfWorld({ comments: [], mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)], specComments: [...SENT_ALL, marker] }))), []);
+});
+
+test("判断依頼: 別の PR の番号の印・別の原因の印・viewer 以外の印では止めない（#70 と #7 は別）", () => {
+  const others = [
+    byViewer(decisionMarker(7, RF_CAUSE)),
+    byViewer(decisionMarker(70, "takt の ABORT")),
+    { author: "someone", body: decisionMarker(70, RF_CAUSE) },
+  ];
+  const [a, ...rest] = reviewDecisions(decide(limitWorld({ specComments: [...SENT_ALL, ...others] })));
+  assert.deepEqual(rest, []);
+  assert.equal(a.pr, 70);
+});
+
+test("判断依頼: 送り先は PR を持つ sub-issue の仕様の承認依頼のスレッド。承認依頼を送っていない仕様には出さない", () => {
+  const [a] = reviewDecisions(decide(limitWorld()));
+  assert.equal(a.threadId, "555");
+  assert.equal(a.spec, 12);
+  assert.deepEqual(reviewDecisions(decide(limitWorld({ specComments: [] }))), []);
+});
+
+// ---- 修正のセッション（review-fix）の停止 ----
+
+const RF_STALL_CAUSE = "review-fix のセッションの停止";
+const fixStalls = (actions) => actions.filter((a) => a.kind === "request-decision" && a.cause === RF_STALL_CAUSE);
+const fixSession = (over = {}) => ({ term_f: obs(over) });
+// 修正のセッションを起動済み（head H1 / handle term_f / 起動時刻 T0）で、結果はまだ無い PR #70。
+const stalledFix = ({ comments = [rfFailed(H1), rfLaunching(H1), rfLaunched(H1)], sessions = fixSession({ waiting: true }), now = at(1), head = H1, specComments, over = {} } = {}) =>
+  rfWorld({ comments, head, specComments, over: { sessions, now, ...over } });
+
+test("修正のセッションの停止: 行動に PR・sub-issue と、H を扱った最新の merge タスクの reports を持つ。無ければ記録なしの文言", () => {
+  const [a] = fixStalls(decide(stalledFix()));
+  assert.equal(a.pr, 70);
+  assert.equal(a.subIssue, 21);
+  assert.equal(a.reports, rfMerge().reports);
+  const [none] = fixStalls(decide(stalledFix({ over: { mergeTasks: [] } })));
+  assert.equal(none.reports, "（merge タスクの記録なし）");
+});
+
+test("修正のセッションの停止: 結果が無く入力待ちなら、原因 review-fix のセッションの停止の判断依頼を 1 件出す。送り先は仕様の承認依頼のスレッド、印は PR の番号、タブは review-fix #PR、画面の数行つき", () => {
+  const actions = decide(stalledFix());
+  const [a, ...rest] = fixStalls(actions);
+  assert.deepEqual(rest, []);
+  assert.equal(a.spec, 12);
+  assert.equal(a.issue, 70);
+  assert.equal(a.cause, RF_STALL_CAUSE);
+  assert.equal(a.threadId, "555");
+  assert.equal(a.step, "review-fix");
+  assert.equal(a.tab, "review-fix #70");
+  assert.deepEqual(a.tail, ["line1", "line2"]);
+  assert.match(a.reason, /入力待ち/);
+  assert.equal(a.title, "issue 12");
+  // 修正のセッションの停止は、レビュー失敗の判断依頼（kind も原因も別）とは混ざらない
+  assert.deepEqual(reviewDecisions(actions), []);
+});
+
+test("修正のセッションの停止: 既存の停止の観測と同じ規則（見つからない → 入力待ち → 時間切れ）。見つからないなら時刻によらず、時間切れは 60 分ちょうどから、手が止まっているだけ（idle）では出さない", () => {
+  const [lost] = fixStalls(decide(stalledFix({ sessions: fixSession({ found: false, tail: [] }), now: at(1) })));
+  assert.match(lost.reason, /見つから/);
+  assert.deepEqual(lost.tail, []);
+  const [timeout, ...rest] = fixStalls(decide(stalledFix({ sessions: fixSession(), now: at(60) })));
+  assert.deepEqual(rest, []);
+  assert.match(timeout.reason, /60 分/);
+  assert.deepEqual(fixStalls(decide(stalledFix({ sessions: fixSession(), now: at(59) }))), []);
+  assert.deepEqual(fixStalls(decide(stalledFix({ sessions: fixSession({ idle: true }), now: at(1) }))), []);
+  assert.deepEqual(fixStalls(decide(stalledFix({ sessions: fixSession(), now: at(60), over: { stallMinutes: 120 } }))), []);
+  assert.equal(fixStalls(decide(stalledFix({ sessions: fixSession(), now: at(30), over: { stallMinutes: 30 } }))).length, 1);
+});
+
+test("修正のセッションの停止: 時間切れは 2 段目の印の起動時刻から数える（1 段目の印や失敗のコメントの時刻ではない）", () => {
+  const launchedLate = byViewer(fixLaunchedMarker(H1, "term_f", at(50)));
+  const comments = [rfFailed(H1), rfLaunching(H1), launchedLate];
+  assert.deepEqual(fixStalls(decide(stalledFix({ comments, sessions: fixSession(), now: at(100) }))), []);
+  assert.equal(fixStalls(decide(stalledFix({ comments, sessions: fixSession(), now: at(110) }))).length, 1);
+});
+
+test("修正のセッションの停止: 観測が無い（sessions に handle が無い）なら出さない。2 段目の印が無い（1 段目だけ）なら観測の対象にも出さない", () => {
+  assert.deepEqual(fixStalls(decide(stalledFix({ sessions: {} }))), []);
+  const halfway = stalledFix({ comments: [rfFailed(H1), rfLaunching(H1)], sessions: fixSession({ found: false }) });
+  assert.deepEqual(fixStalls(decide(halfway)), []);
+  assert.deepEqual(D.reviewFixSessionsToObserve(halfway), []);
+});
+
+test("修正のセッションの停止: 現在の head が印の head から変わっていれば、見つからない・時間切れでも止まった扱いにせず、観測の対象にも出さない", () => {
+  const s = stalledFix({ head: H2, comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1)], sessions: fixSession({ found: false }), now: at(500) });
+  assert.deepEqual(fixStalls(decide(s)), []);
+  assert.deepEqual(D.reviewFixSessionsToObserve(s), []);
+});
+
+test("修正のセッションの停止: 印の head にやり直しの印が付いていれば、見つからない・時間切れでも止まった扱いにせず、観測の対象にも出さない。別の head や viewer 以外のやり直しの印は結果にならない", () => {
+  const redone = stalledFix({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfRedo(H1)], sessions: fixSession({ found: false }), now: at(500) });
+  assert.deepEqual(fixStalls(decide(redone)), []);
+  assert.deepEqual(D.reviewFixSessionsToObserve(redone), []);
+  for (const other of [rfRedo(H2), { author: "someone", body: redoMarker(H1) }]) {
+    const s = stalledFix({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), other], sessions: fixSession({ found: false }), now: at(500) });
+    assert.equal(fixStalls(decide(s)).length, 1);
+    assert.equal(D.reviewFixSessionsToObserve(s).length, 1);
+  }
+});
+
+test("修正のセッションの停止: 印の head にやり直しの印が付いた後でも、ほかの経路（やり直しの後の失敗）の判断依頼とは混ざらない（停止は 0 件、レビュー失敗は 1 件）", () => {
+  const s = stalledFix({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfRedo(H1), rfFailed(H1)], sessions: fixSession({ found: false }), now: at(500) });
+  assert.deepEqual(fixStalls(decide(s)), []);
+  assert.equal(reviewDecisions(decide(s)).length, 1);
+});
+
+test("修正のセッションの停止: 判断依頼は 1 度だけ。dispatched のキー、仕様の停止の印のどちらでも止まる。別の原因の印・別の PR の印・viewer 以外の印では止まらない", () => {
+  const s = stalledFix();
+  const [first] = fixStalls(decide(s));
+  assert.deepEqual(fixStalls(decide({ ...s, dispatched: [first.key] })), []);
+  assert.equal(fixStalls(decide(s))[0].key, first.key);
+  const marker = (n, cause, login = VIEWER) => ({ author: login, body: decisionMarker(n, cause) });
+  assert.deepEqual(fixStalls(decide(stalledFix({ specComments: [...SENT_ALL, marker(70, RF_STALL_CAUSE)] }))), []);
+  assert.deepEqual(D.reviewFixSessionsToObserve(stalledFix({ specComments: [...SENT_ALL, marker(70, RF_STALL_CAUSE)] })), []);
+  for (const other of [marker(70, RF_CAUSE), marker(7, RF_STALL_CAUSE), marker(70, RF_STALL_CAUSE, "someone"), marker(12, RF_STALL_CAUSE)]) {
+    assert.equal(fixStalls(decide(stalledFix({ specComments: [...SENT_ALL, other] }))).length, 1, other.body);
+  }
+});
+
+test("修正のセッションの停止: 停止の判断依頼の印が、レビュー失敗の判断依頼を止めない（原因ごとに 1 度）", () => {
+  const stall = byViewer(decisionMarker(70, RF_STALL_CAUSE));
+  const s = limitWorld({ specComments: [...SENT_ALL, stall] });
+  assert.equal(reviewDecisions(decide(s)).length, 1);
+});
+
+test("修正のセッションの停止: PR が OPEN でなければ出さず、観測の対象にも出さない", () => {
+  const s = stalledFix({ sessions: fixSession({ found: false }) });
+  for (const state of ["CLOSED", "MERGED"]) {
+    const closed = { ...s, reviewPullRequests: s.reviewPullRequests.map((p) => ({ ...p, state })) };
+    assert.deepEqual(fixStalls(decide(closed)), [], state);
+    assert.deepEqual(D.reviewFixSessionsToObserve(closed), [], state);
+  }
+});
+
+test("reviewFixSessionsToObserve: 結果が無い PR の viewer の最後の 2 段目の印から、仕様・PR・sub-issue・handle・起動時刻を返す", () => {
+  const second = byViewer(fixLaunchedMarker(H2, "term_g", at(10)));
+  const s = rfWorld({ head: H2, comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfFailed(H2), rfLaunching(H2), second] });
+  assert.deepEqual(D.reviewFixSessionsToObserve(s), [{ spec: 12, pr: 70, issue: 21, handle: "term_g", startedAt: at(10) }]);
+});
+
+test("reviewFixSessionsToObserve: 最後の印の head に結果が出ていれば、それより前の印の handle も観測しない", () => {
+  const second = byViewer(fixLaunchedMarker(H2, "term_g", at(10)));
+  const s = rfWorld({ head: H3, comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfLaunching(H2), second] });
+  assert.deepEqual(D.reviewFixSessionsToObserve(s), []);
+});
+
+test("reviewFixSessionsToObserve: 起動の印が viewer 以外のもの、読み取った PR が無い（未設定・空）ときは返さない", () => {
+  const stranger = rfWorld({ comments: [rfFailed(H1), { author: "someone", body: fixLaunchedMarker(H1, "term_f", T0) }] });
+  assert.deepEqual(D.reviewFixSessionsToObserve(stranger), []);
+  assert.deepEqual(D.reviewFixSessionsToObserve(rfWorld({ over: { reviewPullRequests: [] } })), []);
+  const { reviewPullRequests, ...without } = rfWorld();
+  assert.deepEqual(D.reviewFixSessionsToObserve(without), []);
+});
+
+test("修正のセッションの停止: 同じスナップショットで 2 周しても、停止の判断依頼が二重に出ない（1 周目の key を dispatched に入れて 0 件）", () => {
+  const s = stalledFix({ sessions: fixSession({ found: false }) });
+  const first = fixStalls(decide(s));
+  assert.equal(first.length, 1);
+  assert.deepEqual(fixStalls(decide({ ...s, dispatched: first.map((a) => a.key) })), []);
 });
 
 // 読み取り対象（snapshot.mjs が PR のコメントを読む範囲）
@@ -3020,7 +3367,7 @@ const rfToRead = (over = {}) => {
 };
 
 test("reviewPullRequestsToRead: 渡した sub-issue の最新の takt タスクの PR が OPEN なら、issue・番号・state・head・head ブランチを返す", () => {
-  assert.deepEqual(rfToRead(), [{ issue: 21, number: 70, state: "OPEN", head: H1, headBranch: RF_BRANCH }]);
+  assert.deepEqual(rfToRead(), [{ spec: 12, issue: 21, number: 70, state: "OPEN", head: H1, headBranch: RF_BRANCH }]);
 });
 
 test("reviewPullRequestsToRead: PR を持たない sub-issue（takt タスクが無い・prUrl が無い）と、PR が OPEN でないものは返さない", () => {

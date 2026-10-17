@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { SEQUENCE_DONE } from "./decide.mjs";
 import { mergeTasks, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
+// レビュー失敗の判断依頼で読むレポートの読み取り（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
+import * as T from "./takt.mjs";
 
 test("taktRunDirs: 対象 issue のタスクのうち、実在する run のディレクトリだけを重複なく返す", () => {
   const root = mkdtempSync(join(tmpdir(), "takt-run-dirs-"));
@@ -79,4 +81,58 @@ test("mergeTasks: merge_task が true でないタスクと、pr_number が整�
 test("mergeTasks: 実行が失敗したら例外を伝え、JSON でない出力は例外にする（黙って空にしない）", () => {
   assert.throws(() => mergeTasks("/repo", () => { throw new Error("takt-node.sh が失敗"); }), /takt-node\.sh が失敗/);
   assert.throws(() => mergeTasks("/repo", () => "not json"));
+});
+
+// ---- レビュー失敗の判断依頼に載せる、merge タスクの run のレポート（final-gate の review-resolution.md） ----
+// 偽のレポートを一時ディレクトリに置いて読む。形は takt 0.71.0 の builtin（supervisor-validation）の `## 結果:` と `## 判定不能の理由（BLOCKED の場合）`。
+const NO_VERDICT = "（レポートに判定が無い）";
+const NO_UNDECIDABLE = "（判定不能の理由の記録なし）";
+const resolution = (result, undecidable) =>
+  `# 最終検証結果\n\n## 結果: ${result}\n\n## 概要\n要約\n${undecidable === undefined ? "" : `\n## 判定不能の理由（BLOCKED の場合）\n${undecidable}\n\n## 次の確認\n- 別の節\n`}`;
+const putReport = (runDir, rel, text, mtimeSec) => {
+  const file = join(runDir, "reports", ...rel.split("/"));
+  mkdirSync(join(file, ".."), { recursive: true });
+  writeFileSync(file, text);
+  if (mtimeSec !== undefined) utimesSync(file, mtimeSec, mtimeSec);
+};
+const newRun = () => mkdtempSync(join(tmpdir(), "takt-run-"));
+
+test("readReviewReport: 入れ子の reports/call-…/review-resolution.md から、判定と判定不能の理由（次の見出しの手前まで）を読む", () => {
+  const run = newRun();
+  putReport(run, "call-1/call-2/review-resolution.md", resolution("BLOCKED", "- 実機の結果が無い\n- 再現手順が不明"));
+  assert.deepEqual(T.readReviewReport(run), { verdict: "BLOCKED", undecidable: "- 実機の結果が無い\n- 再現手順が不明" });
+});
+
+test("readReviewReport: REJECT のレポートに判定不能の理由の節が無ければ、判定は REJECT、理由は「記録なし」の文言にする", () => {
+  const run = newRun();
+  putReport(run, "call-1/review-resolution.md", resolution("REJECT"));
+  assert.deepEqual(T.readReviewReport(run), { verdict: "REJECT", undecidable: NO_UNDECIDABLE });
+});
+
+test("readReviewReport: review-resolution.md が複数あれば、更新時刻が最も新しいものを読む", () => {
+  const run = newRun();
+  putReport(run, "call-1/review-resolution.md", resolution("BLOCKED", "- 古い理由"), 1_000_000);
+  putReport(run, "call-2/review-resolution.md", resolution("REJECT", undefined), 2_000_000);
+  putReport(run, "call-3/review-resolution.md", resolution("APPROVE", undefined), 1_500_000);
+  assert.equal(T.readReviewReport(run).verdict, "REJECT");
+});
+
+test("readReviewReport: review-resolution.md 以外のレポートの判定と、.takt-report-internal の履歴は判定に使わない", () => {
+  const run = newRun();
+  putReport(run, "call-1/architecture-review.md", "## 結果: APPROVE\n", 3_000_000);
+  putReport(run, ".takt-report-internal/review-resolution.md", resolution("REJECT", "- 内部の理由"), 4_000_000);
+  putReport(run, "call-1/.takt-report-internal/review-resolution.md", resolution("REJECT", "- 内部の理由"), 4_000_000);
+  assert.deepEqual(T.readReviewReport(run), { verdict: NO_VERDICT, undecidable: NO_UNDECIDABLE });
+  putReport(run, "call-1/review-resolution.md", resolution("BLOCKED", "- 本物の理由"), 1_000_000);
+  assert.deepEqual(T.readReviewReport(run), { verdict: "BLOCKED", undecidable: "- 本物の理由" });
+});
+
+test("readReviewReport: run のディレクトリ・reports が無い、レポートの場所が「記録なし」の文言、review-resolution.md に判定の行が無い場合は、例外にせず決まった文言を返す", () => {
+  const empty = newRun();
+  const missing = join(empty, "nothing");
+  const noVerdict = newRun();
+  putReport(noVerdict, "call-1/review-resolution.md", "# 結果なし\n本文だけ\n");
+  for (const dir of [missing, empty, "（merge タスクの記録なし）", noVerdict]) {
+    assert.deepEqual(T.readReviewReport(dir), { verdict: NO_VERDICT, undecidable: NO_UNDECIDABLE }, String(dir));
+  }
 });

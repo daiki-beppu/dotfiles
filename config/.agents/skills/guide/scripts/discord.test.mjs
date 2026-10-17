@@ -288,6 +288,70 @@ test("判断依頼（セッションの停止）: 画面と理由が長くても
   for (const part of ["#12", "to-tickets #12", "https://github.com/o/r/issues/12", "仕様A"]) assert.ok(content.includes(part), part);
 });
 
+// ---- 判断依頼（takt のレビュー失敗）: PR・sub-issue・判定・判定できなかった理由・レポートの場所 ----
+
+const reviewRequest = (over = {}) => ({
+  threadId: "T1", spec: 12, issue: 70, title: "実装A", url: "https://github.com/o/r/pull/70",
+  reason: "やり直しの印の後も同じ head でレビューが失敗した", reports: "/repo/.takt/runs/run-1",
+  pr: 70, subIssue: 21, verdict: "BLOCKED", undecidable: "- 実機の結果が無い",
+  ...over,
+});
+
+test("判断依頼（レビュー失敗）: 本文に PR・sub-issue・判定・判定できなかった理由・PR の URL・レポートの場所・仕様が入り、承認依頼のスレッドへ送る", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest(reviewRequest());
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["#12", "#70", "#21", "実装A", "判定: BLOCKED", "実機の結果が無い", "やり直しの印の後も同じ head", "https://github.com/o/r/pull/70", "/repo/.takt/runs/run-1"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(!content.includes("undefined"));
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+});
+
+test("判断依頼（レビュー失敗）: PR と sub-issue は別の番号として区別して書く（PR の行に PR の番号、sub-issue の行に sub-issue の番号）", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest(reviewRequest());
+  const lines = calls[0].body.content.split("\n");
+  assert.ok(lines.some((l) => l.includes("PR") && l.includes("#70") && !l.includes("#21")), calls[0].body.content);
+  assert.ok(lines.some((l) => l.includes("sub-issue") && l.includes("#21") && !l.includes("#70")), calls[0].body.content);
+});
+
+test("判断依頼（レビュー失敗）: 判定できなかった理由と理由が長くても 2000 文字以内に収め、PR・sub-issue・判定・URL・レポートの場所は切り落とさない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest(reviewRequest({ reason: `r${"x".repeat(5000)}`, undecidable: `u${"y".repeat(5000)}` }));
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["#12", "#70", "#21", "実装A", "判定: BLOCKED", "https://github.com/o/r/pull/70"]) assert.ok(content.includes(part), `本文に ${part} が無い`);
+  assert.ok(content.endsWith("takt のレポート: /repo/.takt/runs/run-1"), content.slice(-80));
+  assert.ok(content.includes("r") && content.includes("u"), "理由と判定できなかった理由は切り詰めても残す");
+});
+
+test("判断依頼（修正のセッションの停止）: tab と tail があれば画面の節を足し、長くても 2000 文字以内で PR・sub-issue・判定・レポートの場所は残る", async () => {
+  const sent = [];
+  const d = createDiscord({ token: "t", guildId: "g", userId: "U", fetch: async (_u, init) => { sent.push(JSON.parse(init.body).content); return { ok: true, status: 200, json: async () => ({ id: "M" }) }; } });
+  await d.sendDecisionRequest(reviewRequest({ step: "review-fix", tab: "review-fix #70", tail: Array.from({ length: 10 }, () => "t".repeat(500)), reason: "r".repeat(5000), undecidable: "u".repeat(5000) }));
+  const c = sent[0];
+  assert.ok(c.length <= 2000, String(c.length));
+  for (const part of ["PR: #70", "sub-issue: #21", "判定: BLOCKED", "review-fix #70", "画面の最後の行", "takt のレポート: /repo/.takt/runs/run-1"]) assert.ok(c.includes(part), part);
+  assert.ok(c.endsWith("/repo/.takt/runs/run-1"));
+});
+
+test("判断依頼（レビュー失敗）: 判定できなかった理由が無い（undecidable を渡さない）とき、その行を作らない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest(reviewRequest({ undecidable: undefined }));
+  const content = calls[0].body.content;
+  assert.ok(!content.includes("undefined"), content);
+  assert.ok(content.includes("判定: BLOCKED"));
+});
+
+test("判断依頼（レビュー以外）: pr を渡さない今の呼び出しの本文に、PR・sub-issue・判定の行を足さない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({ threadId: "T1", spec: 12, issue: 21, title: "実装A", url: "u", reason: "ABORT", reports: "/w/21/.takt/runs" });
+  const content = calls[0].body.content;
+  assert.ok(!content.includes("判定:") && !content.includes("sub-issue") && !content.includes("PR:"), content);
+});
+
 // ---- map のスレッド・人が見る ticket・map の判断依頼 ----
 
 test("map のスレッド: repo のチャンネルに公開スレッドを map の題名つきの名前で立て、スレッドの ID を返す。メッセージは送らない", async () => {
