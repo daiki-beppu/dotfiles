@@ -70,6 +70,8 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
         author: p.user?.login,
         body: p.body ?? "",
         autoMerge: p.auto_merge != null,
+        head: p.head?.sha,
+        headBranch: p.head?.ref,
       }));
     },
 

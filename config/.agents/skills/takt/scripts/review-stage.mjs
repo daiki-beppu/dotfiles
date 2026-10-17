@@ -20,6 +20,12 @@ const REDO = new RegExp(`^案内役: レビューのやり直しを頼む for he
 const active = (t) => t.kind === "pending" || t.kind === "running";
 const time = (s) => new Date(s).getTime();
 const firstLine = (body) => body.split("\n")[0];
+const markedHead = (re) => (body) => (firstLine(body).match(re) ?? [])[1];
+
+// 本文の 1 行目が印に一致すれば head を返し、一致しなければ undefined を返す（案内役の判定も同じ照合を使う）
+export const fixLaunchingHead = markedHead(LAUNCHING);
+export const fixLaunchedHead = markedHead(LAUNCHED);
+export const redoHead = markedHead(REDO);
 
 // 戻り値: { stage, reason, redo }
 // stage: reviewed（済み）/ waiting（実行中・修正待ち）/ stuck（人の手が要る）/ review（レビューを起動する）
@@ -29,9 +35,8 @@ const firstLine = (body) => body.split("\n")[0];
 // now: Date・ISO 文字列・ミリ秒のどれでもよい
 export function reviewStage({ head, viewer, comments, merges, attempts, running, now, waitMinutes }) {
   const mine = comments.filter((c) => c.author?.login === viewer);
-  const markedHead = (re, c) => (firstLine(c.body).match(re) ?? [])[1];
 
-  const redoComment = mine.find((c) => markedHead(REDO, c) === head);
+  const redoComment = mine.find((c) => redoHead(c.body) === head);
   const redo = redoComment?.createdAt ?? null;
   const result = (stage, reason = null) => ({ stage, reason, redo });
   const busy = running || merges.some(active);
@@ -54,8 +59,8 @@ export function reviewStage({ head, viewer, comments, merges, attempts, running,
   if (!failure) return result("review");
 
   // 起動の回数は 1 段目の印で数える（1 回の起動が 2 段で 1 回）
-  const hasMark = mine.some((c) => markedHead(LAUNCHING, c) === head || markedHead(LAUNCHED, c) === head);
-  if (!hasMark && mine.filter((c) => markedHead(LAUNCHING, c)).length >= FIX_LAUNCH_LIMIT) {
+  const hasMark = mine.some((c) => fixLaunchingHead(c.body) === head || fixLaunchedHead(c.body) === head);
+  if (!hasMark && mine.filter((c) => fixLaunchingHead(c.body)).length >= FIX_LAUNCH_LIMIT) {
     return result("stuck", `修正の起動が上限（${FIX_LAUNCH_LIMIT} 回）に達した: ${reasonOf}`);
   }
   if (hasMark) return result("waiting", `修正中: ${reasonOf}`);

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_FIX_WAIT_MINUTES, FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED,
-  fixLaunchedMarker, fixLaunchingMarker, redoMarker, reviewStage,
+  fixLaunchedHead, fixLaunchedMarker, fixLaunchingHead, fixLaunchingMarker, redoHead, redoMarker, reviewStage,
 } from "./review-stage.mjs";
 
 const A = "a".repeat(40);
@@ -110,4 +110,21 @@ test("起動ごとに { head, redo } を記録して次周へ渡す: 同じ head
   assert.equal(round({ comments: redoComments }), "review");
   assert.equal(round({ comments: redoComments }), "review");
   assert.equal(round({ comments: redoComments }), "stuck");
+});
+
+// 印の照合（案内役の判定が import して使う）。本文の 1 行目が印に一致すれば head を、しなければ undefined を返す。
+test("fixLaunchingHead・fixLaunchedHead・redoHead: 各印の本文から head を取り出す。ほかの印・別の文言・40 桁でない head は undefined", () => {
+  assert.equal(fixLaunchingHead(fixLaunchingMarker(A)), A);
+  assert.equal(fixLaunchedHead(fixLaunchedMarker(A, "h1", at("10:00"))), A);
+  assert.equal(redoHead(redoMarker(A)), A);
+  assert.equal(fixLaunchingHead(fixLaunchedMarker(A, "h1", at("10:00"))), undefined);
+  assert.equal(fixLaunchedHead(fixLaunchingMarker(A)), undefined);
+  assert.equal(redoHead(fixLaunchingMarker(A)), undefined);
+  assert.equal(redoHead("案内役: レビューのやり直しを頼む for head abc"), undefined);
+  assert.equal(fixLaunchingHead(""), undefined);
+});
+
+test("fixLaunchingHead: 本文の 1 行目だけを見る（2 行目以降に印があっても拾わない）", () => {
+  assert.equal(redoHead(`関係ない行\n${redoMarker(A)}`), undefined);
+  assert.equal(redoHead(`${redoMarker(A)}\n補足`), A);
 });

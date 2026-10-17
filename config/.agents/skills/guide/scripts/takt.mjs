@@ -1,4 +1,5 @@
 // takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たず、handle を返す）。
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,8 +20,28 @@ export function taktTasks(cwd, list = listTasks) {
       step: t.failure?.step,
       error: t.failure?.error,
       worktreePath: t.worktreePath,
+      prUrl: t.prUrl,
     }))
     .filter((t) => Number.isInteger(t.issue));
+}
+
+const runTaktNode = (args, { cwd }) =>
+  execFileSync(`${TAKT_SCRIPTS}takt-node.sh`, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
+
+// merge タスクの記録（PR 番号・状態・作成時刻・扱った head・レポートの場所）。merge_task と pr_number は takt list --format json に出ないので、
+// TaskRunner を読む merge-tasks.mjs を takt-node.sh 経由で呼ぶ。merge タスクでないものと、pr_number が整数でないものは除く。
+export function mergeTasks(cwd, run = runTaktNode) {
+  const rows = JSON.parse(run([`${TAKT_SCRIPTS}merge-tasks.mjs`], { cwd }));
+  return rows
+    .filter((t) => t.data?.merge_task === true && Number.isInteger(t.data?.pr_number))
+    .map((t) => ({
+      prNumber: t.data.pr_number,
+      kind: t.kind,
+      createdAt: t.createdAt,
+      initialHead: t.data.merge_initial_head_sha,
+      pushedHead: t.data.merge_pushed_head_sha,
+      reports: t.runSlug ? join(cwd, ".takt", "runs", t.runSlug) : null,
+    }));
 }
 
 // takt-sequence の後に SEQUENCE_DONE の行を出す。タブは閉じずにシェルへ戻るので、終わったことはこの行で見分ける。

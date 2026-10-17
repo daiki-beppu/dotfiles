@@ -1,5 +1,5 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
-// I/O・時刻・環境変数は読まない（import も持たない）。LLM も使わず、ラベルと状態だけで決める。
+// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
 //
 // snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
 //             reactions: [{ emoji, userId }], assignees: [login], blockedBy: [{ number, state }] }]
@@ -11,6 +11,9 @@
 //     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
 //     | { kind: "knowledge", key, spec, parents, subIssues }   （snapshot.pullRequests: [{ number, state, author, body, autoMerge }]）
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
+//     | { kind: "review-fix", key, issue, pr, head, branch, reports }
+//       （渡した sub-issue の OPEN な PR の現在の head に viewer の takt の失敗のコメントがあり、その head の起動の印・やり直しの印が無く、起動が上限未満。印は PR に書く）
+//       snapshot.reviewPullRequests: [{ issue, number, state, head, headBranch, comments }] / snapshot.mergeTasks: [{ prNumber, kind, createdAt, initialHead, pushedHead, reports }]
 //     | { kind: "wayfinder", key, map, ticket, type }
 //       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
 //     | { kind: "to-spec", key, map }
@@ -36,6 +39,8 @@
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
+import { FIX_LAUNCH_LIMIT, REVIEW_FAILED, fixLaunchedHead, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
+
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
 const LAUNCHED_PREFIX = `${MARKER_STARTED}（ターミナル `;
@@ -927,6 +932,58 @@ function decideMapNotices(snapshot, dispatched) {
   return actions;
 }
 
+const PR_URL = /\/pull\/(\d+)(?:$|[/?#])/;
+const NO_MERGE_RECORD = "（merge タスクの記録なし）";
+
+// 渡した sub-issue のうち、最新の takt タスクの PR が OPEN なものの PR（コメントを読む対象）。PR を持たない issue は返さない。
+// 渡した親は sequencesToObserve と同じく、承認依頼を送り済みで範囲内の仕様の親。渡した sub-issue は最後の「渡した」の印の issue のうち OPEN なもの。
+export function reviewPullRequestsToRead(snapshot) {
+  const { viewer, issues } = snapshot;
+  const open = new Map((snapshot.pullRequests ?? []).filter((p) => p.state === "OPEN").map((p) => [p.number, p]));
+  const targets = [];
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    for (const parent of issues.filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))) {
+      const handed = markers(parent, viewer).filter((b) => b.startsWith(MARKER_HANDED_PREFIX)).at(-1);
+      if (handed === undefined) continue;
+      const handedIssues = new Set([...handed.matchAll(HANDED_ISSUES)].map((m) => Number(m[1])));
+      for (const sub of parent.subIssues.filter((s) => s.state === "OPEN" && handedIssues.has(s.number))) {
+        const latest = (snapshot.taktTasks ?? []).filter((t) => t.issue === sub.number).reduce((a, t) => (a === null || new Date(t.createdAt) >= new Date(a.createdAt) ? t : a), null);
+        const number = Number(PR_URL.exec(latest?.prUrl ?? "")?.[1]);
+        const pr = open.get(number);
+        if (pr === undefined || targets.some((t) => t.number === number)) continue;
+        targets.push({ issue: sub.number, number, state: pr.state, head: pr.head, headBranch: pr.headBranch });
+      }
+    }
+  }
+  return targets;
+}
+
+// 修正のセッションに渡すレポートの場所。PR 番号が一致し、その head を扱った（initialHead か pushedHead が head）merge タスクのうち最新のもの。
+// 無ければ記録なしの文言にする（別の head のレポートは、現在の失敗の根拠にならないので渡さない）。
+function reportsOf(mergeTasks, pr, head) {
+  const hit = (mergeTasks ?? [])
+    .filter((m) => m.prNumber === pr && (m.initialHead === head || m.pushedHead === head))
+    .reduce((a, m) => (a === null || new Date(m.createdAt) >= new Date(a.createdAt) ? m : a), null);
+  return hit?.reports ?? NO_MERGE_RECORD;
+}
+
+// takt のレビューが失敗した PR に修正のセッションを起動する。レビューそのものが落ちた head（失敗のコメントが無い）には出さない。
+// 起動の回数は head を問わず 1 段目の印で数える（review-stage.mjs と同じ規則）。
+function decideReviewFixes(snapshot, dispatched) {
+  const actions = [];
+  for (const pr of snapshot.reviewPullRequests ?? []) {
+    if (pr.state !== "OPEN") continue;
+    const mine = (pr.comments ?? []).filter((c) => c.author === snapshot.viewer && typeof c.body === "string").map((c) => c.body);
+    const key = `review-fix:${pr.number}:${pr.head}`;
+    if (!mine.some((b) => b.startsWith(`${REVIEW_FAILED} for head ${pr.head}:`))) continue;
+    if (mine.some((b) => fixLaunchingHead(b) === pr.head || fixLaunchedHead(b) === pr.head || redoHead(b) === pr.head)) continue;
+    if (mine.filter((b) => fixLaunchingHead(b)).length >= FIX_LAUNCH_LIMIT || dispatched.has(key)) continue;
+    actions.push({ kind: "review-fix", key, issue: pr.issue, pr: pr.number, head: pr.head, branch: pr.headBranch, reports: reportsOf(snapshot.mergeTasks, pr.number, pr.head) });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -1000,5 +1057,6 @@ export function decide(snapshot) {
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),
+    ...decideReviewFixes(snapshot, dispatched),
   ];
 }

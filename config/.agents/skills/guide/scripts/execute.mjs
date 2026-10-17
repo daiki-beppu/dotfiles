@@ -1,5 +1,5 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
-// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence）は注入する。
+// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix）は注入する。
 import {
   MARKER_APPROVAL_SENDING,
   MARKER_FORMAL_SPEC_LAUNCHING,
@@ -23,8 +23,9 @@ import {
   provisionalSendingMarker,
   provisionalSentMarker,
 } from "./decide.mjs";
+import { fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, sendToSession }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -68,6 +69,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchWayfinder({ cwd, map: action.map, ticket: action.ticket, type: action.type });
       github.comment(action.ticket, launchedMarker("wayfinder", handle, launchedAt));
+    } else if (action.kind === "review-fix") {
+      // 2 段の印（#360 の文言）を、sub-issue ではなく PR に書く。起動前の印が先なので、起動が失敗しても次の周で起動し直さない。
+      github.comment(action.pr, fixLaunchingMarker(action.head));
+      const launchedAt = now().toISOString();
+      const { handle } = await launchReviewFix({ cwd, repo, pr: action.pr, issue: action.issue, head: action.head, branch: action.branch, reports: action.reports });
+      github.comment(action.pr, fixLaunchedMarker(action.head, handle, launchedAt));
     } else if (action.kind === "merge-auto") {
       github.mergeAuto(action.pr);
     } else if (action.kind === "request-decision") {
