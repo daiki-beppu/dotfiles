@@ -1,6 +1,6 @@
 ---
 name: guide
-description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、晴れた map（霧が無く、子がすべて閉じている）からは `to-spec` を Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送り、grilling・task が resolution に書いた仮決めは 1 件ずつ map のスレッドへ流し、grilling の不可逆な判断の問い（AskUserQuestion）には問いつきの判断依頼を送って、本人の Discord の返信を ticket に書き戻し、止まっていたタブへ流し込む常駐スクリプト「案内役」を動かす依頼に使う。
+description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、渡した sub-issue の open な PR の現在の head で takt のレビューが失敗したら head ブランチの worktree に修正のセッション（review-fix）を起動し、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、晴れた map（霧が無く、子がすべて閉じている）からは `to-spec` を Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送り、grilling・task が resolution に書いた仮決めは 1 件ずつ map のスレッドへ流し、grilling の不可逆な判断の問い（AskUserQuestion）には問いつきの判断依頼を送って、本人の Discord の返信を ticket に書き戻し、止まっていたタブへ流し込む常駐スクリプト「案内役」を動かす依頼に使う。
 ---
 
 # 案内役
@@ -31,6 +31,7 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 承認依頼を送り済みの open な仕様で、承認済みなら親の open な sub-issue の最新の takt タスク（`createdAt` が最も新しいもの）が `failed`（ABORT）、または仕様の最後の Formal Spec コメントが failed | 承認依頼のスレッドに、止まった issue・理由・takt のレポートの場所（`<worktreePath>/.takt/runs`、検証失敗なら検証器の作業ディレクトリ）を送る。原因ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様で、起動の印に handle がある工程（to-tickets など）の結果が GitHub に無く、セッションが止まった（① handle のセッションが Orca に見つからない ②入力待ち（確認・許可）③ 起動から `--stall-minutes`（既定 60）分経った。この順で理由を 1 つ選ぶ） | 承認依頼のスレッドに、工程・仕様・タブの名前（`<工程> #n`）・画面の最後の 10 行・理由を送る。結果は to-tickets なら仕様を指す親 issue、knowledge なら学びの PR、formal-spec なら viewer の Formal Spec コメント。印に handle が無い工程は観測しない。原因（`<工程> のセッションの停止`）ごとに 1 度だけ |
 | 承認依頼を送り済みの open な仕様の親に handle つきの takt-sequence の起動の印があり、渡した sub-issue のうち open なものが残り、そのどれにも takt の `pending`・`running` のタスクも最新が `failed` のタスクも無く、takt-sequence が止まった（① タブが Orca に見つからない ② 画面の最後の 10 行に `案内役: takt-sequence が終わった` の行がある。この順で理由を 1 つ選ぶ。時間切れと入力待ちは見ない） | 承認依頼のスレッドに、親・open のまま残った sub-issue・タブの名前・画面の最後の 10 行・理由を送る。自動で起動し直さない。原因 `takt-sequence のセッションの停止`（N は親）で 1 度だけ。handle の起動の印が無い（古い形の）親は観測しない |
+| 承認依頼を送り済みの open な仕様の親に viewer の `案内役: takt-sequence に渡した …` の印があり、渡した sub-issue のうち open なものの最新の takt タスクの PR（`prUrl`）が OPEN で、その PR の現在の head H に viewer の `TAKT evaluation failed for head H:` で始まるコメントがあり、H の起動の印（1 段目か 2 段目）もやり直しの印（`案内役: レビューのやり直しを頼む for head H`）も無く、PR の起動回数（head を問わず viewer の 1 段目の印の数）が 2 未満 | `orca worktree create --base-branch origin/<head ブランチ>` で worktree（名前 `review-fix-<PR>-<H の先頭 7 桁>`）を作り、他の worktree が head ブランチを持っていなければ head ブランチを checkout し、持っていれば（前回の review-fix の worktree など）共有もリセットもせず `origin/<head ブランチ>` に detach して（push は `git push origin HEAD:<head ブランチ>`）、`orca agent launch --agent claude` で Orca のタブ（題名 `review-fix #<PR>`）に対話セッションとして起動する。プロンプトは PR・sub-issue・H・レポートの場所（H を扱った merge タスクの run。`<repo root>/.takt/runs/<runSlug>`）と `references/review-fix.md`（コードの指摘は直して push／証跡が無いなら PR に証跡を載せてやり直しの印を付ける／直せないなら理由を PR のコメントに書いて止まる。issue の本文・完了条件・ラベルは変えない）。レビューそのものが落ちた head（失敗のコメントが無い）には出さない。上限到達・やり直し後の失敗・セッションの停止の判断依頼はまだ足さない |
 
 `wayfinder:on-hold` ラベルの付いた map は保留として扱い、上の表の map の行（起動・スレッド・通知・観測・判断依頼・差し戻しの書き戻し）のどれも出さない。ラベルを外せば、次の周から扱う。保留中に起動済みのセッションは止めない。
 
@@ -46,7 +47,7 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - `--from <n>`: 番号が n 以上の仕様だけを扱い、それより前の仕様には承認依頼も後続の行動も出さない。手で起票し終えた仕様が残っている repo に向けるとき、新しい仕様だけを流すのに使う（指定しなければ open な仕様をすべて扱う）。
 
 - `--dry-run`: 1 周だけ読み、観測した要約と行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
-- 前提: `gh` が認証済み。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
+- 前提: `gh` が認証済み。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
 
 ## 状態
@@ -90,6 +91,10 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: knowledge を起動する` | 仕様 | 起動する前に書く（1 段目）。これがある仕様には knowledge を出さない。起動の成否が不明でも二重に起動しない |
 | `案内役: knowledge を起動した（ターミナル H / T）` | 仕様 | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。handle が応答から取れなければ書かずに案内役が止まる |
 | `案内役: knowledge を起動した`（「（ターミナル」が続かない。古い版の印） | 仕様 | 読み取りだけ残す。これがある仕様には knowledge を出さない |
+| `案内役: review-fix を起動する（head H）` | 修正する PR | 起動する前に書く（1 段目）。H は失敗した head（40 桁の 16 進）。文言の正本は `takt/scripts/review-stage.mjs`。これがある head には出さない。起動の成否が不明でも二重に起動しない。起動の回数は head を問わずこの印の数で数える（1 PR に 2 回まで） |
+| `案内役: review-fix を起動した（head H / ターミナル T / 時刻）` | 修正する PR | 起動した後に書く（2 段目）。handle が応答から取れなければ書かずに案内役が止まる。これがある head には出さない（回数には数えない） |
+| `案内役: レビューのやり直しを頼む for head H` | 修正する PR | 修正のセッションが、証跡を載せた後に書く。案内役は読むだけ。これがある head には出さない。takt-sequence がレビューのやり直しを判断する |
+| `TAKT evaluation failed for head H:` で始まるコメント | 修正する PR | takt が書く。案内役は読むだけ。現在の head のものがあるときだけ review-fix を出す |
 | PR 本文の `学びの元の仕様: #n` だけの行 | 学びの PR | knowledge に書かせる。viewer の PR にこの行があれば学びの PR ありとして、二度作らない |
 | PR の `auto_merge`（REST。予約済みなら object、未予約なら null） | 学びの PR | 予約済みかどうかの判定に使う。state ファイルは持たず GitHub から読む |
 
@@ -116,3 +121,4 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 - 閉じたタブの handle を `orca terminal show` すると、`terminal_handle_stale` ではなく `ok: true` のまま `connected: false` が返る（2026-10-17 に実機で確認）。観測はどちらも「見つからない」とする。`terminal_handle_stale` が返るのは Orca の再起動後などと見ているが、確かめていない。
 - `orca worktree create --json` の応答の `result.worktree.path`（Orca の CLI の実装から読んだ形）と、`/wayfinder #<map> #<ticket>` の引数の解釈は、実機で確かめていない。
 - 対象は open な仕様だけ。sub-issue がすべて閉じる前に人が仕様を閉じると、学びの PR は作られない。
+- review-fix: `orca worktree create --base-branch origin/<ブランチ>` が作るブランチ名と、その後の `git switch`（持ち主がいなければ `--track -C`、いれば `--detach`）の後の worktree の状態は、Orca が `<ブランチ>` と同名のローカルブランチを作らない前提（作る場合は 2 回目の create が失敗して起動しない）とともに、、実機で確かめていない。`takt-node.sh merge-tasks.mjs` の実際の出力（TaskRunner の `data.merge_task`・`data.pr_number`・`runSlug`）も実機では未確認（takt 0.71.0 のコードから読んだ形）。

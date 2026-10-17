@@ -1,9 +1,10 @@
 // スナップショットの組み立て。GitHub の issue に、承認依頼を送り済みの OPEN な仕様（承認済みを含む）の Discord リアクションを足す。
 // 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションと晴れた map の to-spec のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない）。現在時刻 now と stallMinutes も渡す。
+// 渡した sub-issue の OPEN な PR は、コメントと merge タスクの記録を読む（review-fix の判定用）。
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
-import { awaitsReaction, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, provisionalRejectionsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, ticketSessionsToObserve } from "./decide.mjs";
+import { awaitsReaction, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, provisionalRejectionsToRead, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, ticketSessionsToObserve } from "./decide.mjs";
 
-export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, github, discord, taktTasks, now = () => new Date(), stallMinutes, observeSession }) {
+export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, github, discord, taktTasks, mergeTasks, now = () => new Date(), stallMinutes, observeSession }) {
   return async () => {
     const issues = await Promise.all(
       github.readIssues().map(async (issue) => {
@@ -32,6 +33,10 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     for (const { threadId, messageId } of provisionalRejectionsToRead(base)) {
       provisionalReactions[messageId] = await discord.readReactions({ threadId, messageId });
     }
-    return { ...base, now: now().toISOString(), stallMinutes, sessions, decisionReplies, provisionalReactions };
+    // 渡した sub-issue の OPEN な PR だけ、コメントを読む（PR を持たない issue の読み取りは増やさない）。merge タスクの記録も対象があるときだけ読む。
+    const targets = reviewPullRequestsToRead(base);
+    const reviewPullRequests = targets.map((pr) => ({ ...pr, comments: github.readComments(pr.number) }));
+    const merges = targets.length > 0 ? await mergeTasks() : [];
+    return { ...base, reviewPullRequests, mergeTasks: merges, now: now().toISOString(), stallMinutes, sessions, decisionReplies, provisionalReactions };
   };
 }

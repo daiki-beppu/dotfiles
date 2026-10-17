@@ -460,3 +460,24 @@ test("dry-run: 仮決めの差し戻しの行動も例外にせず、execute を
   await runRound(deps, new Set());
   assert.ok(logs.some((l) => l.includes("reject-provisional-decision:20:21:1") && l.includes("#21")), logs.join("\n"));
 });
+
+test("dry-run: review-fix の行動も例外にせず、key と PR・issue の番号を含めて log に表示する", async () => {
+  const head = "a".repeat(40);
+  const logs = [];
+  const snap = {
+    repo: REPO, viewer: VIEWER,
+    issues: [
+      issue(12, { labels: ["spec", "spec-approved"], comments: [...sentComments, ...formalSpecDone] }),
+      issue(20, { body: "仕様: #12", comments: [{ author: VIEWER, body: "案内役: takt-sequence に渡した #21" }, { author: VIEWER, body: "案内役: takt-sequence を起動した（ターミナル term_s / 2026-10-17T00:00:00.000Z）" }], subIssues: [{ number: 21, state: "OPEN" }] }),
+      issue(21),
+    ],
+    taktIssues: [21],
+    taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
+    pullRequests: [{ number: 70, state: "OPEN", author: VIEWER, body: "", autoMerge: false, head, headBranch: "feat/21" }],
+    reviewPullRequests: [{ issue: 21, number: 70, state: "OPEN", head, headBranch: "feat/21", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${head}: x` }] }],
+    mergeTasks: [],
+  };
+  const actions = await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.ok(actions.some((a) => a.kind === "review-fix"));
+  assert.ok(logs.some((l) => l.includes(`review-fix:70:${head}`) && l.includes("#70") && l.includes("#21")), logs.join("\n"));
+});

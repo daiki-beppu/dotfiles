@@ -9,12 +9,13 @@ import { createGithub } from "./github.mjs";
 import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
-import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
+import { mergeTasks, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
 import { observeSession, sendToSession } from "./orca-agent.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
+import { launchReviewFix } from "./review-fix.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
 
 const usage = () => {
@@ -55,12 +56,13 @@ const readSnapshot = createReadSnapshot({
   github,
   discord,
   taktTasks: () => taktTasks(cwd),
+  mergeTasks: () => mergeTasks(cwd),
   now: () => new Date(),
   stallMinutes,
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }) });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }) });
 
 const deps = { readSnapshot, execute, log };
 try {

@@ -4,6 +4,8 @@ import { test } from "node:test";
 import { SEQUENCE_DONE, decide, decisionMarker, launchedMarker, sequencesToObserve, sessionsToObserve, tabTitle } from "./decide.mjs";
 // map のスレッド・人が見る ticket・ticket の停止の観測（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
 import * as D from "./decide.mjs";
+// 修正の起動の印・やり直しの印・失敗のコメントの文言の正本（#360）。guide 側で書き写さず、同じ定数・関数で組み立てる。
+import { REVIEW_FAILED, fixLaunchedMarker, fixLaunchingMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 
 const REPO = "daiki-beppu/live-mindmap";
 const VIEWER = "daiki-beppu";
@@ -2870,4 +2872,192 @@ test("to-spec の停止: map のスレッドがまだ無ければ、判断依頼
 test("to-spec の停止: 仕様のスレッド向けの request-decision は出さない（仕様がまだ無いので map のスレッドへ送る）", () => {
   const actions = decide(tsStall([], { sessions: { term_s: obs({ found: false }) } }));
   assert.deepEqual(actions.filter((a) => a.kind === "request-decision"), []);
+});
+
+// ---- takt のレビューが失敗した PR に、修正のセッションを起動する（review-fix） ----
+
+const H1 = "1".repeat(40);
+const H2 = "2".repeat(40);
+const RF_BRANCH = "feat/21-something";
+const rfFailed = (head, login = VIEWER) => ({ author: login, body: `${REVIEW_FAILED} for head ${head}: 指摘が残っている\n詳細` });
+const rfLaunching = (head) => byViewer(fixLaunchingMarker(head));
+const rfLaunched = (head) => byViewer(fixLaunchedMarker(head, "term_f", T0));
+const rfRedo = (head) => byViewer(redoMarker(head));
+const rfMerge = (over = {}) => ({ prNumber: 70, kind: "completed", createdAt: "2026-10-17T00:30:00Z", initialHead: H1, pushedHead: null, reports: "/repo/.takt/runs/run-1", ...over });
+
+// 仕様 #12 の親 #20 が #21 #22 を takt-sequence に渡した状態。#21 の最新の takt タスクの PR #70 が OPEN。
+// reviewPullRequests は snapshot.mjs が作る形（読み取り対象の PR だけ）。
+const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTasks = [rfMerge()], over = {} } = {}) =>
+  snapshot(
+    [
+      spec(12, { comments: SENT_ALL }),
+      issue(20, { body: "仕様: #12", comments: [byViewer(HANDED(21, 22)), byViewer(SEQ_LAUNCHED())], subIssues: openSubs(21, 22) }),
+      issue(21),
+      issue(22),
+    ],
+    {
+      taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
+      pullRequests: [{ number: 70, state, author: VIEWER, body: "", autoMerge: false, head, headBranch: RF_BRANCH }],
+      reviewPullRequests: [{ issue: 21, number: 70, state, head, headBranch: RF_BRANCH, comments }],
+      mergeTasks,
+      ...over,
+    },
+  );
+const reviewFixes = (actions) => actions.filter((a) => a.kind === "review-fix");
+const NO_RECORD = "（merge タスクの記録なし）";
+const rfAction = (head = H1, over = {}) => ({ kind: "review-fix", key: `review-fix:70:${head}`, issue: 21, pr: 70, head, branch: RF_BRANCH, reports: "/repo/.takt/runs/run-1", ...over });
+
+test("review-fix: 渡した sub-issue の OPEN な PR の現在の head に viewer の失敗のコメントがあれば、PR・issue・head・ブランチ・レポートの場所つきで 1 件出す", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld())), [rfAction()]);
+});
+
+test("review-fix: レポートの場所は、PR 番号が一致し、その head を扱った merge タスクのうち最新のものから取る", () => {
+  const s = rfWorld({
+    mergeTasks: [
+      rfMerge({ createdAt: "2026-10-17T00:10:00Z", reports: "/repo/.takt/runs/old" }),
+      rfMerge({ createdAt: "2026-10-17T00:50:00Z", reports: "/repo/.takt/runs/new" }),
+      rfMerge({ createdAt: "2026-10-17T00:59:00Z", initialHead: H2, reports: "/repo/.takt/runs/other-head" }),
+      rfMerge({ createdAt: "2026-10-17T00:59:00Z", prNumber: 71, reports: "/repo/.takt/runs/other-pr" }),
+    ],
+  });
+  assert.equal(reviewFixes(decide(s))[0].reports, "/repo/.takt/runs/new");
+  const pushed = rfWorld({ mergeTasks: [rfMerge({ initialHead: H2, pushedHead: H1, reports: "/repo/.takt/runs/pushed" })] });
+  assert.equal(reviewFixes(decide(pushed))[0].reports, "/repo/.takt/runs/pushed");
+});
+
+test("review-fix: merge タスクの記録が無くても出す。レポートの場所は「記録なし」の文言にする", () => {
+  assert.equal(reviewFixes(decide(rfWorld({ mergeTasks: [] })))[0].reports, "（merge タスクの記録なし）");
+});
+
+test("review-fix: 失敗のコメントが viewer 以外のものなら出さない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1, "someone")] }))), []);
+});
+
+test("review-fix: 失敗のコメントが無い（レビューが成功した、またはレビューそのものが落ちた）head には出さない。merge タスクが 2 回 failed でも出さない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [] }))), []);
+  const ok = rfWorld({ comments: [byViewer(`TAKT review completed for head ${H1}; ok`)] });
+  assert.deepEqual(reviewFixes(decide(ok)), []);
+  const crashed = rfWorld({ comments: [], mergeTasks: [rfMerge({ kind: "failed" }), rfMerge({ kind: "failed", createdAt: "2026-10-17T00:40:00Z" })] });
+  assert.deepEqual(reviewFixes(decide(crashed)), []);
+});
+
+test("review-fix: 同じ head に 1 段目の印だけ、または 2 段目の印だけがあれば出さない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), rfLaunching(H1)] }))), []);
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), rfLaunched(H1)] }))), []);
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1)] }))), []);
+});
+
+test("review-fix: 起動の印が viewer 以外のものなら数えず、出す", () => {
+  const other = { author: "someone", body: fixLaunchingMarker(H1) };
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), other] }))), [rfAction()]);
+});
+
+test("review-fix: 同じ head にやり直しの印があれば出さない。別の head のやり直しの印では止めない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), rfRedo(H1)] }))), []);
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), rfRedo(H2)] }))), [rfAction()]);
+});
+
+test("review-fix: やり直しの印が viewer 以外のものなら止めない", () => {
+  const other = { author: "someone", body: redoMarker(H1) };
+  assert.deepEqual(reviewFixes(decide(rfWorld({ comments: [rfFailed(H1), other] }))), [rfAction()]);
+});
+
+test("review-fix: 起動の回数は head を問わず 1 段目の印で数え、上限（2）に達していれば新しい head の失敗にも出さない", () => {
+  const two = [rfLaunching(H1), rfLaunched(H1), rfLaunching(H2), rfLaunched(H2)];
+  const s = rfWorld({ head: "3".repeat(40), comments: [...two, rfFailed("3".repeat(40))] });
+  assert.deepEqual(reviewFixes(decide(s)), []);
+});
+
+test("review-fix: 1 回目の起動（1 段目と 2 段目で 1 回）の後の新しい head の失敗には、もう一度出す", () => {
+  const s = rfWorld({ head: H2, comments: [rfLaunching(H1), rfLaunched(H1), rfFailed(H2)] });
+  assert.deepEqual(reviewFixes(decide(s)), [rfAction(H2, { reports: NO_RECORD })]);
+});
+
+test("review-fix: 1 段目の印だけが 2 件（起動の途中で止まった 2 回）でも上限に達したと数える", () => {
+  const s = rfWorld({ head: "3".repeat(40), comments: [rfLaunching(H1), rfLaunching(H2), rfFailed("3".repeat(40))] });
+  assert.deepEqual(reviewFixes(decide(s)), []);
+});
+
+test("review-fix: push で head が変わり、新しい head に失敗のコメントが無ければ何も出さない（古い head の失敗・起動の印は無関係）", () => {
+  const s = rfWorld({ head: H2, comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1)] });
+  assert.deepEqual(reviewFixes(decide(s)), []);
+});
+
+test("review-fix: 古い head にだけ失敗があり、現在の head に失敗があれば、現在の head のキーで出す", () => {
+  const s = rfWorld({ head: H2, comments: [rfFailed(H1), rfFailed(H2)] });
+  assert.deepEqual(reviewFixes(decide(s)), [rfAction(H2, { reports: NO_RECORD })]);
+});
+
+test("review-fix: PR が OPEN でなければ出さない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ state: "CLOSED" }))), []);
+  assert.deepEqual(reviewFixes(decide(rfWorld({ state: "MERGED" }))), []);
+});
+
+test("review-fix: 読み取った PR が無い（reviewPullRequests が空・未設定）なら出さない", () => {
+  assert.deepEqual(reviewFixes(decide(rfWorld({ over: { reviewPullRequests: [] } }))), []);
+  const { reviewPullRequests, ...without } = rfWorld();
+  assert.deepEqual(reviewFixes(decide(without)), []);
+});
+
+test("review-fix: 同じスナップショットで 2 周しても二重に出さない（dispatched のキーで止める）。新しい head のキーは止めない", () => {
+  const s = rfWorld();
+  const [first] = reviewFixes(decide(s));
+  assert.deepEqual(reviewFixes(decide({ ...s, dispatched: [first.key] })), []);
+  const next = rfWorld({ head: H2, comments: [rfFailed(H2)], over: { dispatched: [first.key] } });
+  assert.deepEqual(reviewFixes(decide(next)), [rfAction(H2, { reports: NO_RECORD })]);
+});
+
+test("review-fix: 判断依頼は足さない（上限に達した・やり直し後の失敗・レビューそのものが落ちた head でも、request-decision を出さない）", () => {
+  const limit = rfWorld({ head: H2, comments: [rfLaunching("4".repeat(40)), rfLaunching("5".repeat(40)), rfFailed(H2)] });
+  const redone = rfWorld({ comments: [rfFailed(H1), rfRedo(H1)] });
+  for (const s of [limit, redone]) assert.deepEqual(decide(s).filter((a) => a.kind === "request-decision" && String(a.cause).includes("review")), []);
+});
+
+// 読み取り対象（snapshot.mjs が PR のコメントを読む範囲）
+const rfToRead = (over = {}) => {
+  const { reviewPullRequests, mergeTasks, ...base } = rfWorld({ over });
+  return D.reviewPullRequestsToRead(base);
+};
+
+test("reviewPullRequestsToRead: 渡した sub-issue の最新の takt タスクの PR が OPEN なら、issue・番号・state・head・head ブランチを返す", () => {
+  assert.deepEqual(rfToRead(), [{ issue: 21, number: 70, state: "OPEN", head: H1, headBranch: RF_BRANCH }]);
+});
+
+test("reviewPullRequestsToRead: PR を持たない sub-issue（takt タスクが無い・prUrl が無い）と、PR が OPEN でないものは返さない", () => {
+  assert.deepEqual(rfToRead({ taktTasks: [] }), []);
+  assert.deepEqual(rfToRead({ taktTasks: [{ issue: 21, kind: "running", createdAt: "2026-10-17T00:00:00Z" }] }), []);
+  assert.deepEqual(rfToRead({ pullRequests: [{ number: 70, state: "CLOSED", author: VIEWER, body: "", autoMerge: false, head: H1, headBranch: RF_BRANCH }] }), []);
+  assert.deepEqual(rfToRead({ pullRequests: [] }), []);
+});
+
+test("reviewPullRequestsToRead: 最新の takt タスクの PR だけを見る（古いタスクの PR は見ない）", () => {
+  const tasks = [
+    { issue: 21, kind: "failed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/60" },
+    { issue: 21, kind: "completed", createdAt: "2026-10-17T01:00:00Z", prUrl: "https://github.com/o/r/pull/70" },
+  ];
+  const prs = [60, 70].map((number) => ({ number, state: "OPEN", author: VIEWER, body: "", autoMerge: false, head: H1, headBranch: `b${number}` }));
+  assert.deepEqual(rfToRead({ taktTasks: tasks, pullRequests: prs }).map((r) => r.number), [70]);
+});
+
+test("reviewPullRequestsToRead: takt-sequence に渡していない issue の PR と、渡した sub-issue でも閉じたものの PR は返さない", () => {
+  const extra = issue(30);
+  const base = rfWorld();
+  const s = {
+    ...base,
+    issues: [...base.issues.map((i) => (i.number === 20 ? { ...i, subIssues: [{ number: 21, state: "OPEN" }, { number: 22, state: "CLOSED" }] } : i)), extra],
+    taktTasks: [
+      ...base.taktTasks,
+      { issue: 30, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/80" },
+      { issue: 22, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/81" },
+    ],
+    pullRequests: [...base.pullRequests, ...[80, 81].map((number) => ({ number, state: "OPEN", author: VIEWER, body: "", autoMerge: false, head: H2, headBranch: `b${number}` }))],
+  };
+  assert.deepEqual(D.reviewPullRequestsToRead(s).map((r) => r.number), [70]);
+});
+
+test("reviewPullRequestsToRead: 親が takt-sequence に渡す前、または viewer 以外が渡した印の親の sub-issue の PR は返さない", () => {
+  const base = rfWorld();
+  const patch = (comments) => ({ ...base, issues: base.issues.map((i) => (i.number === 20 ? { ...i, comments } : i)) });
+  assert.deepEqual(D.reviewPullRequestsToRead(patch([])), []);
+  assert.deepEqual(D.reviewPullRequestsToRead(patch([{ author: "someone", body: HANDED(21, 22) }])), []);
 });

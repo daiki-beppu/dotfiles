@@ -392,3 +392,90 @@ test("provisionalReactions: 読んだ本人の ❌ から、decide が書き戻�
   assert.equal(actions.length, 1);
   assert.equal(actions[0].ticket, 21);
 });
+
+// ---- takt のレビューが失敗した PR（review-fix）の読み取り ----
+
+const RF_HEAD = "a".repeat(40);
+const prRow = (number, state = "OPEN", over = {}) => ({ number, state, author: VIEWER, body: "", autoMerge: false, head: RF_HEAD, headBranch: `feat/${number}`, ...over });
+const taskOf = (issueNumber, pr, over = {}) => ({ issue: issueNumber, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: pr === undefined ? undefined : `https://github.com/o/r/pull/${pr}`, ...over });
+const handedFor = (...n) => ({ author: VIEWER, body: `案内役: takt-sequence に渡した ${n.map((x) => `#${x}`).join(" ")}` });
+const MERGE = { prNumber: 70, kind: "failed", createdAt: "2026-10-17T00:30:00Z", initialHead: RF_HEAD, pushedHead: null, reports: "/repo/.takt/runs/run-1" };
+
+// 仕様 #12 の親 #20 が #21 #22 #23 を渡して起動済み。#21 は PR #70 が OPEN、#22 は PR なし、#23 は PR #71 が CLOSED。
+// #30 は渡していない issue で、PR #80 が OPEN。読み取りの回数は reads と merges に記録する。
+const reviewWorld = ({ tasks, prs, mergeRows = [MERGE] } = {}) => {
+  const reads = { comments: [], merges: 0 };
+  const issues = [
+    issue(12, { comments: sent }),
+    issue(20, { labels: [], body: "仕様: #12", comments: [handedFor(21, 22, 23), launched("takt-sequence", "term_seq")], subIssues: [21, 22, 23].map((number) => ({ number, state: "OPEN" })) }),
+    issue(21, { labels: [] }), issue(22, { labels: [] }), issue(23, { labels: [] }), issue(30, { labels: [] }),
+  ];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: {
+      readIssues: () => issues,
+      readPullRequests: () => prs ?? [prRow(70), prRow(71, "CLOSED"), prRow(80)],
+      readComments: (n) => { reads.comments.push(n); return [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }]; },
+    },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => tasks ?? [taskOf(21, 70), taskOf(22), taskOf(23, 71), taskOf(30, 80)],
+    mergeTasks: async () => { reads.merges += 1; return mergeRows; },
+    observeSession: async () => ({ found: true, waiting: false, idle: true, tail: [] }),
+    now: () => new Date(T0),
+  });
+  return { read, reads };
+};
+
+test("reviewPullRequests: 渡した sub-issue の OPEN な PR だけを読み、番号・state・head・head ブランチ・コメントを入れる。merge タスクの記録も入れる", async () => {
+  const { read, reads } = reviewWorld();
+  const snap = await read();
+  assert.deepEqual(snap.reviewPullRequests, [
+    { issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/70", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }] },
+  ]);
+  assert.deepEqual(snap.mergeTasks, [MERGE]);
+  assert.deepEqual(reads.comments, [70]);
+  assert.equal(reads.merges, 1);
+});
+
+test("reviewPullRequests: PR を持たない issue・閉じた PR・渡していない issue の PR のコメントは読まない（読み取りが増えない）", async () => {
+  const { read, reads } = reviewWorld();
+  await read();
+  for (const n of [22, 23, 30, 71, 80]) assert.ok(!reads.comments.includes(n), `#${n} のコメントを読んだ`);
+  assert.equal(reads.comments.length, 1);
+});
+
+test("reviewPullRequests: 読む PR が 1 件も無ければ、コメントも merge タスクも読まず、どちらも空にする", async () => {
+  const { read, reads } = reviewWorld({ tasks: [taskOf(22), taskOf(30, 80)] });
+  const snap = await read();
+  assert.deepEqual(reads.comments, []);
+  assert.equal(reads.merges, 0);
+  assert.deepEqual(snap.reviewPullRequests, []);
+  assert.deepEqual(snap.mergeTasks, []);
+});
+
+test("reviewPullRequests: 読んだ結果から decide が review-fix を 1 件出す（スナップショットから判定まで通る）", async () => {
+  const { read } = reviewWorld();
+  const actions = decide({ ...(await read()), dispatched: [] }).filter((a) => a.kind === "review-fix");
+  assert.deepEqual(actions, [
+    { kind: "review-fix", key: `review-fix:70:${RF_HEAD}`, issue: 21, pr: 70, head: RF_HEAD, branch: "feat/70", reports: "/repo/.takt/runs/run-1" },
+  ]);
+});
+
+test("reviewPullRequests: merge タスクの読み取りが失敗したら例外にする（黙って空にしない）", async () => {
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => reviewIssues(), readPullRequests: () => [prRow(70)], readComments: () => [] },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [taskOf(21, 70)],
+    mergeTasks: async () => { throw new Error("takt-node.sh が失敗"); },
+    observeSession: async () => ({ found: true, waiting: false, idle: true, tail: [] }),
+  });
+  await assert.rejects(read(), /takt-node\.sh が失敗/);
+});
+function reviewIssues() {
+  return [
+    issue(12, { comments: sent }),
+    issue(20, { labels: [], body: "仕様: #12", comments: [handedFor(21), launched("takt-sequence", "term_seq")], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(21, { labels: [] }),
+  ];
+}

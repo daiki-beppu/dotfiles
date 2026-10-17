@@ -10,6 +10,8 @@ import { launchKnowledge } from "./knowledge.mjs";
 import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
+import { REVIEW_FAILED, fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
+import { launchReviewFix } from "./review-fix.mjs";
 
 const REPO = "o/r";
 const VIEWER = "me";
@@ -1298,4 +1300,91 @@ test("差し戻し: 開き直しが失敗したら例外になり、書き戻し
   assert.equal(rjKinds(w.calls)[0], "comment #21");
   await w.round(new Set());
   assert.equal(w.calls.filter((c) => c.startsWith(`comment #21 ${RJ_MARKER}`)).length, 1, w.calls.join("\n"));
+});
+
+// ---- review-fix: 失敗した PR に修正のセッションを起動する ----
+
+
+const RF_HEAD = "c".repeat(40);
+const rfIssues = () => {
+  const pr = { issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/21", comments: [{ author: VIEWER, body: `${REVIEW_FAILED} for head ${RF_HEAD}: 指摘が残っている` }] };
+  const issues = [
+    issue(12, { labels: ["spec", "spec-approved"], comments: SENT_COMMENTS }),
+    issue(20, { body: "仕様: #12", comments: [{ author: VIEWER, body: "案内役: takt-sequence に渡した #21" }, { author: VIEWER, body: `案内役: takt-sequence を起動した（ターミナル term_s / ${LAUNCHED_AT}）` }], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(21),
+  ];
+  return { issues, pr };
+};
+// PR #70 は issues の外にあるので、comment の書き込みは PR のコメント列に足す。
+const rfWorld = (over = {}) => {
+  const { issues, pr } = rfIssues();
+  const calls = [];
+  const git = (args, opts) => calls.push(`git ${args.join(" ")} @${opts?.cwd}`);
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); if (n === 70) pr.comments.push({ author: VIEWER, body }); } };
+  const deps = {
+    github, cwd: "/x", repo: REPO, now: NOW,
+    launchReviewFix: (a) => launchReviewFix(a, fakeOrca(calls), git),
+    ...over,
+  };
+  const round = (dispatched = new Set()) =>
+    runRound(
+      {
+        readSnapshot: async () => ({
+          repo: REPO, viewer: VIEWER, issues, taktIssues: [21],
+          taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
+          pullRequests: [{ number: 70, state: "OPEN", author: VIEWER, body: "", autoMerge: false, head: RF_HEAD, headBranch: "feat/21" }],
+          reviewPullRequests: [{ ...pr, comments: [...pr.comments] }],
+          mergeTasks: [],
+        }),
+        execute: createExecute(deps),
+        log: () => {},
+      },
+      dispatched,
+    );
+  return { calls, round, pr };
+};
+const RF_BEFORE = `comment #70 ${fixLaunchingMarker(RF_HEAD)}`;
+const RF_AFTER = `comment #70 ${fixLaunchedMarker(RF_HEAD, "term_1", LAUNCHED_AT)}`;
+const rfLaunchIndex = (calls) => calls.findIndex((c) => c.startsWith("orca agent launch "));
+
+test("review-fix: PR に起動前の印 → 起動 → handle と時刻つきの印の順に書く（#360 の文言）。新しい dispatched で 2 周しても起動は 1 回", async () => {
+  const { calls, round } = rfWorld();
+  await round();
+  assert.equal(calls[0], RF_BEFORE);
+  const launch = rfLaunchIndex(calls);
+  assert.ok(launch > 0, calls.join("\n"));
+  assert.equal(calls.at(-1), RF_AFTER);
+  assert.ok(calls.indexOf(RF_BEFORE) < launch && launch < calls.indexOf(RF_AFTER));
+  const count = calls.length;
+  await round(new Set());
+  await round();
+  assert.equal(calls.length, count);
+});
+
+test("review-fix: 印は PR に書く（sub-issue・親・仕様には書かない）", async () => {
+  const { calls, round } = rfWorld();
+  await round();
+  const comments = calls.filter((c) => c.startsWith("comment "));
+  assert.equal(comments.length, 2);
+  assert.ok(comments.every((c) => c.startsWith("comment #70 ")), comments.join("\n"));
+});
+
+test("review-fix: 起動は PR の head ブランチの worktree で行う（origin/<ブランチ> を base にして worktree を作る）", async () => {
+  const { calls, round } = rfWorld();
+  await round();
+  assert.ok(calls.some((c) => c.startsWith("orca worktree create ") && c.includes("--base-branch origin/feat/21")), calls.join("\n"));
+  const launch = calls[rfLaunchIndex(calls)];
+  assert.ok(launch.includes("--worktree path:/wt/new"), launch);
+});
+
+test("review-fix: 起動が失敗したら 2 段目の印を書かずに例外になり、再起動しても起動前の印があるので起動し直さない", async () => {
+  const { calls, round, pr } = rfWorld({ launchReviewFix: (a) => launchReviewFix(a, fakeOrca([], { launch: new Error("orca down") }), () => {}) });
+  await assert.rejects(round(), /orca down/);
+  assert.deepEqual(calls, [RF_BEFORE]);
+  assert.equal(pr.comments.at(-1).body, fixLaunchingMarker(RF_HEAD));
+  const again = rfWorld();
+  // 前の世界の PR のコメント（起動前の印）を引き継いだ状態で、新しい案内役が周回する
+  again.pr.comments.push({ author: VIEWER, body: fixLaunchingMarker(RF_HEAD) });
+  await again.round(new Set());
+  assert.deepEqual(again.calls, []);
 });

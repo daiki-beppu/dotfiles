@@ -21,17 +21,17 @@ test("readPullRequests: REST の auto_merge が null かどうかを autoMerge �
   const { calls, execFile } = fakeGh(() =>
     JSON.stringify([
       [
-        { number: 1, state: "open", merged_at: null, user: { login: "v" }, body: "b", auto_merge: { merge_method: "squash" } },
-        { number: 2, state: "open", merged_at: null, user: { login: "v" }, body: null, auto_merge: null },
-        { number: 3, state: "closed", merged_at: "2026-01-01T00:00:00Z", user: { login: "v" }, body: "", auto_merge: null },
+        { number: 1, state: "open", merged_at: null, user: { login: "v" }, body: "b", auto_merge: { merge_method: "squash" }, head: { sha: "s1", ref: "r1" } },
+        { number: 2, state: "open", merged_at: null, user: { login: "v" }, body: null, auto_merge: null, head: { sha: "s2", ref: "r2" } },
+        { number: 3, state: "closed", merged_at: "2026-01-01T00:00:00Z", user: { login: "v" }, body: "", auto_merge: null, head: { sha: "s3", ref: "r3" } },
       ],
     ]),
   );
   const prs = createGithub({ repo: "o/r", cwd: "/x", execFile }).readPullRequests();
   assert.deepEqual(prs, [
-    { number: 1, state: "OPEN", author: "v", body: "b", autoMerge: true },
-    { number: 2, state: "OPEN", author: "v", body: "", autoMerge: false },
-    { number: 3, state: "MERGED", author: "v", body: "", autoMerge: false },
+    { number: 1, state: "OPEN", author: "v", body: "b", autoMerge: true, head: "s1", headBranch: "r1" },
+    { number: 2, state: "OPEN", author: "v", body: "", autoMerge: false, head: "s2", headBranch: "r2" },
+    { number: 3, state: "MERGED", author: "v", body: "", autoMerge: false, head: "s3", headBranch: "r3" },
   ]);
   assert.equal(calls[0].args[1], "repos/o/r/pulls?state=all&per_page=100");
 });
@@ -196,4 +196,14 @@ test("removeAssignees: 外す assignee が無ければ gh を呼ばない", () =
   const { calls, execFile } = fakeGh(() => "{}");
   createGithub({ repo: "o/r", cwd: "/x", execFile }).removeAssignees(21, []);
   assert.deepEqual(calls, []);
+});
+
+test("readPullRequests: head の sha と head ブランチを head・headBranch に写す（読み取りの回数は増やさない）", () => {
+  const { calls, execFile } = fakeGh(() =>
+    JSON.stringify([[{ number: 1, state: "open", merged_at: null, user: { login: "v" }, body: "", auto_merge: null, head: { sha: "a".repeat(40), ref: "feat/1" } }]]),
+  );
+  const [pr] = createGithub({ repo: "o/r", cwd: "/x", execFile }).readPullRequests();
+  assert.equal(pr.head, "a".repeat(40));
+  assert.equal(pr.headBranch, "feat/1");
+  assert.equal(calls.length, 1);
 });
