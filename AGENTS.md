@@ -28,6 +28,7 @@ Claude Code は user-level の AGENTS.md を読まないため、
 スキルとグローバル指示は `config/.agents/`、設定は `config/.claude/` 側で編集する。
 ホーム側の symlink を実ファイルに置き換えない。
 外部 installer のスキルは共通ディレクトリで保持し、ローカルの Git exclude で追跡対象から外す。
+wayfinder と grilling は例外で、フォークとして追跡する（`docs/adr/0003-fork-wayfinder-and-grilling.md`）。
 
 Codex Cloud で公開するサブセットは `config/codex-cloud/skills.txt` を正とし、
 `scripts/sync-agent-skills.sh --manifest` で対象のみリンクする。
