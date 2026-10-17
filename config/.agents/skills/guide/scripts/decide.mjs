@@ -19,6 +19,8 @@
 //       （wayfinder で起動した ticket のセッションが止まった。map のスレッドへ判断依頼を送る。印は map に書く）
 //     | { kind: "request-grilling-decision", key, map, ticket, since, title, threadId, tab, tail, question }
 //       （grilling のセッションが hook の入力待ち（AskUserQuestion）。map のスレッドへ問いつきの判断依頼を送る。印は ticket に書く）
+//     | { kind: "post-provisional-decision", key, map, ticket, n, title, threadId, question, answer, reason, evidence }
+//       （子 ticket の viewer のコメントの `## 仮決め` の 1 件を、map のスレッドへ流す。印は ticket に書く）
 //     | { kind: "write-back-answer", key, ticket, since, answer }   （判断依頼への本人の返信を ticket のコメントに書き戻す）
 //     | { kind: "inject-answer", key, ticket, since, handle, answer }   （書き戻しの後、同じ停止のままのタブへ回答を流し込む）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
@@ -501,7 +503,7 @@ const PROVISIONAL_FIELDS = [
   ["reason", /^- 理由: (\S.*)$/],
   ["evidence", /^- 根拠: (\S.*)$/],
 ];
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 
 // 1 件分（`### 問い` の次の行から次の `###` の前まで）を { question, answer, triage, reason, evidence } にする。形に合わなければ null。
 function parseProvisional(question, lines) {
@@ -520,7 +522,7 @@ function parseProvisional(question, lines) {
 // 形に合わない仮決めが 1 件でもあれば、そのコメントは 0 件。
 function provisionalsOfComment(body) {
   const items = [];
-  let fence = null; // 開いているコードフェンスの記号（``` か ~~~）。閉じるのは同じ記号
+  let fence = null; // 開いているコードフェンスの記号の並び（``` か ~~~ を 3 個以上）。閉じるのは同じ記号で、開始行以上の長さの行
   let section = null; // 節の中: { question, lines } の現在の項目
   let inSection = false;
   let bad = false;
@@ -533,7 +535,7 @@ function provisionalsOfComment(body) {
   };
   for (const line of body.split(/\r?\n/)) {
     const opener = FENCE.exec(line)?.[1];
-    if (opener !== undefined && (fence === null || fence === opener)) {
+    if (opener !== undefined && (fence === null || (opener[0] === fence[0] && opener.length >= fence.length))) {
       fence = fence === null ? opener : null;
       if (inSection && section !== null) section.lines.push(line);
       else if (inSection && line.trim() !== "") bad = true;

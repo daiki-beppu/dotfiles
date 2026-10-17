@@ -2356,6 +2356,19 @@ test("仮決め: コードフェンス（``` と ~~~、閉じ忘れ）の中の 
   }
 });
 
+test("仮決め: 長いフェンスの中の短いフェンスで閉じたとみなさず、中の `## 仮決め` は数えない", () => {
+  const inner = `## 仮決め\n\n${pdItem("Q", "A")}\n## 補足`;
+  const body = `\`\`\`\`markdown\n\`\`\`markdown\n${inner}\n\`\`\`\n\`\`\`\``;
+  assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))), []);
+});
+
+test("仮決め: 長いフェンスが閉じた後の `## 仮決め` は数える（閉じる行が長くてもよい）", () => {
+  for (const close of ["````", "`````"]) {
+    const body = `\`\`\`\`markdown\n\`\`\`\n例\n\`\`\`\n${close}\n\n## 仮決め\n\n${pdItem("Q", "A")}`;
+    assert.deepEqual(posts(decide(pdWorld({ comments: [byViewer(body)] }))).map((a) => [a.ticket, a.n, a.question]), [[21, 1, "Q"]], close);
+  }
+});
+
 test("仮決め: 形に合わない仮決めが 1 件でもある resolution は、正しい仮決めも含めて 0 件にする", () => {
   const ok = pdItem("Q1", "A1");
   const bad = [
