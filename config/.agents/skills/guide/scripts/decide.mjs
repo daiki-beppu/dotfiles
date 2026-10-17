@@ -13,7 +13,9 @@
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 //     | { kind: "review-fix", key, issue, pr, head, branch, reports }
 //       （渡した sub-issue の OPEN な PR の現在の head に viewer の takt の失敗のコメントがあり、その head の起動の印・やり直しの印が無く、起動が上限未満。印は PR に書く）
-//       snapshot.reviewPullRequests: [{ issue, number, state, head, headBranch, comments }] / snapshot.mergeTasks: [{ prNumber, kind, createdAt, initialHead, pushedHead, reports }]
+//       snapshot.reviewPullRequests: [{ spec, issue, number, state, head, headBranch, comments }] / snapshot.mergeTasks: [{ prNumber, kind, createdAt, initialHead, pushedHead, reports }]
+//     | { kind: "request-review-decision", key, spec, issue, pr, head, cause, title, threadId, reason, reports }
+//       （上限到達・やり直しの後の失敗・レビューそのものが落ちた（merge タスクが現在の head で 2 回 failed）のどれか。仕様の Discord スレッドへ送る。印は仕様に書き、番号は PR）
 //     | { kind: "wayfinder", key, map, ticket, type }
 //       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
 //     | { kind: "to-spec", key, map }
@@ -31,7 +33,9 @@
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, step, tab, tail }
-//       （Orca で起動した工程のセッションが、結果を GitHub に出さないまま止まった。reports は無く、タブの名前と画面の最後の行を持つ）
+//       （Orca で起動した工程のセッションが、結果を GitHub に出さないまま止まった。タブの名前と画面の最後の行を持つ。reports は無い）
+//     | { kind: "request-decision", key, spec, issue: pr, cause, title, threadId, reason, step, tab, tail, pr, subIssue, reports }
+//       （修正のセッション（review-fix）の停止。PR・sub-issue・head を扱った最新の merge タスクの reports を持つ）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -39,7 +43,7 @@
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
-import { FIX_LAUNCH_LIMIT, REVIEW_FAILED, fixLaunchedHead, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
+import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
 
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
@@ -88,6 +92,7 @@ export const MARKER_REJECTED = "案内役: Discord で差し戻された";
 export const MARKER_DECISION_PREFIX = "案内役: Discord に判断依頼を送る";
 export const CAUSE_ABORT = "takt の ABORT";
 export const CAUSE_FORMAL_SPEC = "formal-spec の検証失敗";
+export const CAUSE_REVIEW_FAILED = "takt のレビュー失敗";
 const stallCause = (step) => `${step} のセッションの停止`;
 export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
 
@@ -952,7 +957,7 @@ export function reviewPullRequestsToRead(snapshot) {
         const number = Number(PR_URL.exec(latest?.prUrl ?? "")?.[1]);
         const pr = open.get(number);
         if (pr === undefined || targets.some((t) => t.number === number)) continue;
-        targets.push({ issue: sub.number, number, state: pr.state, head: pr.head, headBranch: pr.headBranch });
+        targets.push({ spec: spec.number, issue: sub.number, number, state: pr.state, head: pr.head, headBranch: pr.headBranch });
       }
     }
   }
@@ -968,18 +973,112 @@ function reportsOf(mergeTasks, pr, head) {
   return hit?.reports ?? NO_MERGE_RECORD;
 }
 
-// takt のレビューが失敗した PR に修正のセッションを起動する。レビューそのものが落ちた head（失敗のコメントが無い）には出さない。
+const timeOf = (s) => new Date(s).getTime();
+
+// PR ごとの分類。viewer のコメントだけを見て、none / { fix } / { decision, reason } のどれかを 1 度だけ決める。
 // 起動の回数は head を問わず 1 段目の印で数える（review-stage.mjs と同じ規則）。
+// 判断依頼の 3 つの条件は互いに重ならない（上限＝失敗あり・やり直し無し / やり直し後の失敗 / 失敗なしで merge が落ちた）。
+function classifyReviewPullRequest(snapshot, pr) {
+  const { head } = pr;
+  const mine = (pr.comments ?? []).filter((c) => c.author === snapshot.viewer && typeof c.body === "string");
+  const bodies = mine.map((c) => c.body);
+  const failedAt = (c) => c.body.startsWith(`${REVIEW_FAILED} for head ${head}:`);
+  const firstFailure = (list) => list.find(failedAt);
+  const redoIndex = mine.findLastIndex((c) => redoHead(c.body) === head);
+  const redo = redoIndex === -1 ? null : mine[redoIndex];
+  const failures = mine.filter(failedAt);
+  const reasonOf = (c) => c.body.split("\n")[0];
+
+  if (redo !== null) {
+    const after = firstFailure(mine.slice(redoIndex + 1));
+    if (after !== undefined) return { decision: true, reason: `やり直しの印の後も同じ head でレビューが失敗した: ${reasonOf(after)}` };
+  }
+  const marked = bodies.some((b) => fixLaunchingHead(b) === head || fixLaunchedHead(b) === head);
+  const launches = bodies.filter((b) => fixLaunchingHead(b)).length;
+  if (failures.length > 0 && redo === null && !marked && launches >= FIX_LAUNCH_LIMIT) {
+    return { decision: true, reason: `修正の起動が上限（${FIX_LAUNCH_LIMIT} 回）に達した: ${reasonOf(failures.at(-1))}` };
+  }
+  const merges = (snapshot.mergeTasks ?? []).filter((m) => m.prNumber === pr.number);
+  const reviewed = bodies.some((b) => b.startsWith(`${REVIEWED} for head ${head};`));
+  const busy = merges.some((m) => m.kind === "pending" || m.kind === "running");
+  const failedAfterRedo = redo === null ? failures.length > 0 : firstFailure(mine.slice(redoIndex + 1)) !== undefined;
+  if (!reviewed && !busy && !failedAfterRedo) {
+    const crashed = merges.filter(
+      (m) => m.kind === "failed" && (m.initialHead === head || m.pushedHead === head) && (redo === null || timeOf(m.createdAt) > timeOf(redo.createdAt)),
+    );
+    if (crashed.length >= 2) return { decision: true, reason: "takt merge が現在の head で 2 回落ちた（レビューそのものが落ちた）" };
+  }
+  if (failures.length === 0 || redo !== null || marked || launches >= FIX_LAUNCH_LIMIT) return { none: true };
+  return { fix: true };
+}
+
+// takt のレビューが失敗した PR の扱い。修正のセッションの起動か、人への判断依頼。
 function decideReviewFixes(snapshot, dispatched) {
   const actions = [];
+  const { viewer } = snapshot;
   for (const pr of snapshot.reviewPullRequests ?? []) {
     if (pr.state !== "OPEN") continue;
-    const mine = (pr.comments ?? []).filter((c) => c.author === snapshot.viewer && typeof c.body === "string").map((c) => c.body);
-    const key = `review-fix:${pr.number}:${pr.head}`;
-    if (!mine.some((b) => b.startsWith(`${REVIEW_FAILED} for head ${pr.head}:`))) continue;
-    if (mine.some((b) => fixLaunchingHead(b) === pr.head || fixLaunchedHead(b) === pr.head || redoHead(b) === pr.head)) continue;
-    if (mine.filter((b) => fixLaunchingHead(b)).length >= FIX_LAUNCH_LIMIT || dispatched.has(key)) continue;
-    actions.push({ kind: "review-fix", key, issue: pr.issue, pr: pr.number, head: pr.head, branch: pr.headBranch, reports: reportsOf(snapshot.mergeTasks, pr.number, pr.head) });
+    const result = classifyReviewPullRequest(snapshot, pr);
+    if (result.fix) {
+      const key = `review-fix:${pr.number}:${pr.head}`;
+      if (dispatched.has(key)) continue;
+      actions.push({ kind: "review-fix", key, issue: pr.issue, pr: pr.number, head: pr.head, branch: pr.headBranch, reports: reportsOf(snapshot.mergeTasks, pr.number, pr.head) });
+    } else if (result.decision) {
+      const specIssue = snapshot.issues.find((i) => i.number === pr.spec);
+      const approval = specIssue && sentApprovalRequest(specIssue, viewer);
+      if (!approval) continue;
+      if (markers(specIssue, viewer).includes(decisionMarker(pr.number, CAUSE_REVIEW_FAILED))) continue;
+      const key = `request-decision:${pr.spec}:${pr.number}:${CAUSE_REVIEW_FAILED}`;
+      if (dispatched.has(key)) continue;
+      const sub = snapshot.issues.find((i) => i.number === pr.issue);
+      actions.push({
+        kind: "request-review-decision", key, spec: pr.spec, issue: pr.issue, pr: pr.number, head: pr.head, cause: CAUSE_REVIEW_FAILED,
+        title: sub?.title, threadId: approval.threadId, reason: result.reason, reports: reportsOf(snapshot.mergeTasks, pr.number, pr.head),
+      });
+    }
+  }
+  return actions;
+}
+
+// 結果が出た修正のセッション: 現在の head が印の head と違う、または印の head に viewer のやり直しの印がある。
+const fixHasResult = (pr, launched, mineBodies) => pr.head !== launched.head || mineBodies.some((b) => redoHead(b) === launched.head);
+
+// 修正のセッションの観測の対象。OPEN な PR に viewer の 2 段目の印（最後のもの）があり、結果がまだ無く、仕様に停止の判断依頼の印が無いものだけ。
+export function reviewFixSessionsToObserve(snapshot) {
+  const { viewer } = snapshot;
+  const targets = [];
+  for (const pr of snapshot.reviewPullRequests ?? []) {
+    if (pr.state !== "OPEN") continue;
+    const bodies = (pr.comments ?? []).filter((c) => c.author === viewer && typeof c.body === "string").map((c) => c.body);
+    const launched = bodies.map(fixLaunchedOf).filter(Boolean).at(-1);
+    if (launched === undefined || fixHasResult(pr, launched, bodies)) continue;
+    const specIssue = snapshot.issues.find((i) => i.number === pr.spec);
+    if (specIssue === undefined || markers(specIssue, viewer).includes(decisionMarker(pr.number, stallCause("review-fix")))) continue;
+    targets.push({ spec: pr.spec, pr: pr.number, issue: pr.issue, handle: launched.handle, startedAt: launched.launchedAt });
+  }
+  return targets;
+}
+
+// 修正のセッションが結果を出さないまま止まったときの判断依頼。送り先は仕様の承認依頼のスレッド。
+function decideReviewFixStalls(snapshot, dispatched) {
+  const actions = [];
+  for (const { spec, pr, issue: subIssue, handle, startedAt } of reviewFixSessionsToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (observation === undefined) continue;
+    const reason = stallReason(observation, startedAt, snapshot);
+    if (reason === null) continue;
+    const cause = stallCause("review-fix");
+    const key = `request-decision:${spec}:${pr}:${cause}`;
+    if (dispatched.has(key)) continue;
+    const issue = snapshot.issues.find((i) => i.number === spec);
+    const approval = sentApprovalRequest(issue, snapshot.viewer);
+    if (approval === null) continue;
+    const head = snapshot.reviewPullRequests.find((p) => p.number === pr).head;
+    actions.push({
+      kind: "request-decision", key, spec, issue: pr, cause, title: issue.title,
+      threadId: approval.threadId, reason, step: "review-fix", tab: tabTitle("review-fix", pr), tail: observation.tail ?? [],
+      pr, subIssue, reports: reportsOf(snapshot.mergeTasks, pr, head),
+    });
   }
   return actions;
 }
@@ -1058,5 +1157,6 @@ export function decide(snapshot) {
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
+    ...decideReviewFixStalls(snapshot, dispatched),
   ];
 }

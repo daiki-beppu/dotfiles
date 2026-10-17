@@ -5,6 +5,8 @@ import {
   DEFAULT_FIX_WAIT_MINUTES, FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED,
   fixLaunchedHead, fixLaunchedMarker, fixLaunchingHead, fixLaunchingMarker, redoHead, redoMarker, reviewStage,
 } from "./review-stage.mjs";
+// 2 段目の印の読み取り（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
+import * as RS from "./review-stage.mjs";
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
@@ -127,4 +129,25 @@ test("fixLaunchingHead・fixLaunchedHead・redoHead: 各印の本文から head 
 test("fixLaunchingHead: 本文の 1 行目だけを見る（2 行目以降に印があっても拾わない）", () => {
   assert.equal(redoHead(`関係ない行\n${redoMarker(A)}`), undefined);
   assert.equal(redoHead(`${redoMarker(A)}\n補足`), A);
+});
+
+// 2 段目の印（起動後）の読み取り。案内役が修正のセッションの停止を観測するとき、head・handle・起動時刻をここから読む。
+test("fixLaunchedOf: 2 段目の印から head・handle・起動時刻を取り出す", () => {
+  assert.deepEqual(RS.fixLaunchedOf(fixLaunchedMarker(A, "term_f", "2026-10-17T10:00:00.000Z")), { head: A, handle: "term_f", launchedAt: "2026-10-17T10:00:00.000Z" });
+  assert.deepEqual(RS.fixLaunchedOf(`${fixLaunchedMarker(B, "h2", at("10:01"))}\n補足`), { head: B, handle: "h2", launchedAt: at("10:01") });
+});
+
+test("fixLaunchedOf: 1 段目の印・やり直しの印・ほかの文言・2 行目以降にだけ印がある本文・40 桁でない head・handle か時刻が欠けた印は undefined", () => {
+  assert.equal(RS.fixLaunchedOf(fixLaunchingMarker(A)), undefined);
+  assert.equal(RS.fixLaunchedOf(redoMarker(A)), undefined);
+  assert.equal(RS.fixLaunchedOf(""), undefined);
+  assert.equal(RS.fixLaunchedOf(`関係ない行\n${fixLaunchedMarker(A, "h1", at("10:00"))}`), undefined);
+  assert.equal(RS.fixLaunchedOf("案内役: review-fix を起動した（head abc / ターミナル h1 / 2026-10-17T10:00:00Z）"), undefined);
+  assert.equal(RS.fixLaunchedOf(`案内役: review-fix を起動した（head ${A}）`), undefined);
+  assert.equal(RS.fixLaunchedOf(`案内役: review-fix を起動した（head ${A} / ターミナル h1）`), undefined);
+});
+
+test("fixLaunchedOf: fixLaunchedHead と同じ印を同じ head で読む", () => {
+  const body = fixLaunchedMarker(A, "h1", at("10:00"));
+  assert.equal(RS.fixLaunchedOf(body).head, fixLaunchedHead(body));
 });

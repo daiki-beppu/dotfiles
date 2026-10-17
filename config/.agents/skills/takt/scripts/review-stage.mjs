@@ -15,6 +15,7 @@ export const redoMarker = (head) => `案内役: レビューのやり直しを�
 const HEAD = "([0-9a-f]{40})";
 const LAUNCHING = new RegExp(`^案内役: review-fix を起動する（head ${HEAD}）$`);
 const LAUNCHED = new RegExp(`^案内役: review-fix を起動した（head ${HEAD} / `);
+const LAUNCHED_FULL = new RegExp(`^案内役: review-fix を起動した（head ${HEAD} / ターミナル (\\S+) / ([^）]+)）`);
 const REDO = new RegExp(`^案内役: レビューのやり直しを頼む for head ${HEAD}$`);
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
@@ -26,6 +27,12 @@ const markedHead = (re) => (body) => (firstLine(body).match(re) ?? [])[1];
 export const fixLaunchingHead = markedHead(LAUNCHING);
 export const fixLaunchedHead = markedHead(LAUNCHED);
 export const redoHead = markedHead(REDO);
+
+// 2 段目の印の本文の 1 行目から { head, handle, launchedAt } を取り出す。一致しなければ undefined（案内役が修正のセッションの停止を観測するとき使う）
+export function fixLaunchedOf(body) {
+  const m = firstLine(body).match(LAUNCHED_FULL);
+  return m ? { head: m[1], handle: m[2], launchedAt: m[3] } : undefined;
+}
 
 // 戻り値: { stage, reason, redo }
 // stage: reviewed（済み）/ waiting（実行中・修正待ち）/ stuck（人の手が要る）/ review（レビューを起動する）

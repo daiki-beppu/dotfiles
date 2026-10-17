@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decide, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
+import { REVIEW_FAILED, fixLaunchedMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 
 const VIEWER = "me";
 const SENDING = "案内役: Discord に承認依頼を送る";
@@ -430,7 +431,7 @@ test("reviewPullRequests: 渡した sub-issue の OPEN な PR だけを読み、
   const { read, reads } = reviewWorld();
   const snap = await read();
   assert.deepEqual(snap.reviewPullRequests, [
-    { issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/70", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }] },
+    { spec: 12, issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/70", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }] },
   ]);
   assert.deepEqual(snap.mergeTasks, [MERGE]);
   assert.deepEqual(reads.comments, [70]);
@@ -479,3 +480,81 @@ function reviewIssues() {
     issue(21, { labels: [] }),
   ];
 }
+
+// ---- 修正のセッション（review-fix）の停止の観測 ----
+// 修正の起動の印（2 段目）の handle で Orca を観測し、sessions[handle] に入れる。結果（head の変化・やり直しの印）が出たものは観測しない。
+
+const H2 = "b".repeat(40);
+// takt-sequence のタブ（term_seq）は既存の観測の対象なので、修正のセッションの handle だけを数える。
+const fixWorld = ({ comments, head = RF_HEAD, state = "OPEN", observed = [] } = {}) => {
+  const issues = [
+    issue(12, { comments: sent }),
+    issue(20, { labels: [], body: "仕様: #12", comments: [handedFor(21), launched("takt-sequence", "term_seq")], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(21, { labels: [] }),
+  ];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: {
+      readIssues: () => issues,
+      readPullRequests: () => [prRow(70, state, { head })],
+      readComments: () => comments,
+    },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [taskOf(21, 70)],
+    mergeTasks: async () => [],
+    observeSession: async ({ handle }) => { if (handle !== "term_seq") observed.push(handle); return { found: true, waiting: true, idle: false, tail: ["Allow? (y/n)"] }; },
+    now: () => new Date(T0),
+  });
+  return { read, observed };
+};
+const fixLaunched = (head, handle, at = T0) => ({ author: VIEWER, body: fixLaunchedMarker(head, handle, at) });
+const failedAt = (head) => ({ author: VIEWER, body: `${REVIEW_FAILED} for head ${head}: x` });
+
+test("修正のセッション: 結果が無ければ、修正の起動の印の handle を観測して sessions に入れ、起動時刻は印の時刻にする", async () => {
+  const { read, observed } = fixWorld({ comments: [failedAt(RF_HEAD), fixLaunched(RF_HEAD, "term_f", "2026-10-16T23:30:00.000Z")] });
+  const snap = await read();
+  assert.deepEqual(observed, ["term_f"]);
+  assert.deepEqual(snap.sessions.term_f, { found: true, waiting: true, idle: false, tail: ["Allow? (y/n)"], startedAt: "2026-10-16T23:30:00.000Z" });
+});
+
+test("修正のセッション: 現在の head が印の head から変わった PR、印の head にやり直しの印がある PR、起動の印が viewer 以外のものは観測しない", async () => {
+  const changed = fixWorld({ head: H2, comments: [failedAt(RF_HEAD), fixLaunched(RF_HEAD, "term_f")] });
+  await changed.read();
+  const redone = fixWorld({ comments: [failedAt(RF_HEAD), fixLaunched(RF_HEAD, "term_f"), { author: VIEWER, body: redoMarker(RF_HEAD) }] });
+  await redone.read();
+  const stranger = fixWorld({ comments: [failedAt(RF_HEAD), { author: "someone", body: fixLaunchedMarker(RF_HEAD, "term_f", T0) }] });
+  await stranger.read();
+  assert.deepEqual([changed.observed, redone.observed, stranger.observed], [[], [], []]);
+});
+
+test("修正のセッション: 判断依頼を送り済みの PR（仕様に停止の印がある）は観測しない。1 段目の印だけ（handle が無い）の PR も観測しない", async () => {
+  const issues = [
+    issue(12, { comments: [...sent, { author: VIEWER, body: "案内役: Discord に判断依頼を送る（#70 review-fix のセッションの停止）" }] }),
+    issue(20, { labels: [], body: "仕様: #12", comments: [handedFor(21), launched("takt-sequence", "term_seq")], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(21, { labels: [] }),
+  ];
+  const observed = [];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => issues, readPullRequests: () => [prRow(70)], readComments: () => [fixLaunched(RF_HEAD, "term_f")] },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [taskOf(21, 70)],
+    mergeTasks: async () => [],
+    observeSession: async ({ handle }) => { if (handle !== "term_seq") observed.push(handle); return { found: true, waiting: true, idle: false, tail: [] }; },
+    now: () => new Date(T0),
+  });
+  await read();
+  assert.deepEqual(observed, []);
+  const launching = fixWorld({ comments: [{ author: VIEWER, body: `案内役: review-fix を起動する（head ${RF_HEAD}）` }] });
+  await launching.read();
+  assert.deepEqual(launching.observed, []);
+});
+
+test("修正のセッション: 観測の結果から decide が、原因 review-fix のセッションの停止の判断依頼を 1 件出す（スナップショットから判定まで通る）", async () => {
+  const { read } = fixWorld({ comments: [failedAt(RF_HEAD), fixLaunched(RF_HEAD, "term_f")] });
+  const stalls = decide({ ...(await read()), dispatched: [] }).filter((a) => a.kind === "request-decision" && a.cause === "review-fix のセッションの停止");
+  assert.equal(stalls.length, 1);
+  assert.equal(stalls[0].spec, 12);
+  assert.equal(stalls[0].issue, 70);
+  assert.equal(stalls[0].threadId, "555");
+});

@@ -25,7 +25,7 @@ import {
 } from "./decide.mjs";
 import { fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, sendToSession }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -78,6 +78,8 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
     } else if (action.kind === "merge-auto") {
       github.mergeAuto(action.pr);
     } else if (action.kind === "request-decision") {
+      // 修正のセッションの停止（pr がある）だけ、レポートを読む。読み取りは副作用が無いので印より先。
+      const report = action.pr === undefined ? {} : readReviewReport(action.reports);
       // マーカーは送信より先に書く（送信の成否が不明なまま流し直しても二度送らないため）。
       github.comment(action.spec, decisionMarker(action.issue, action.cause));
       await discord.sendDecisionRequest({
@@ -91,6 +93,27 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         step: action.step,
         tab: action.tab,
         tail: action.tail,
+        pr: action.pr,
+        subIssue: action.subIssue,
+        verdict: report.verdict,
+        undecidable: report.undecidable,
+      });
+    } else if (action.kind === "request-review-decision") {
+      // レポートの読み取りは副作用が無いので印より先に読む。印は PR の番号で仕様に書き、送信より先（成否が不明なまま流し直しても二度送らない）。
+      const { verdict, undecidable } = readReviewReport(action.reports);
+      github.comment(action.spec, decisionMarker(action.pr, action.cause));
+      await discord.sendDecisionRequest({
+        threadId: action.threadId,
+        spec: action.spec,
+        issue: action.pr,
+        title: action.title,
+        url: `https://github.com/${repo}/pull/${action.pr}`,
+        reason: action.reason,
+        reports: action.reports,
+        pr: action.pr,
+        subIssue: action.issue,
+        verdict,
+        undecidable,
       });
     } else if (action.kind === "create-map-thread") {
       // 承認依頼と同じ 2 段の印を map に書く。スレッドの ID は作成の応答からしか取れない。

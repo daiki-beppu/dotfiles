@@ -10,8 +10,13 @@ import { launchKnowledge } from "./knowledge.mjs";
 import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
-import { REVIEW_FAILED, fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
+import { REVIEW_FAILED, fixLaunchedMarker, fixLaunchingMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 import { launchReviewFix } from "./review-fix.mjs";
+// readReviewReport（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
+import * as T from "./takt.mjs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const REPO = "o/r";
 const VIEWER = "me";
@@ -1387,4 +1392,172 @@ test("review-fix: 起動が失敗したら 2 段目の印を書かずに例外�
   again.pr.comments.push({ author: VIEWER, body: fixLaunchingMarker(RF_HEAD) });
   await again.round(new Set());
   assert.deepEqual(again.calls, []);
+});
+
+// ---- takt のレビュー失敗の判断依頼: 仕様に印 → 送信の順。本文に PR・sub-issue・判定・判定できなかった理由・レポートの場所が入る ----
+// 実物の readReviewReport（偽のレポートを置いた一時ディレクトリを読む）と、実物の createDiscord（偽の fetch）を通して、Discord に届く本文を見る。
+
+const RD_HEAD = "d".repeat(40);
+const RD_OTHER = ["e".repeat(40), "f".repeat(40)];
+const RD_MARKER = "案内役: Discord に判断依頼を送る（#70 takt のレビュー失敗）";
+const rdRunDir = (resolution) => {
+  const dir = mkdtempSync(join(tmpdir(), "rd-run-"));
+  if (resolution !== undefined) {
+    mkdirSync(join(dir, "reports", "call-1"), { recursive: true });
+    writeFileSync(join(dir, "reports", "call-1", "review-resolution.md"), resolution);
+  }
+  return dir;
+};
+const BLOCKED_REPORT = "# 最終検証結果\n\n## 結果: BLOCKED\n\n## 判定不能の理由（BLOCKED の場合）\n- 実機の結果が無い\n";
+const rdCommentOf = (body, createdAt) => ({ author: VIEWER, body, createdAt });
+// path: limit（修正の起動が上限）/ redo（やり直しの後にまた失敗）/ crash（レビューそのものが落ちた）。どれも同じ実行経路を通る。
+const rdWorld = ({ path = "limit", runDir, fetchResult = { ok: true }, sessions, mergeHead } = {}) => {
+  const calls = [];
+  const posts = [];
+  const failedComment = rdCommentOf(`${REVIEW_FAILED} for head ${RD_HEAD}: 指摘が残っている`, "2026-10-17T00:10:00Z");
+  const prComments = {
+    limit: [rdCommentOf(fixLaunchingMarker(RD_OTHER[0])), rdCommentOf(fixLaunchingMarker(RD_OTHER[1])), failedComment],
+    redo: [failedComment, rdCommentOf(redoMarker(RD_HEAD), "2026-10-17T00:20:00Z"), { ...failedComment, createdAt: "2026-10-17T00:30:00Z" }],
+    crash: [],
+    stall: [failedComment, rdCommentOf(fixLaunchingMarker(RD_HEAD)), rdCommentOf(fixLaunchedMarker(RD_HEAD, "term_f", LAUNCHED_AT))],
+  }[path];
+  const failedMerge = (createdAt) => ({ prNumber: 70, kind: "failed", createdAt, initialHead: RD_HEAD, pushedHead: null, reports: runDir });
+  const mergeRows = { limit: [failedMerge("2026-10-17T00:11:00Z")], redo: [failedMerge("2026-10-17T00:31:00Z")], crash: [failedMerge("2026-10-17T00:11:00Z"), failedMerge("2026-10-17T00:21:00Z")], stall: [failedMerge("2026-10-17T00:11:00Z"), ...(mergeHead === undefined ? [] : [{ ...failedMerge("2026-10-17T00:12:00Z"), initialHead: mergeHead }])] }[path];
+  const issues = [
+    issue(12, { title: "仕様A", labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] }),
+    issue(20, { body: "仕様: #12", comments: [{ author: VIEWER, body: "案内役: takt-sequence に渡した #21" }, { author: VIEWER, body: `案内役: takt-sequence を起動した（ターミナル term_s / ${LAUNCHED_AT}）` }], subIssues: [{ number: 21, state: "OPEN" }] }),
+    issue(21, { title: "実装A" }),
+  ];
+  const fetch = async (url, init) => {
+    const content = JSON.parse(init.body).content;
+    calls.push(`post ${new URL(url).pathname}`);
+    posts.push(content);
+    if (fetchResult.ok) return { ok: true, status: 200, json: async () => ({ id: "M" }) };
+    return { ok: false, status: 500, json: async () => ({}) };
+  };
+  const discord = createDiscord({ token: "t", guildId: "g", userId: "U", fetch });
+  const github = {
+    comment: (n, body) => {
+      calls.push(`comment #${n} ${body}`);
+      if (n === 12) issues[0].comments.push({ author: VIEWER, body });
+    },
+  };
+  const round = (dispatched = new Set()) =>
+    runRound(
+      {
+        readSnapshot: async () => ({
+          repo: REPO, viewer: VIEWER, issues: issues.map((i) => ({ ...i, comments: [...i.comments] })), taktIssues: [21],
+          taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
+          pullRequests: [{ number: 70, state: "OPEN", author: VIEWER, body: "", autoMerge: false, head: RD_HEAD, headBranch: "feat/21" }],
+          reviewPullRequests: [{ spec: 12, issue: 21, number: 70, state: "OPEN", head: RD_HEAD, headBranch: "feat/21", comments: [...prComments] }],
+          mergeTasks: mergeRows,
+          sessions,
+        }),
+        execute: createExecute({ github, discord, cwd: "/x", repo: REPO, now: NOW, readReviewReport: T.readReviewReport }),
+        log: () => {},
+      },
+      dispatched,
+    );
+  return { calls, posts, round };
+};
+for (const path of ["limit", "redo", "crash"]) {
+  test(`レビュー失敗の判断依頼（${path}）: 仕様に印を書いてから、仕様の承認依頼のスレッドへ、PR・sub-issue・判定・判定できなかった理由・PR の URL・レポートの場所つきで送る`, async () => {
+    const runDir = rdRunDir(BLOCKED_REPORT);
+    const { calls, posts, round } = rdWorld({ path, runDir });
+    await round();
+    assert.deepEqual(calls, [`comment #12 ${RD_MARKER}`, "post /api/v10/channels/555/messages"]);
+    assert.equal(posts.length, 1);
+    for (const part of ["#12", "#70", "#21", "実装A", "判定: BLOCKED", "実機の結果が無い", "https://github.com/o/r/pull/70", runDir]) {
+      assert.ok(posts[0].includes(part), `本文に ${part} が無い: ${posts[0]}`);
+    }
+    assert.ok(posts[0].length <= 2000);
+  });
+}
+
+test("レビュー失敗の判断依頼: 他のレポートの判定や .takt-report-internal の履歴を判定にしない。判定できなかった理由が無ければ記録なしの文言を本文に入れる", async () => {
+  const dir = rdRunDir();
+  mkdirSync(join(dir, "reports", "call-1"), { recursive: true });
+  writeFileSync(join(dir, "reports", "call-1", "architecture-review.md"), "## 結果: APPROVE\n");
+  mkdirSync(join(dir, "reports", ".takt-report-internal"), { recursive: true });
+  writeFileSync(join(dir, "reports", ".takt-report-internal", "review-resolution.md"), "## 結果: REJECT\n");
+  const { posts, round } = rdWorld({ path: "limit", runDir: dir });
+  await round();
+  assert.ok(posts[0].includes("判定: （レポートに判定が無い）"), posts[0]);
+  assert.ok(posts[0].includes("（判定不能の理由の記録なし）"), posts[0]);
+  assert.ok(!posts[0].includes("APPROVE") && !posts[0].includes("REJECT"), posts[0]);
+});
+
+test("レビュー失敗の判断依頼: run のレポートが読めなくても（ディレクトリが無い）例外にせず、印を書いて、記録なしの文言で送る", async () => {
+  const { calls, posts, round } = rdWorld({ path: "crash", runDir: join(tmpdir(), "rd-run-not-exist") });
+  await round();
+  assert.equal(calls[0], `comment #12 ${RD_MARKER}`);
+  assert.equal(posts.length, 1);
+  assert.ok(posts[0].includes("（レポートに判定が無い）"), posts[0]);
+});
+
+test("レビュー失敗の判断依頼: 新しい dispatched で何周しても（再起動しても）二度送らない。印は 1 件", async () => {
+  const { calls, posts, round } = rdWorld({ path: "redo", runDir: rdRunDir(BLOCKED_REPORT) });
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(posts.length, 1);
+  assert.equal(calls.filter((c) => c === `comment #12 ${RD_MARKER}`).length, 1);
+});
+
+test("レビュー失敗の判断依頼: 送信が失敗しても印は残り、再起動で二重に送らない（成否不明のまま再送しない）", async () => {
+  const { calls, round } = rdWorld({ path: "limit", runDir: rdRunDir(BLOCKED_REPORT), fetchResult: { ok: false } });
+  await assert.rejects(round(), /500/);
+  assert.equal(calls[0], `comment #12 ${RD_MARKER}`);
+  const count = calls.length;
+  await round(new Set());
+  assert.equal(calls.length, count);
+});
+
+test("レビュー失敗の判断依頼: 印は仕様に書く（PR・sub-issue・親には書かない）", async () => {
+  const { calls, round } = rdWorld({ path: "limit", runDir: rdRunDir(BLOCKED_REPORT) });
+  await round();
+  const comments = calls.filter((c) => c.startsWith("comment "));
+  assert.equal(comments.length, 1);
+  assert.ok(comments[0].startsWith("comment #12 "), comments[0]);
+});
+
+// ---- 修正のセッションの停止の判断依頼: 同じ本文の項目（PR・sub-issue・判定・判定できなかった理由・レポートの場所）に、工程・タブ・画面の行が加わる ----
+const RD_STALL_MARKER = "案内役: Discord に判断依頼を送る（#70 review-fix のセッションの停止）";
+const stallSessions = (tail) => ({ term_f: { found: true, waiting: true, waitSource: "hook", tail } });
+
+test("修正のセッションの停止の判断依頼: 仕様に印を書いてから、PR・sub-issue・判定・判定できなかった理由・レポートの場所・工程・タブ・画面の行つきで 2000 文字以内に送る", async () => {
+  const runDir = rdRunDir(BLOCKED_REPORT);
+  const { calls, posts, round } = rdWorld({ path: "stall", runDir, sessions: stallSessions(["許可を待っている", "y/n"]) });
+  await round();
+  assert.deepEqual(calls, [`comment #12 ${RD_STALL_MARKER}`, "post /api/v10/channels/555/messages"]);
+  for (const part of ["PR: #70", "sub-issue: #21", "判定: BLOCKED", "実機の結果が無い", runDir, "review-fix #70", "工程: review-fix", "許可を待っている", "入力待ち"]) {
+    assert.ok(posts[0].includes(part), `本文に ${part} が無い: ${posts[0]}`);
+  }
+  assert.ok(posts[0].length <= 2000);
+});
+
+test("修正のセッションの停止の判断依頼: 理由・判定できなかった理由・画面が長くても 2000 文字以内で、PR・sub-issue・判定・レポートの場所は残る", async () => {
+  const runDir = rdRunDir(`## 結果: BLOCKED\n\n## 判定不能の理由\n${"あ".repeat(5000)}\n`);
+  const { posts, round } = rdWorld({ path: "stall", runDir, sessions: stallSessions(Array.from({ length: 10 }, () => "画".repeat(500))) });
+  await round();
+  assert.ok(posts[0].length <= 2000, String(posts[0].length));
+  for (const part of ["PR: #70", "sub-issue: #21", "判定: BLOCKED", runDir, "review-fix #70"]) assert.ok(posts[0].includes(part), `本文に ${part} が無い`);
+});
+
+test("修正のセッションの停止の判断依頼: H を扱った merge タスクが無ければ記録なしの文言で、別の head の run は本文に出ない", async () => {
+  const other = rdRunDir(BLOCKED_REPORT);
+  const { calls, posts, round } = rdWorld({ path: "stall", runDir: undefined, mergeHead: RD_OTHER[0], sessions: stallSessions(["x"]) });
+  await round();
+  assert.equal(calls[0], `comment #12 ${RD_STALL_MARKER}`);
+  assert.ok(posts[0].includes("（レポートに判定が無い）") && posts[0].includes("（判定不能の理由の記録なし）"), posts[0]);
+  assert.ok(!posts[0].includes(other));
+});
+
+test("修正のセッションの停止の判断依頼: 新しい dispatched で何周しても二度送らない。印は 1 件", async () => {
+  const w = rdWorld({ path: "stall", runDir: rdRunDir(BLOCKED_REPORT), sessions: stallSessions(["x"]) });
+  await w.round();
+  await w.round(new Set());
+  await w.round(new Set());
+  assert.equal(w.posts.length, 1);
+  assert.equal(w.calls.filter((c) => c === `comment #12 ${RD_STALL_MARKER}`).length, 1);
 });

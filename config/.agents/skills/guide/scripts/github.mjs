@@ -15,7 +15,7 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
   };
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
   const readComments = (number) =>
-    paged(`repos/${repo}/issues/${number}/comments?per_page=100`).map((c) => ({ author: c.user?.login, body: c.body ?? "" }));
+    paged(`repos/${repo}/issues/${number}/comments?per_page=100`).map((c) => ({ author: c.user?.login, body: c.body ?? "", createdAt: c.created_at }));
 
   return {
     readComments,

@@ -98,7 +98,7 @@ const wfRoutes = (over = {}) => ({
     { number: 23, state: "closed" },
   ],
   "repos/o/r/issues/20/comments": [],
-  "repos/o/r/issues/21/comments": [{ user: { login: "me" }, body: "案内役: wayfinder を起動する" }],
+  "repos/o/r/issues/21/comments": [{ user: { login: "me" }, body: "案内役: wayfinder を起動する", created_at: "2026-10-17T00:00:00Z" }],
   "repos/o/r/issues/22/comments": [],
   "repos/o/r/issues/23/comments": [{ user: { login: "me" }, body: "## 仮決め\n\n### Q\n- 答え: A\n- 振り分け: ⓪\n- 理由: R\n- 根拠: なし" }],
   "repos/o/r/issues/21/dependencies/blocked_by": [{ number: 9, state: "open" }],
@@ -123,9 +123,9 @@ test("readIssues: open な map の open な子の blocked by を { number, state
   assert.deepEqual(by(22).blockedBy, [{ number: 9, state: "CLOSED" }]);
 });
 
-test("readIssues: 子 ticket のコメント（起動の印）を author と body で読む", () => {
+test("readIssues: 子 ticket のコメント（起動の印）を author・body・createdAt で読む", () => {
   const { by } = readWf();
-  assert.deepEqual(by(21).comments, [{ author: "me", body: "案内役: wayfinder を起動する" }]);
+  assert.deepEqual(by(21).comments, [{ author: "me", body: "案内役: wayfinder を起動する", createdAt: "2026-10-17T00:00:00Z" }]);
 });
 
 test("readIssues: map と子の labels と state を保つ", () => {
@@ -173,11 +173,11 @@ test("readIssues: spec で既にコメントを読んだ子は、コメントを
   assert.equal(paths.filter((p) => p.startsWith("repos/o/r/issues/22/comments")).length, 1);
 });
 
-test("readComments: issue のコメントを {author, body} の形で読む", () => {
-  const { paths, execFile } = routed({ "repos/o/r/issues/21/comments": { user: { login: "me" }, body: "本文" } });
+test("readComments: issue のコメントを {author, body, createdAt} の形で読む（createdAt は GitHub の created_at。やり直しの印より前の merge タスクを数えないために使う）", () => {
+  const { paths, execFile } = routed({ "repos/o/r/issues/21/comments": { user: { login: "me" }, body: "本文", created_at: "2026-10-17T00:20:00Z" } });
   const comments = createGithub({ repo: "o/r", cwd: "/x", execFile }).readComments(21);
   assert.deepEqual(paths, ["repos/o/r/issues/21/comments?per_page=100"]);
-  assert.deepEqual(comments, [{ author: "me", body: "本文" }]);
+  assert.deepEqual(comments, [{ author: "me", body: "本文", createdAt: "2026-10-17T00:20:00Z" }]);
 });
 
 test("reopen: REST の issue を PATCH して state=open にする", () => {

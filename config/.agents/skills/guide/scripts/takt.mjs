@@ -1,6 +1,6 @@
 // takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たず、handle を返す）。
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listTasks } from "../../takt/scripts/takt-list.mjs";
@@ -60,4 +60,41 @@ export function taktRunDirs(cwd, issues, list = listTasks) {
     .map((t) => join(t.worktreePath, ".takt", "runs"))
     .filter((d) => existsSync(d));
   return [...new Set(dirs)];
+}
+
+const NO_VERDICT = "（レポートに判定が無い）";
+const NO_UNDECIDABLE = "（判定不能の理由の記録なし）";
+
+// merge タスクの run のレポートから、final-gate の review-resolution.md の判定（`## 結果:`）と判定不能の理由の節を読む。
+// reports の下を再帰的に探し、内部の履歴（.takt-report-internal）は除き、更新時刻が最も新しいものを使う。読めなければ決まった文言を返す（判断依頼の送信を止めない）。
+export function readReviewReport(runDir) {
+  const found = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      if (name === ".takt-report-internal") continue;
+      const path = join(dir, name);
+      const stat = statSync(path);
+      if (stat.isDirectory()) walk(path);
+      else if (name === "review-resolution.md") found.push({ path, mtime: stat.mtimeMs });
+    }
+  };
+  let text;
+  try {
+    walk(join(runDir, "reports"));
+    const newest = found.sort((a, b) => b.mtime - a.mtime)[0];
+    if (newest === undefined) return { verdict: NO_VERDICT, undecidable: NO_UNDECIDABLE };
+    text = readFileSync(newest.path, "utf8");
+  } catch {
+    return { verdict: NO_VERDICT, undecidable: NO_UNDECIDABLE };
+  }
+  const verdict = text.match(/^## 結果: *(.+)$/m)?.[1].trim() ?? NO_VERDICT;
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.startsWith("## 判定不能の理由"));
+  let undecidable = NO_UNDECIDABLE;
+  if (start !== -1) {
+    const end = lines.findIndex((l, i) => i > start && l.startsWith("## "));
+    const body = lines.slice(start + 1, end === -1 ? undefined : end).join("\n").trim();
+    if (body !== "") undecidable = body;
+  }
+  return { verdict, undecidable };
 }

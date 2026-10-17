@@ -12,6 +12,7 @@ const DESCRIBE = {
   "takt-sequence": (a) => `${a.key}: 親 #${a.parent} の sub-issue ${a.issues.map((n) => `#${n}`).join(" ")} を takt-sequence に渡す`,
   "merge-auto": (a) => `${a.key}: 仕様 #${a.spec} の学びの PR #${a.pr} に自動マージを予約する`,
   "request-decision": (a) => `${a.key}: 仕様 #${a.spec} のスレッドに #${a.issue} の判断依頼を送る`,
+  "request-review-decision": (a) => `${a.key}: 仕様 #${a.spec} のスレッドに PR #${a.pr}（sub-issue #${a.issue}）の takt のレビュー失敗の判断依頼を送る`,
   wayfinder: (a) =>
     `${a.key}: map #${a.map} の ticket #${a.ticket}（${a.type}）を /wayfinder で Orca のタブに起動する（task は origin/main からの worktree、他は main checkout）`,
   "to-spec": (a) => `${a.key}: 晴れた map #${a.map} から to-spec を Orca のタブで起動する`,
