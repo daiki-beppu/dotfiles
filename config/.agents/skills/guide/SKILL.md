@@ -36,6 +36,7 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 同じ PR の現在の head H にやり直しの印があり、その印より後に viewer の `TAKT evaluation failed for head H:` のコメントがある | 上と同じ判断依頼を送る（review-fix は起動しない） |
 | 同じ PR の現在の head H に viewer の完了のコメント（`TAKT review completed for head H;`）も、やり直しの印より後の失敗のコメントも無く、pending・running の merge タスクが無く、H を扱った failed の merge タスク（やり直しの印があればその印より後のもの。作成時刻で比べる）が 2 件以上ある（レビューそのものが落ちた。takt-sequence の stuck と同じ規則） | 上と同じ判断依頼を送る。failed の件数だけでは判定しない（成功・普通の失敗の merge タスクも failed と記録されるため） |
 | PR の viewer の 2 段目の印（最後のもの）の handle のセッションが止まった（見つからない → 入力待ち → 起動時刻から `--stall-minutes` 分、の順）。結果が出ていれば観測も判断依頼もしない。結果とは、現在の head が印の head から変わったこと、または印の head にやり直しの印が付いたこと | 仕様のスレッドへ、原因 `review-fix のセッションの停止`、タブ `review-fix #<PR>`、画面の最後の行つきの判断依頼を送る。本文は PR・sub-issue・判定・判定できなかった理由・レポートの場所・理由・工程・タブ・画面の最後の行（判定と判定できなかった理由は、H を扱った最新の merge タスクの `review-resolution.md` から読み、読めなければ「（レポートに判定が無い）」「（判定不能の理由の記録なし）」、merge タスクが無ければレポートの場所は「（merge タスクの記録なし）」）。2000 文字を超えるときに切るのは理由・判定できなかった理由・画面だけ。印は仕様に書き、N は PR の番号。原因ごとに 1 度だけ |
+| 起動の印に handle がある工程・takt-sequence の結果が GitHub に出ていて、判断依頼を送っておらず、閉じた印が無い。タブの手が止まっている（工程は `orca terminal wait --for tui-idle` が満たされる、takt-sequence は画面に終わりの行がある） | `orca terminal close` でタブを閉じ、閉じた印を書く。タブが既に見つからなければ、閉じずに印だけ書く。判断依頼を送ったタブは人が答える場所なので閉じない |
 
 `wayfinder:on-hold` ラベルの付いた map は保留として扱い、上の表の map の行（起動・スレッド・通知・観測・判断依頼・差し戻しの書き戻し）のどれも出さない。ラベルを外せば、次の周から扱う。保留中に起動済みのセッションは止めない。
 
@@ -74,6 +75,7 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: Discord に判断依頼を送る（#N 原因）` | 仕様（wayfinder の ticket と to-spec の停止は map） | 判断依頼を送る前に書く。原因は `takt の ABORT`、`formal-spec の検証失敗`、または `takt のレビュー失敗`（PR の判断依頼。上限到達・やり直し後の失敗・レビューそのものが落ちた）、または `<工程> のセッションの停止`（例: `review-fix のセッションの停止`、 `to-tickets のセッションの停止`、`takt-sequence のセッションの停止`、`to-spec のセッションの停止`）。N は止まった issue（`takt のレビュー失敗` と `review-fix のセッションの停止` なら PR の番号、takt-sequence の停止なら親、wayfinder の ticket の停止ならその ticket、to-spec の停止ならその map）。これがあれば同じ組は再送しない |
 | `## Formal Spec（takt <版> の検証器で failed）` で始まる 1 行目のコメント | 仕様 | formal-spec が失敗で止まるときに書く。viewer の最後の Formal Spec コメントが failed なら検証失敗とみなす。`検証器の作業ディレクトリ: <path>` の行をレポートの場所に使う |
 | `案内役: takt-sequence に渡した #a #b` | 親 | 起動する前に書く（1 段目）。これがある親は渡さない。#a #b が停止の観測で「渡した sub-issue」になる |
+| `案内役: <工程> のタブを閉じた（ターミナル H）` | 起動の印と同じ issue（工程は仕様、takt-sequence は親） | 閉じた後に書く（閉じ直しは害が無いので、起動と逆に後に書く）。これがある handle は観測も close もしない |
 | `案内役: takt-sequence を起動した（ターミナル H / T）` | 親 | 起動した後に書く（2 段目）。H は `orca terminal create --json` の応答の `result.terminal.handle`、T は起動時刻。これがある親だけ takt-sequence の停止を観測する。最後の印の handle を見る |
 | `案内役: <工程> を起動した（ターミナル H / T）` | 仕様 | to-tickets 以外の工程でも、Orca のタブで起動して handle を印に書けば、同じ形で停止の観測の対象になる（H は handle、T は起動時刻。起動時刻はこの印から読む） |
 | `案内役: wayfinder を起動する` | wayfinder の ticket | 起動する前に書く（1 段目）。map ではなく起動する ticket に書く。これがある ticket には起動を出さない。起動の成否が不明でも二重に起動しない |

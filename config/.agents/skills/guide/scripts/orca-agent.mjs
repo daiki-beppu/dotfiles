@@ -103,3 +103,13 @@ function isIdle({ cwd, handle }, run) {
   }
   return parseReply(reply, "orca terminal wait").result?.wait?.satisfied === true;
 }
+
+// 終わったタブを閉じる。閉じ済みのタブは ok で返り、古い handle（Orca の再起動など）は terminal_handle_stale になる。どちらも閉じたとみなす。
+export function closeTab({ cwd, handle }, run = runOrca) {
+  try {
+    run(["terminal", "close", "--terminal", handle, "--json"], { cwd });
+  } catch (e) {
+    if (errorCode(e) === STALE_HANDLE) return;
+    throw new Error(`orca terminal close が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
+  }
+}

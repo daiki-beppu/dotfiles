@@ -1083,6 +1083,63 @@ function decideReviewFixStalls(snapshot, dispatched) {
   return actions;
 }
 
+// 終わったタブを閉じた印。handle ごとに書き、これがある handle はもう観測も close もしない。
+export const closedTabMarker = (step, handle) => `案内役: ${step} のタブを閉じた（ターミナル ${handle}）`;
+
+// 閉じる候補のタブ: 結果が GitHub に出て、判断依頼を送っておらず、閉じた印も無いもの。印を書く issue・工程・handle。
+// 工程は仕様の最後の起動の印、takt-sequence は親の最後の起動の印を見る。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
+export function tabsToClose(snapshot) {
+  const { viewer, issues } = snapshot;
+  const targets = [];
+  const add = (issue, own, step, handle) => {
+    if (!own.includes(closedTabMarker(step, handle))) targets.push({ issue, step, handle });
+  };
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    const own = markers(spec, viewer);
+    const latest = new Map();
+    for (const body of own) {
+      const m = LAUNCHED.exec(body);
+      if (m) latest.set(m[1], m[2]);
+    }
+    for (const [step, handle] of latest) {
+      const hasResult = RESULT_OF[step];
+      if (hasResult === undefined || !hasResult(snapshot, spec)) continue;
+      if (own.includes(decisionMarker(spec.number, stallCause(step)))) continue;
+      add(spec.number, own, step, handle);
+    }
+    for (const parent of issues.filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))) {
+      const ownParent = markers(parent, viewer);
+      const handed = ownParent.filter((b) => b.startsWith(MARKER_HANDED_PREFIX)).at(-1);
+      const launched = ownParent.map((b) => LAUNCHED.exec(b)).filter((m) => m && m[1] === "takt-sequence").at(-1);
+      if (handed === undefined || launched === undefined) continue;
+      const handedIssues = new Set([...handed.matchAll(HANDED_ISSUES)].map((m) => Number(m[1])));
+      if (parent.subIssues.some((s) => s.state === "OPEN" && handedIssues.has(s.number))) continue;
+      if (own.includes(decisionMarker(parent.number, stallCause("takt-sequence")))) continue;
+      add(parent.number, ownParent, "takt-sequence", launched[2]);
+    }
+  }
+  return targets;
+}
+
+// 手が止まったか: 工程は idle（入力を受け付ける状態に戻った）、takt-sequence は終わりの行がある。
+const tabFinished = (step, observation) =>
+  step === "takt-sequence" ? (observation.tail ?? []).some((line) => SEQUENCE_DONE_LINE.test(line.trim())) : observation.idle === true;
+
+// 終わったタブを閉じる。既に見つからないタブは close せず、印だけ書く（gone）。
+function decideCloseTabs(snapshot, dispatched) {
+  const actions = [];
+  for (const { issue, step, handle } of tabsToClose(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    const key = `close-tab:${handle}`;
+    if (observation === undefined || dispatched.has(key)) continue;
+    const gone = !observation.found;
+    if (!gone && !tabFinished(step, observation)) continue;
+    actions.push({ kind: "close-tab", key, issue, step, handle, gone });
+  }
+  return actions;
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -1158,5 +1215,6 @@ export function decide(snapshot) {
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
     ...decideReviewFixStalls(snapshot, dispatched),
+    ...decideCloseTabs(snapshot, dispatched),
   ];
 }

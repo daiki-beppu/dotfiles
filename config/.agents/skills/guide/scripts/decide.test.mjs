@@ -1,7 +1,7 @@
 // decide.mjs の判定テスト。GitHub・takt・Discord・子プロセスは一切呼ばない。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SEQUENCE_DONE, decide, decisionMarker, launchedMarker, sequencesToObserve, sessionsToObserve, tabTitle } from "./decide.mjs";
+import { SEQUENCE_DONE, closedTabMarker, decide, decisionMarker, launchedMarker, sequencesToObserve, sessionsToObserve, tabTitle, tabsToClose } from "./decide.mjs";
 // map のスレッド・人が見る ticket・ticket の停止の観測（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
 import * as D from "./decide.mjs";
 // 修正の起動の印・やり直しの印・失敗のコメントの文言の正本（#360）。guide 側で書き写さず、同じ定数・関数で組み立てる。
@@ -3407,4 +3407,85 @@ test("reviewPullRequestsToRead: 親が takt-sequence に渡す前、または vi
   const patch = (comments) => ({ ...base, issues: base.issues.map((i) => (i.number === 20 ? { ...i, comments } : i)) });
   assert.deepEqual(D.reviewPullRequestsToRead(patch([])), []);
   assert.deepEqual(D.reviewPullRequestsToRead(patch([{ author: "someone", body: HANDED(21, 22) }])), []);
+});
+
+// ---- 終わったタブを閉じる: 結果が GitHub に出て手が止まったタブ ----
+
+const closes = (actions) => actions.filter((a) => a.kind === "close-tab");
+const closeTab = (issue, step, handle, gone = false) => ({ kind: "close-tab", key: `close-tab:${handle}`, issue, step, handle, gone });
+// to-tickets を handle term_1 で起動し、結果の親 #20 ができた仕様 #12
+const doneWorld = ({ comments = [], sessions = { term_1: obs({ idle: true }) }, over = {} } = {}) =>
+  snapshot(
+    [spec(12, { comments: [...SENT_ALL, byViewer(LAUNCHING), byViewer(LAUNCHED), ...comments] }), issue(20, { body: "仕様: #12", comments: [byViewer(HANDED(21))], subIssues: openSubs(21) }), issue(21)],
+    { sessions, now: at(1), ...over },
+  );
+
+test("タブを閉じる: 結果があり手が止まった（idle）工程のタブは close-tab を出す。印は工程の印と同じ issue", () => {
+  assert.deepEqual(closes(decide(doneWorld())), [closeTab(12, "to-tickets", "term_1")]);
+});
+
+test("タブを閉じる: 結果があっても手が止まっていなければ出さない。結果が無ければ idle でも出さない", () => {
+  assert.deepEqual(closes(decide(doneWorld({ sessions: { term_1: obs({ idle: false }) } }))), []);
+  assert.deepEqual(closes(decide(stallWorld({ sessions: { term_1: obs({ idle: true }) } }))), []);
+});
+
+test("タブを閉じる: 既に見つからないタブは close せず印だけ書く（gone: true）", () => {
+  assert.deepEqual(closes(decide(doneWorld({ sessions: { term_1: obs({ found: false, tail: [] }) } }))), [closeTab(12, "to-tickets", "term_1", true)]);
+});
+
+test("タブを閉じる: 閉じた印がある handle と、判断依頼を送った工程には出さず、観測もしない", () => {
+  const closed = doneWorld({ comments: [byViewer(closedTabMarker("to-tickets", "term_1"))] });
+  assert.deepEqual(tabsToClose(closed), []);
+  assert.deepEqual(closes(decide(closed)), []);
+  const asked = doneWorld({ comments: [byViewer(stallMarker(12, "to-tickets"))] });
+  assert.deepEqual(tabsToClose(asked), []);
+  assert.deepEqual(closes(decide(asked)), []);
+});
+
+test("タブを閉じる: 古い印の handle を閉じた印は、新しい handle の工程を止めない（handle ごとに区別する）", () => {
+  const relaunched = doneWorld({
+    comments: [byViewer(closedTabMarker("to-tickets", "term_0")), byViewer(launchedMarker("to-tickets", "term_2", at(5)))],
+    sessions: { term_2: obs({ idle: true }) },
+  });
+  assert.deepEqual(closes(decide(relaunched)), [closeTab(12, "to-tickets", "term_2")]);
+});
+
+test("タブを閉じる: knowledge は学びの PR、formal-spec は Formal Spec コメントがあれば結果ありとして閉じる", () => {
+  const s = snapshot(
+    [spec(12, { comments: [...SENT_ALL, byViewer(launchedMarker("knowledge", "term_k", T0)), byViewer(launchedMarker("formal-spec", "term_f", T0))] })],
+    { sessions: { term_k: obs({ idle: true }), term_f: obs({ idle: true }) }, now: at(1), pullRequests: [{ number: 9, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #12", autoMerge: true }] },
+  );
+  assert.deepEqual(closes(decide(s)).map((a) => a.handle).sort(), ["term_f", "term_k"]);
+});
+
+test("タブを閉じる: takt-sequence は渡した sub-issue がすべて閉じ、終わりの行があれば出す。印は親に書く", () => {
+  const subsClosed = [21, 22, 23].map((number) => ({ number, state: "CLOSED" }));
+  const done = { term_s: obs({ tail: [`${SEQUENCE_DONE}（exit 0）`, "$"] }) };
+  assert.deepEqual(closes(decide(seqWorld({ subs: subsClosed, sessions: done }))), [closeTab(20, "takt-sequence", "term_s")]);
+  assert.deepEqual(closes(decide(seqWorld({ subs: subsClosed, sessions: { term_s: obs({ tail: ["マージ完了: #23"] }) } }))), []);
+  assert.deepEqual(closes(decide(seqWorld({ sessions: done }))), []);
+});
+
+test("タブを閉じる: takt-sequence の停止で判断依頼を送った親・閉じた印がある親には出さない", () => {
+  const subsClosed = [21, 22, 23].map((number) => ({ number, state: "CLOSED" }));
+  const done = { term_s: obs({ tail: [`${SEQUENCE_DONE}（exit 0）`] }) };
+  const asked = seqWorld({ subs: subsClosed, sessions: done, specComments: [byViewer(decisionMarker(20, "takt-sequence のセッションの停止"))] });
+  assert.deepEqual(closes(decide(asked)), []);
+  const closed = seqWorld({ subs: subsClosed, sessions: done, parentComments: [byViewer(HANDED(21, 22, 23)), byViewer(SEQ_LAUNCHED()), byViewer(closedTabMarker("takt-sequence", "term_s"))] });
+  assert.deepEqual(tabsToClose(closed), []);
+});
+
+test("タブを閉じる: 同じスナップショットで 2 周しても二重に出さない（dispatched の key で止まる）", () => {
+  const [a] = closes(decide(doneWorld()));
+  assert.deepEqual(closes(decide(doneWorld({ over: { dispatched: [a.key] } }))), []);
+});
+
+test("tabsToClose: 結果が出た工程・takt-sequence の handle を返す（停止の観測とは重ならない）", () => {
+  assert.deepEqual(tabsToClose(doneWorld()), [{ issue: 12, step: "to-tickets", handle: "term_1" }]);
+  assert.deepEqual(sessionsToObserve(doneWorld()), []);
+  assert.deepEqual(tabsToClose(stallWorld()), []);
+});
+
+test("closedTabMarker: 工程と handle を持つ", () => {
+  assert.equal(closedTabMarker("to-tickets", "term_1"), "案内役: to-tickets のタブを閉じた（ターミナル term_1）");
 });
