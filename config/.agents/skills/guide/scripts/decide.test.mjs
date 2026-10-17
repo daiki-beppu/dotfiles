@@ -3068,6 +3068,28 @@ test("判断依頼（やり直しの後の失敗）: 現在の head のやり直
   assert.deepEqual(reviewFixes(actions), []);
 });
 
+test("判断依頼（やり直しの後の失敗）: 同じ head にやり直しの印が複数あるときは最初の印を基準にする。やり直し → 失敗 → やり直し でも判断依頼を 1 件出し、review-fix は出さない", () => {
+  const actions = decide(rfWorld({ comments: [rfRedo(H1), rfFailed(H1), rfRedo(H1)] }));
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(withoutReason(a), rdAction());
+  assert.match(a.reason, /やり直し/);
+  assert.match(a.reason, /指摘が残っている/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
+test("判断依頼（レビューそのものが落ちた）: 同じ head にやり直しの印が複数あるときは最初の印より後の failed を数える", () => {
+  const s = rfWorld({
+    comments: [rfRedoAt(H1, 5), rfRedoAt(H1, 30)],
+    mergeTasks: [rfCrashMerge(10), rfCrashMerge(20)],
+  });
+  const actions = decide(s);
+  const [a, ...rest] = reviewDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /2 回落ちた/);
+  assert.deepEqual(reviewFixes(actions), []);
+});
+
 test("判断依頼（やり直しの後の失敗）: 起動の印がある head でも、やり直しの印より後に失敗していれば出す。上限に達していなくても出す", () => {
   const s = rfWorld({ comments: [rfFailed(H1), rfLaunching(H1), rfLaunched(H1), rfRedo(H1), rfFailed(H1)] });
   assert.equal(reviewDecisions(decide(s)).length, 1);

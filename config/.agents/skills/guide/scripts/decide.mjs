@@ -984,7 +984,7 @@ function classifyReviewPullRequest(snapshot, pr) {
   const bodies = mine.map((c) => c.body);
   const failedAt = (c) => c.body.startsWith(`${REVIEW_FAILED} for head ${head}:`);
   const firstFailure = (list) => list.find(failedAt);
-  const redoIndex = mine.findLastIndex((c) => redoHead(c.body) === head);
+  const redoIndex = mine.findIndex((c) => redoHead(c.body) === head);
   const redo = redoIndex === -1 ? null : mine[redoIndex];
   const failures = mine.filter(failedAt);
   const reasonOf = (c) => c.body.split("\n")[0];
