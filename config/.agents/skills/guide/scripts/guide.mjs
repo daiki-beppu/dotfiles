@@ -10,7 +10,7 @@ import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { runKnowledge } from "./knowledge.mjs";
-import { runToTickets } from "./to-tickets.mjs";
+import { launchToTickets } from "./to-tickets.mjs";
 
 const usage = () => {
   console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--dry-run]");
@@ -63,7 +63,7 @@ const readSnapshot = createReadSnapshot({
   taktTasks: () => taktTasks(cwd),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, viewer, runToTickets, startTaktSequence, runKnowledge, taktRunDirs });
+const execute = createExecute({ github, discord, cwd, repo, viewer, launchToTickets, now: () => new Date(), startTaktSequence, runKnowledge, taktRunDirs });
 
 const deps = { readSnapshot, execute, log };
 try {

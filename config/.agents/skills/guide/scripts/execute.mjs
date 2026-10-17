@@ -3,16 +3,16 @@
 import {
   MARKER_APPROVAL_SENDING,
   MARKER_APPROVAL_SENT_PREFIX,
-  MARKER_FINISHED_PREFIX,
   MARKER_HANDED_PREFIX,
   MARKER_KNOWLEDGE_STARTED,
   MARKER_REJECTED,
-  MARKER_STARTED,
+  MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
   knowledgePrOf,
+  toTicketsLaunchedMarker,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, viewer, runToTickets, startTaktSequence, runKnowledge, taktRunDirs }) {
+export function createExecute({ github, discord, cwd, repo, viewer, launchToTickets, now, startTaktSequence, runKnowledge, taktRunDirs }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -26,10 +26,11 @@ export function createExecute({ github, discord, cwd, repo, viewer, runToTickets
     } else if (action.kind === "reject-spec") {
       github.comment(action.spec, MARKER_REJECTED);
     } else if (action.kind === "to-tickets") {
-      github.comment(action.spec, MARKER_STARTED);
-      const { code, logFile } = await runToTickets({ cwd, spec: action.spec });
-      github.comment(action.spec, `${MARKER_FINISHED_PREFIX}${code}）`);
-      if (code !== 0) throw new Error(`to-tickets (#${action.spec}) が exit ${code} で終了（ログ: ${logFile}）`);
+      // 起動前の印 → 起動 → handle と起動時刻の印。handle は起動の応答からしか取れないので 2 段に分ける。
+      github.comment(action.spec, MARKER_TO_TICKETS_LAUNCHING);
+      const launchedAt = now().toISOString();
+      const { handle } = await launchToTickets({ cwd, spec: action.spec });
+      github.comment(action.spec, toTicketsLaunchedMarker(handle, launchedAt));
     } else if (action.kind === "knowledge") {
       github.comment(action.spec, MARKER_KNOWLEDGE_STARTED);
       const runDirs = taktRunDirs(cwd, [...action.subIssues]);

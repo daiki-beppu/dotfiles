@@ -12,8 +12,13 @@
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
 
+// to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
+// 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
+// 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
+export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
-export const MARKER_FINISHED_PREFIX = "案内役: to-tickets が終わった（exit ";
+const LAUNCHED_PREFIX = `${MARKER_STARTED}（ターミナル `;
+export const toTicketsLaunchedMarker = (handle, launchedAt) => `${LAUNCHED_PREFIX}${handle} / ${launchedAt}）`;
 export const MARKER_HANDED_PREFIX = "案内役: takt-sequence に渡した";
 
 // 承認依頼: 送る前（二重送信の防止）と送った後（スレッドとメッセージの ID を GitHub に残す）の 2 つ。差し戻しは 1 つ。
@@ -185,7 +190,9 @@ export function decide(snapshot) {
 
   for (const spec of approved) {
     const specMarkers = markers(spec, viewer);
-    const started = specMarkers.some((b) => b.startsWith(MARKER_STARTED));
+    const launching = specMarkers.some((b) => b.startsWith(MARKER_TO_TICKETS_LAUNCHING));
+    const launched = specMarkers.some((b) => b.startsWith(LAUNCHED_PREFIX));
+    const legacyStarted = specMarkers.some((b) => b.startsWith(MARKER_STARTED) && !b.startsWith(LAUNCHED_PREFIX));
     const finished = specMarkers.map((b) => FINISHED.exec(b)).filter(Boolean);
     const ticketed = finished.some((m) => m[1] === "0");
 
@@ -195,12 +202,13 @@ export function decide(snapshot) {
 
     // 遷移 1
     const key = `to-tickets:${spec.number}`;
-    if (candidates.length === 0 && !started && finished.length === 0 && !dispatched.has(key)) {
+    if (candidates.length === 0 && !launching && !launched && !legacyStarted && finished.length === 0 && !dispatched.has(key)) {
       actions.push({ kind: "to-tickets", key, spec: spec.number });
     }
 
-    // 遷移 2: 人が作った親（起動マーカー無し）か、to-tickets が exit 0 で終わった親だけ
-    const gateOpen = (!started && finished.length === 0) || ticketed;
+    // 遷移 2: 親ができたら渡す。古い版の印（handle なしの起動・終了）がある仕様だけは、従来どおり exit 0 で終わった親に限る
+    const legacy = legacyStarted || finished.length > 0;
+    const gateOpen = legacy ? ticketed : true;
     if (!gateOpen) continue;
     for (const parent of candidates) {
       const subs = parent.subIssues ?? [];
