@@ -11,7 +11,7 @@ import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { mergeTasks, readReviewReport, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
-import { observeSession, sendToSession } from "./orca-agent.mjs";
+import { closeTab, observeSession, sendToSession } from "./orca-agent.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
@@ -62,7 +62,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }) });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
 
 const deps = { readSnapshot, execute, log };
 try {

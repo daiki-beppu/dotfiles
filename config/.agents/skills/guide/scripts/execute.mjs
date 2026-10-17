@@ -1,5 +1,5 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
-// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix）は注入する。
+// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・タブを閉じる）は注入する。
 import {
   MARKER_APPROVAL_SENDING,
   MARKER_FORMAL_SPEC_LAUNCHING,
@@ -12,6 +12,7 @@ import {
   MARKER_WAYFINDER_LAUNCHING,
   MARKER_TO_SPEC_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
+  closedTabMarker,
   decisionMarker,
   grillingInjectMarker,
   grillingSendingMarker,
@@ -25,7 +26,7 @@ import {
 } from "./decide.mjs";
 import { fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession, closeTab }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -187,6 +188,10 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       // 印は送信より先。改行は空白にして 1 行で送る（改行で入力が途中で確定しないように）。
       github.comment(action.ticket, grillingInjectMarker(action.ticket, action.since));
       await sendToSession({ handle: action.handle, text: action.answer.replace(/\s*\r?\n\s*/g, " ").trim() });
+    } else if (action.kind === "close-tab") {
+      // 閉じ直しは害が無い（閉じ済みのタブも ok で返る）ので、起動と逆に印は後に書く。close が失敗すれば印を書かずに止まる。
+      if (!action.gone) await closeTab({ cwd, handle: action.handle });
+      github.comment(action.issue, closedTabMarker(action.step, action.handle));
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);
