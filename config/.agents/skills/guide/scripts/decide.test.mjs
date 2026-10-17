@@ -1,7 +1,7 @@
 // decide.mjs の判定テスト。GitHub・takt・Discord・子プロセスは一切呼ばない。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide } from "./decide.mjs";
+import { decide, decisionMarker, launchedMarker, sessionsToObserve, tabTitle } from "./decide.mjs";
 
 const REPO = "daiki-beppu/live-mindmap";
 const VIEWER = "daiki-beppu";
@@ -887,4 +887,183 @@ test("fromSpec: 範囲の外の仕様の親も takt に渡さず、範囲の内�
 
 test("fromSpec: 指定が無ければ、すべての OPEN な仕様を扱う", () => {
   assert.deepEqual(decide(withOwner([pending(12), pending(13)])), [requestApproval(12), requestApproval(13)]);
+});
+
+// ---- 起動したセッションの停止: 結果が GitHub に無いまま止まったら、承認依頼のスレッドへ判断依頼 ----
+
+const SENT_ALL = [byViewer("案内役: Discord に承認依頼を送る"), byViewer("案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）")];
+const T0 = "2026-10-17T00:00:00.000Z";
+const at = (minutes) => new Date(Date.parse(T0) + minutes * 60_000).toISOString();
+const STALL_CAUSE = (step) => `${step} のセッションの停止`;
+const stallMarker = (n, step) => decisionMarker(n, STALL_CAUSE(step));
+const obs = (over = {}) => ({ found: true, waiting: false, idle: false, startedAt: T0, tail: ["line1", "line2"], ...over });
+const stalls = (actions) => actions.filter((a) => a.kind === "request-decision" && String(a.cause).endsWith("のセッションの停止"));
+
+// to-tickets を handle つきで起動済み、結果（親 issue）はまだ無い仕様 #12
+const stallWorld = ({ comments = [], sessions = { term_1: obs() }, now = at(1), over = {}, specOver = {}, extra = [] } = {}) =>
+  snapshot(
+    [spec(12, { title: "仕様A", comments: [...SENT_ALL, byViewer("案内役: to-tickets を起動する"), byViewer(LAUNCHED), ...comments], ...specOver }), ...extra],
+    { sessions, now, ...over },
+  );
+
+test("停止: 結果が無く入力待ち（waiting）なら 1 件。送り先は承認依頼のスレッド、タブは工程と仕様の番号、画面の数行と理由つき", () => {
+  const [a, ...rest] = stalls(decide(stallWorld({ sessions: { term_1: obs({ waiting: true }) } })));
+  assert.deepEqual(rest, []);
+  assert.equal(a.kind, "request-decision");
+  assert.equal(a.spec, 12);
+  assert.equal(a.issue, 12);
+  assert.equal(a.cause, STALL_CAUSE("to-tickets"));
+  assert.equal(a.threadId, "555");
+  assert.equal(a.step, "to-tickets");
+  assert.equal(a.tab, "to-tickets #12");
+  assert.deepEqual(a.tail, ["line1", "line2"]);
+  assert.match(a.reason, /入力待ち/);
+});
+
+test("停止: 手が止まっている（idle）だけでは出さない（条件は入力待ち・見つからない・時間切れの 3 つだけ）", () => {
+  assert.deepEqual(stalls(decide(stallWorld({ sessions: { term_1: obs({ idle: true }) } }))), []);
+  assert.deepEqual(stalls(decide(stallWorld({ sessions: { term_1: obs() } }))), []);
+});
+
+test("停止: 結果が無く handle のセッションが見つからない（found: false）なら、時刻によらず 1 件", () => {
+  const [a, ...rest] = stalls(decide(stallWorld({ sessions: { term_1: obs({ found: false, waiting: false, tail: [] }) }, now: at(1) })));
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /見つから/);
+  assert.equal(a.tab, "to-tickets #12");
+});
+
+test("停止: 時間切れは既定 60 分。60 分で 1 件、59 分では 0 件（判定は snapshot.now を使い、時計を読まない）", () => {
+  const [a, ...rest] = stalls(decide(stallWorld({ now: at(60) })));
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /60/);
+  assert.deepEqual(stalls(decide(stallWorld({ now: at(59) }))), []);
+});
+
+test("停止: stallMinutes の指定で時間が変わる（30 分指定なら 30 分で 1 件、29 分で 0 件）", () => {
+  assert.equal(stalls(decide(stallWorld({ now: at(30), over: { stallMinutes: 30 } }))).length, 1);
+  assert.deepEqual(stalls(decide(stallWorld({ now: at(29), over: { stallMinutes: 30 } }))), []);
+  assert.deepEqual(stalls(decide(stallWorld({ now: at(60), over: { stallMinutes: 120 } }))), []);
+});
+
+test("停止: 起動時刻は印のコメントから読む（観測の startedAt ではなく印の時刻で時間切れを判定する）", () => {
+  const w = stallWorld({ sessions: { term_1: obs({ startedAt: at(1000) }) }, now: at(60) });
+  assert.equal(stalls(decide(w)).length, 1);
+});
+
+test("停止: 印の時刻が解析できなければ時間切れにしない（入力待ち・見つからないは効く）", () => {
+  const broken = { author: VIEWER, body: "案内役: to-tickets を起動した（ターミナル term_1 / いつか）" };
+  const w = (sessions) => snapshot([spec(12, { comments: [...SENT_ALL, broken] })], { sessions, now: at(9999) });
+  assert.deepEqual(stalls(decide(w({ term_1: obs() }))), []);
+  assert.equal(stalls(decide(w({ term_1: obs({ waiting: true }) }))).length, 1);
+});
+
+test("停止: 理由は 1 つだけ選び、見つからない → 入力待ち → 時間切れの順に優先する（行動は常に 1 件）", () => {
+  const all = stallWorld({ sessions: { term_1: obs({ found: false, waiting: true }) }, now: at(500) });
+  const [a, ...rest] = stalls(decide(all));
+  assert.deepEqual(rest, []);
+  assert.match(a.reason, /見つから/);
+  const wt = stalls(decide(stallWorld({ sessions: { term_1: obs({ waiting: true }) }, now: at(500) })));
+  assert.equal(wt.length, 1);
+  assert.match(wt[0].reason, /入力待ち/);
+});
+
+test("停止: 結果が GitHub にあれば、観測が見つからない・入力待ち・時間切れでも出さない（to-tickets は親 issue）", () => {
+  const parent = issue(20, { body: "仕様: #12", subIssues: openSubs(21) });
+  const bad = obs({ found: false, waiting: true });
+  assert.deepEqual(stalls(decide(stallWorld({ sessions: { term_1: bad }, now: at(999), extra: [parent, issue(21)] }))), []);
+});
+
+test("停止: 結果の判定は工程ごと（to-tickets に学びの PR や Formal Spec は結果にならない）", () => {
+  const pr = [{ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #12", autoMerge: true }];
+  const w = stallWorld({ sessions: { term_1: obs({ waiting: true }) }, over: { pullRequests: pr }, comments: [byViewer("## Formal Spec（takt 0.71.0 の検証器で passed）")] });
+  assert.equal(stalls(decide(w)).length, 1);
+});
+
+test("停止: 汎用 — handle つきの knowledge の印は、学びの PR が無ければ出し、viewer の PR があれば出さない", () => {
+  const mark = byViewer("案内役: knowledge を起動した（ターミナル term_k / " + T0 + "）");
+  const w = (over) => snapshot([spec(12, { comments: [...SENT_ALL, mark] })], { sessions: { term_k: obs({ waiting: true }) }, now: at(1), ...over });
+  const [a, ...rest] = stalls(decide(w()));
+  assert.deepEqual(rest, []);
+  assert.equal(a.cause, STALL_CAUSE("knowledge"));
+  assert.equal(a.tab, "knowledge #12");
+  const pr = [{ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #12", autoMerge: true }];
+  assert.deepEqual(stalls(decide(w({ pullRequests: pr }))), []);
+  const stranger = [{ number: 50, state: "OPEN", author: "someone", body: "学びの元の仕様: #12" }];
+  assert.equal(stalls(decide(w({ pullRequests: stranger }))).length, 1);
+});
+
+test("停止: 汎用 — handle つきの formal-spec の印は、viewer の Formal Spec コメントが無ければ出し、あれば（failed でも）この原因では出さない", () => {
+  const mark = byViewer("案内役: formal-spec を起動した（ターミナル term_f / " + T0 + "）");
+  const w = (extra = []) => snapshot([spec(12, { comments: [...SENT_ALL, mark, ...extra] })], { sessions: { term_f: obs({ found: false }) }, now: at(1) });
+  const [a, ...rest] = stalls(decide(w()));
+  assert.deepEqual(rest, []);
+  assert.equal(a.cause, STALL_CAUSE("formal-spec"));
+  assert.equal(a.tab, "formal-spec #12");
+  assert.deepEqual(stalls(decide(w([byViewer("## Formal Spec（takt 0.71.0 の検証器で passed）")]))), []);
+  assert.deepEqual(stalls(decide(w([{ author: "someone", body: "## Formal Spec（takt 0.71.0 の検証器で passed）" }]))).length, 1);
+});
+
+test("停止: 結果の判定表に無い工程は観測しない", () => {
+  const mark = byViewer("案内役: unknown-step を起動した（ターミナル term_u / " + T0 + "）");
+  const s = snapshot([spec(12, { comments: [...SENT_ALL, mark] })], { sessions: { term_u: obs({ found: false }) }, now: at(9999) });
+  assert.deepEqual(sessionsToObserve(s), []);
+  assert.deepEqual(stalls(decide(s)), []);
+});
+
+test("停止: マーカーがあれば再送しない。マーカーは工程ごとに区別できる（別の工程のマーカーでは止まらない）", () => {
+  const sessions = { term_1: obs({ waiting: true }) };
+  assert.equal(stallMarker(12, "to-tickets"), "案内役: Discord に判断依頼を送る（#12 to-tickets のセッションの停止）");
+  assert.deepEqual(stalls(decide(stallWorld({ sessions, comments: [byViewer(stallMarker(12, "to-tickets"))] }))), []);
+  assert.equal(stalls(decide(stallWorld({ sessions, comments: [byViewer(stallMarker(12, "knowledge"))] }))).length, 1);
+  assert.equal(stalls(decide(stallWorld({ sessions, comments: [{ author: "someone", body: stallMarker(12, "to-tickets") }] }))).length, 1);
+  assert.equal(stalls(decide(stallWorld({ sessions, comments: [byViewer(decisionMarker(12, "formal-spec の検証失敗"))] }))).length, 1);
+});
+
+test("停止: 同じスナップショットで 2 周しても二重に出さない（dispatched の key で止まる）", () => {
+  const sessions = { term_1: obs({ waiting: true }) };
+  const [a] = stalls(decide(stallWorld({ sessions })));
+  assert.deepEqual(stalls(decide(stallWorld({ sessions, over: { dispatched: [a.key] } }))), []);
+  assert.equal(stalls(decide(stallWorld({ sessions }))).map((x) => x.key)[0], a.key);
+});
+
+test("停止: handle の無い印（古い to-tickets・handle なしの knowledge）は観測しない。判断依頼 0 件、sessionsToObserve にも出ない", () => {
+  for (const legacy of [STARTED, "案内役: knowledge を起動した", FINISHED(0)]) {
+    const s = snapshot([spec(12, { comments: [...SENT_ALL, byViewer(legacy)] })], { sessions: {}, now: at(9999) });
+    assert.deepEqual(sessionsToObserve(s), [], legacy);
+    assert.deepEqual(stalls(decide(s)), [], legacy);
+  }
+});
+
+test("停止: 範囲 — 承認依頼のスレッドが無い・閉じた・fromSpec の範囲外・viewer 以外の印の仕様には出さない", () => {
+  const sessions = { term_1: obs({ waiting: true }) };
+  const mk = (specOver, over) => snapshot([spec(12, { comments: [...SENT_ALL, byViewer(LAUNCHED)], ...specOver })], { sessions, now: at(1), ...over });
+  assert.equal(stalls(decide(mk({}))).length, 1);
+  assert.deepEqual(stalls(decide(snapshot([spec(12, { comments: [byViewer("案内役: Discord に承認依頼を送る"), byViewer(LAUNCHED)] })], { sessions, now: at(1) }))), []);
+  assert.deepEqual(stalls(decide(mk({ state: "CLOSED" }))), []);
+  assert.deepEqual(stalls(decide(mk({}, { fromSpec: 13 }))), []);
+  assert.deepEqual(stalls(decide(mk({ comments: [...SENT_ALL, { author: "someone", body: LAUNCHED }] }))), []);
+});
+
+test("停止: 観測が無い（sessions に handle が無い）なら何も出さない", () => {
+  assert.deepEqual(stalls(decide(stallWorld({ sessions: {} }))), []);
+});
+
+test("停止: 同じ工程の印が複数あれば最後の印の handle を観測する", () => {
+  const second = byViewer(launchedMarker("to-tickets", "term_2", at(10)));
+  const s = stallWorld({ comments: [second], sessions: { term_2: obs({ waiting: true }) }, now: at(20) });
+  assert.deepEqual(sessionsToObserve(s), [{ spec: 12, step: "to-tickets", handle: "term_2", startedAt: at(10) }]);
+  assert.equal(stalls(decide(s)).length, 1);
+});
+
+test("sessionsToObserve: 結果が出た工程・マーカー送り済みの工程は含めず、起動の印の handle と時刻を返す", () => {
+  assert.deepEqual(sessionsToObserve(stallWorld()), [{ spec: 12, step: "to-tickets", handle: "term_1", startedAt: T0 }]);
+  const parent = issue(20, { body: "仕様: #12", subIssues: openSubs(21) });
+  assert.deepEqual(sessionsToObserve(stallWorld({ extra: [parent, issue(21)] })), []);
+  assert.deepEqual(sessionsToObserve(stallWorld({ comments: [byViewer(stallMarker(12, "to-tickets"))] })), []);
+});
+
+test("launchedMarker / tabTitle: 起動の印は handle と時刻を持ち、to-tickets の既存の印と同じ形。タブ名は工程と仕様の番号", () => {
+  assert.equal(launchedMarker("to-tickets", "term_1", T0), LAUNCHED);
+  assert.equal(launchedMarker("knowledge", "t", T0), `案内役: knowledge を起動した（ターミナル t / ${T0}）`);
+  assert.equal(tabTitle("to-tickets", 12), "to-tickets #12");
 });

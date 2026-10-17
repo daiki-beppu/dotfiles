@@ -1,5 +1,5 @@
 // to-tickets の起動。Orca のタブに対話セッションとして起動する。終わりは親 issue ができたかで判定する（decide.mjs）。
-import { PARENT_SPEC_PREFIX } from "./decide.mjs";
+import { PARENT_SPEC_PREFIX, tabTitle } from "./decide.mjs";
 import { launchAgent } from "./orca-agent.mjs";
 
 const prompt = (spec) =>
@@ -11,5 +11,5 @@ const prompt = (spec) =>
   ].join("\n");
 
 export function launchToTickets({ cwd, spec }, run) {
-  return launchAgent({ cwd, prompt: prompt(spec), title: `to-tickets #${spec}` }, run);
+  return launchAgent({ cwd, prompt: prompt(spec), title: tabTitle("to-tickets", spec) }, run);
 }

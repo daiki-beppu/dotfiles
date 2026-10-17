@@ -66,3 +66,69 @@ test("fromSpec: 指定した番号をそのままスナップショットに入�
   assert.equal((await build([issue(12)], undefined, [], 30).read()).fromSpec, 30);
   assert.equal((await build([issue(12)]).read()).fromSpec, undefined);
 });
+
+// ---- 起動した工程のセッションの観測 ----
+
+const T0 = "2026-10-17T00:00:00.000Z";
+const NOW = new Date("2026-10-17T00:30:00.000Z");
+const launched = (step, handle, at = T0) => ({ author: VIEWER, body: `案内役: ${step} を起動した（ターミナル ${handle} / ${at}）` });
+
+const buildObserved = (issues, { pullRequests = [], observe, stallMinutes } = {}) => {
+  const observed = [];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => issues, readPullRequests: () => pullRequests },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+    now: () => NOW,
+    stallMinutes,
+    observeSession: (arg) => { observed.push(arg.handle); return observe ? observe(arg) : { found: true, waiting: false, idle: true, tail: ["t"] }; },
+  });
+  return { read, observed };
+};
+
+test("sessions: 起動の印の handle ごとに観測を入れ、startedAt は印の時刻、now は注入した時刻の ISO 8601、stallMinutes も入れる", async () => {
+  const { read, observed } = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_1")] })], { stallMinutes: 45 });
+  const snap = await read();
+  assert.deepEqual(observed, ["term_1"]);
+  assert.deepEqual(snap.sessions, { term_1: { found: true, waiting: false, idle: true, startedAt: T0, tail: ["t"] } });
+  assert.equal(snap.now, NOW.toISOString());
+  assert.equal(snap.stallMinutes, 45);
+});
+
+test("sessions: 見つからない観測（found: false）も入れる。観測の取得が失敗したら例外にする", async () => {
+  const gone = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_1")] })], { observe: () => ({ found: false, waiting: false, idle: false, tail: [] }) });
+  assert.equal((await gone.read()).sessions.term_1.found, false);
+  const failing = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_1")] })], { observe: () => { throw new Error("orca down"); } });
+  await assert.rejects(failing.read(), /orca down/);
+});
+
+test("sessions: handle の無い印・結果が出た工程・承認依頼を送る前の仕様は観測しない（orca を呼ばない）", async () => {
+  const legacy = { author: VIEWER, body: "案内役: to-tickets を起動した" };
+  const parent = issue(20, { labels: [], body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] });
+  const pr = [{ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #13", autoMerge: true }];
+  const { read, observed } = buildObserved(
+    [
+      issue(12, { comments: [...sent, launched("to-tickets", "term_done")] }),
+      parent,
+      issue(13, { comments: [...sent, launched("knowledge", "term_pr")] }),
+      issue(14, { comments: [...sent, legacy] }),
+      issue(15, { comments: [{ author: VIEWER, body: SENDING }, launched("to-tickets", "term_unsent")] }),
+    ],
+    { pullRequests: pr },
+  );
+  const snap = await read();
+  assert.deepEqual(observed, []);
+  assert.deepEqual(snap.sessions, {});
+});
+
+test("sessions: 観測すべき工程が無くても now と空の sessions を返す（既存の呼び出しが observeSession なしでも壊れない）", async () => {
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => [issue(12)], readPullRequests: () => [] },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+  });
+  const snap = await read();
+  assert.deepEqual(snap.sessions ?? {}, {});
+});

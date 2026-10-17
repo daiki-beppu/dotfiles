@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { decide } from "./decide.mjs";
+import { createDiscord } from "./discord.mjs";
 import { createExecute } from "./execute.mjs";
 import { runRound } from "./loop.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
@@ -425,6 +426,60 @@ test("判断依頼: 送信が失敗してもマーカーは残り、再起動で
   const { calls, round } = decisionWorld(async () => { throw new Error("discord down"); });
   await assert.rejects(round(), /discord down/);
   assert.deepEqual(calls, [`comment #12 ${DECISION_MARKER}`]);
+  await round(new Set());
+  assert.equal(calls.length, 1);
+});
+
+// ---- セッションの停止の判断依頼: マーカー → 送信の順。本文に工程・タブの名前・画面の数行・理由が入る ----
+
+
+const STALL_MARKER = "案内役: Discord に判断依頼を送る（#12 to-tickets のセッションの停止）";
+const SCREEN = ["Allow this command? (y/n)", "rm -rf build"];
+
+const stallWorld = (fetchOver) => {
+  const calls = [];
+  const issues = [
+    issue(12, { title: "仕様A", labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS, { author: VIEWER, body: "案内役: to-tickets を起動する" }, { author: VIEWER, body: AFTER.replace(/^comment #12 /, "") }] }),
+  ];
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); } };
+  const fetch = fetchOver ?? (async (url, init) => { calls.push(`discord ${init.method} ${new URL(url).pathname} ${JSON.parse(init.body).content}`); return { ok: true, status: 200, json: async () => ({ id: "M" }) }; });
+  const discord = createDiscord({ token: "t", guildId: "g", userId: "U", fetch });
+  const deps = {
+    github, discord, cwd: "/x", repo: REPO,
+    launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
+  };
+  const snapshot = () => ({
+    repo: REPO, viewer: VIEWER, discordUserId: "U", issues, taktIssues: [], now: "2026-10-17T00:10:00.000Z",
+    sessions: { term_1: { found: true, waiting: true, idle: false, startedAt: LAUNCHED_AT, tail: SCREEN } },
+  });
+  const round = (dispatched = new Set()) => runRound({ readSnapshot: async () => snapshot(), execute: createExecute(deps), log: () => {} }, dispatched);
+  return { calls, round };
+};
+
+test("セッション停止: 仕様に判断依頼のマーカーを書いてから、承認依頼のスレッドへ送る。本文に工程・仕様・タブの名前・画面の数行・理由が入る", async () => {
+  const { calls, round } = stallWorld();
+  await round();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `comment #12 ${STALL_MARKER}`);
+  assert.ok(calls[1].startsWith("discord POST /api/v10/channels/555/messages "), calls[1]);
+  const content = calls[1].replace(/^discord POST \S+ /, "");
+  for (const part of ["to-tickets", "#12", "to-tickets #12", ...SCREEN, "入力待ち"]) assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  assert.ok(content.length <= 2000);
+});
+
+test("セッション停止: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = stallWorld();
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("セッション停止: 送信が失敗してもマーカーは残り、再起動で再送しない", async () => {
+  const { calls, round } = stallWorld(async () => { throw new Error("discord down"); });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, [`comment #12 ${STALL_MARKER}`]);
   await round(new Set());
   assert.equal(calls.length, 1);
 });

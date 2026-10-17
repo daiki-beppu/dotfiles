@@ -32,3 +32,57 @@ export function launchAgent({ cwd, prompt, title }, run = runOrca) {
   }
   return { handle };
 }
+
+const TAIL_LINES = 10;
+const STALE_HANDLE = "terminal_handle_stale";
+const WAIT_TIMEOUT = "timeout";
+const IDLE_PROBE_MS = 500;
+
+const parseReply = (reply, what) => {
+  try {
+    return JSON.parse(reply);
+  } catch {
+    throw new Error(`${what} の応答が JSON ではない: ${head(reply)}`);
+  }
+};
+
+// orca は失敗時に終了コード 1 で、stdout に { ok: false, error: { code } } を出す。その code（読めなければ undefined）。
+function errorCode(e) {
+  try {
+    return JSON.parse(e?.stdout)?.error?.code;
+  } catch {
+    return undefined;
+  }
+}
+
+// handle のセッションの観測 { found, waiting, idle, tail }。
+//   found: `orca terminal show` が handle を返したか（存在しない handle の応答 terminal_handle_stale だけを false にする。それ以外の失敗は例外）
+//   waiting: show の agentWait が null でない（人にしか答えられない入力待ち。Orca が prompt-text / title / hook のどれかで確かめたもの）
+//   idle: `orca terminal wait --for tui-idle` が短い待ちで満たされた（手が止まっている）。待ちが timeout（終了コード 1、error.code: "timeout"）なら false
+//   tail: `orca terminal read` の画面の最後の 10 行
+export function observeSession({ cwd, handle }, run = runOrca) {
+  let shown;
+  try {
+    shown = run(["terminal", "show", "--terminal", handle, "--json"], { cwd });
+  } catch (e) {
+    if (errorCode(e) === STALE_HANDLE) return { found: false, waiting: false, idle: false, tail: [] };
+    throw new Error(`orca terminal show が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
+  }
+  const terminal = parseReply(shown, "orca terminal show").result?.terminal;
+  if (terminal === undefined) throw new Error(`orca terminal show の応答に result.terminal が無い: ${head(shown)}`);
+  const read = parseReply(run(["terminal", "read", "--terminal", handle, "--json"], { cwd }), "orca terminal read");
+  const tail = read.result?.terminal?.tail;
+  if (!Array.isArray(tail)) throw new Error(`orca terminal read の応答に result.terminal.tail が無い（ターミナル ${handle}）`);
+  return { found: true, waiting: terminal.agentWait != null, idle: isIdle({ cwd, handle }, run), tail: tail.slice(-TAIL_LINES) };
+}
+
+function isIdle({ cwd, handle }, run) {
+  let reply;
+  try {
+    reply = run(["terminal", "wait", "--terminal", handle, "--for", "tui-idle", "--timeout-ms", String(IDLE_PROBE_MS), "--json"], { cwd });
+  } catch (e) {
+    if (errorCode(e) === WAIT_TIMEOUT) return false;
+    throw new Error(`orca terminal wait が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
+  }
+  return parseReply(reply, "orca terminal wait").result?.wait?.satisfied === true;
+}
