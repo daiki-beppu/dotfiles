@@ -62,8 +62,11 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         tail: action.tail,
       });
     } else if (action.kind === "takt-sequence") {
+      // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);
-      startTaktSequence({ cwd, repo, issues: action.issues });
+      const launchedAt = now().toISOString();
+      const { handle } = await startTaktSequence({ cwd, repo, issues: action.issues });
+      github.comment(action.parent, launchedMarker("takt-sequence", handle, launchedAt));
     }
   };
 }

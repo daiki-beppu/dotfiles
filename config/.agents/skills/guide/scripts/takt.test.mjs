@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { taktRunDirs, taktTasks } from "./takt.mjs";
+import { SEQUENCE_DONE } from "./decide.mjs";
+import { startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 
 test("taktRunDirs: 対象 issue のタスクのうち、実在する run のディレクトリだけを重複なく返す", () => {
   const root = mkdtempSync(join(tmpdir(), "takt-run-dirs-"));
@@ -32,4 +33,24 @@ test("taktTasks: タスクを issue・kind・createdAt・step・error・worktree
     { issue: 21, kind: "failed", createdAt: "2026-10-16T10:00:00Z", step: "implement", error: "blocked", worktreePath: "/w/21" },
     { issue: 22, kind: "running", createdAt: "2026-10-16T11:00:00Z", step: undefined, error: undefined, worktreePath: undefined },
   ]);
+});
+
+test("startTaktSequence: Orca の新しいタブで起動し、応答の result.terminal.handle を返す。takt-sequence の後に終わりの行を出す", () => {
+  const calls = [];
+  const run = (args, opts) => {
+    calls.push({ args, opts });
+    return JSON.stringify({ ok: true, result: { terminal: { handle: "term_seq", title: "takt sequence o/r" } } });
+  };
+  assert.deepEqual(startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21, 22] }, run), { handle: "term_seq" });
+  const [{ args, opts }] = calls;
+  assert.deepEqual(args.slice(0, 7), ["terminal", "create", "--worktree", "path:/w", "--title", "takt sequence o/r", "--json"]);
+  assert.equal(args[7], "--command");
+  assert.match(args[8], /takt-sequence\.mjs' '21' '22'; echo "案内役: takt-sequence が終わった（exit \$\?）"$/);
+  assert.ok(args[8].includes(SEQUENCE_DONE));
+  assert.equal(opts.cwd, "/w");
+});
+
+test("startTaktSequence: 応答から handle が取れなければ、応答の頭を入れて例外にする", () => {
+  assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => "not json"), /handle が取れない.*not json/);
+  assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => JSON.stringify({ ok: true, result: {} })), /result\.terminal\.handle/);
 });

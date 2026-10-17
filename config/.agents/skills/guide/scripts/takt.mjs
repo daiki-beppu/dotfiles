@@ -1,9 +1,10 @@
-// takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たない）。
-import { execFileSync } from "node:child_process";
+// takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブで起動する（終わりは待たず、handle を返す）。
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { listTasks } from "../../takt/scripts/takt-list.mjs";
+import { SEQUENCE_DONE, sequenceTabTitle } from "./decide.mjs";
+import { handleOf, runOrca } from "./orca-agent.mjs";
 
 const TAKT_SCRIPTS = fileURLToPath(new URL("../../takt/scripts/", import.meta.url));
 const q = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
@@ -22,13 +23,12 @@ export function taktTasks(cwd, list = listTasks) {
     .filter((t) => Number.isInteger(t.issue));
 }
 
-export function startTaktSequence({ cwd, repo, issues }) {
-  const command = [`${TAKT_SCRIPTS}takt-node.sh`, `${TAKT_SCRIPTS}takt-sequence.mjs`, ...issues.map(String)].map(q).join(" ");
-  execFileSync("orca", ["terminal", "create", "--worktree", `path:${cwd}`, "--title", `takt sequence ${repo}`, "--json", "--command", command], {
-    cwd,
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 60_000,
-  });
+// takt-sequence の後に SEQUENCE_DONE の行を出す。タブは閉じずにシェルへ戻るので、終わったことはこの行で見分ける。
+export function startTaktSequence({ cwd, repo, issues }, run = runOrca) {
+  const sequence = [`${TAKT_SCRIPTS}takt-node.sh`, `${TAKT_SCRIPTS}takt-sequence.mjs`, ...issues.map(String)].map(q).join(" ");
+  const command = `${sequence}; echo "${SEQUENCE_DONE}（exit $?）"`;
+  const reply = run(["terminal", "create", "--worktree", `path:${cwd}`, "--title", sequenceTabTitle(repo), "--json", "--command", command], { cwd });
+  return { handle: handleOf(reply, "orca terminal create", "result.terminal.handle") };
 }
 
 // 対象 issue の takt タスクの worktree にある `.takt/runs`（実在するものだけ）。knowledge に素材として渡す。

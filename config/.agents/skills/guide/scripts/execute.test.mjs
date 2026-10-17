@@ -48,7 +48,7 @@ const world = (issues, over = {}) => {
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
     launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
     now: NOW,
-    startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
+    startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); return { handle: "term_seq" }; },
     ...over,
   };
   const round = (dispatched = new Set()) =>
@@ -241,13 +241,17 @@ test("formal-spec: 結果が passed になった次の周で to-tickets を起�
   assert.equal(orcaArgv(calls).filter((a) => a[1] === "launch").length, 2);
 });
 
-test("takt-sequence: 渡したマーカーを起動より先に書き、再起動しても渡さない", async () => {
+test("takt-sequence: 渡した印 → 起動 → handle と起動時刻の印の順に書き、再起動しても渡さない", async () => {
   const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] }), issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] })];
   const { calls, round } = world(issues);
   await round();
-  assert.deepEqual(calls, ["comment #20 案内役: takt-sequence に渡した #21", "takt 21"]);
+  assert.deepEqual(calls, [
+    "comment #20 案内役: takt-sequence に渡した #21",
+    "takt 21",
+    `comment #20 案内役: takt-sequence を起動した（ターミナル term_seq / ${LAUNCHED_AT}）`,
+  ]);
   await round(new Set());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test("takt-sequence の起動が失敗しても渡したマーカーは残り、再起動で二重に起動しない（成否不明のまま再実行しない）", async () => {
@@ -282,7 +286,7 @@ const approvalWorld = (issues, discordOver = {}) => {
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
     launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
     now: NOW,
-    startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
+    startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); return { handle: "term_seq" }; },
   };
   const round = (dispatched = new Set()) =>
     runRound({
