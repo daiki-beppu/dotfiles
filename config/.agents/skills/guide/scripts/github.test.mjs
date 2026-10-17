@@ -163,3 +163,10 @@ test("readIssues: spec で既にコメントを読んだ子は、コメントを
   createGithub({ repo: "o/r", cwd: "/x", execFile }).readIssues();
   assert.equal(paths.filter((p) => p.startsWith("repos/o/r/issues/22/comments")).length, 1);
 });
+
+test("readComments: issue のコメントを {author, body} の形で読む", () => {
+  const { paths, execFile } = routed({ "repos/o/r/issues/21/comments": { user: { login: "me" }, body: "本文" } });
+  const comments = createGithub({ repo: "o/r", cwd: "/x", execFile }).readComments(21);
+  assert.deepEqual(paths, ["repos/o/r/issues/21/comments?per_page=100"]);
+  assert.deepEqual(comments, [{ author: "me", body: "本文" }]);
+});

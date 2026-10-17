@@ -1872,6 +1872,369 @@ test("純粋性: map のスレッド・通知・ticket の停止の判定も入�
   assert.equal(mapDecisions(first).length, 1);
 });
 
+// ---- grilling の不可逆な判断: hook の入力待ち → 判断依頼 → 本人の回答の書き戻し → 同じタブへの流し込み ----
+// 3 段の印はすべて ticket に書く。S は停止の識別子（agentWait.since）、t は ticket の番号。
+const GS = "1760000000000";
+const G_SEND = (t = 21, s = GS) => decisionMarker(t, `grilling の問い ${s}`);
+const G_SENT = (t = 21, s = GS, thread = "900", message = "M1") => `案内役: Discord に判断依頼を送った（#${t} grilling の問い ${s} / スレッド ${thread} / メッセージ ${message}）`;
+const G_WRITTEN = (answer, t = 21, s = GS) => `案内役: Discord の回答を書き戻した（#${t} grilling の問い ${s}）\n\n${answer}`;
+const G_INJECT = (t = 21, s = GS) => `案内役: 回答をタブに流し込む（#${t} grilling の問い ${s}）`;
+const G_QUESTION = (text) => `## 判断の問い\n${text}`;
+const NO_QUESTION = "（問いの記録が ticket に無い）";
+const hookWait = (since = GS, over = {}) => obs({ waiting: true, waitSource: "hook", waitSince: since, ...over });
+const grillingDecisions = (actions) => actions.filter((a) => a.kind === "request-grilling-decision");
+const writeBacks = (actions) => actions.filter((a) => a.kind === "write-back-answer");
+const injects = (actions) => actions.filter((a) => a.kind === "inject-answer");
+// 起動済みの grilling ticket #21（handle term_1）。ticketComments は起動の印の後ろに足す。
+const grillingWorld = (ticketComments = [], { sessions = { term_1: hookWait() }, replies, owner = OWNER, mapComments = threaded(), launched = [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1"))] } = {}) =>
+  stallOf([launchedTicket(21, "grilling", { comments: [...launched, ...ticketComments] })], {
+    mapComments,
+    sessions,
+    over: { discordUserId: owner, ...(replies === undefined ? {} : { decisionReplies: replies }) },
+  });
+const addToTicket = (s, ...bodies) => s.issues.find((i) => i.number === 21).comments.push(...bodies.map(byViewer));
+const reply = (content, userId = OWNER) => ({ userId, content });
+
+// -- 判断依頼を出す --
+
+test("grilling の判断依頼: hook の入力待ちで印がなければ、map のスレッドへの request-grilling-decision が 1 件だけ出る（題名・タブ・画面・問い・停止の識別子つき）", () => {
+  const s = grillingWorld([byViewer(G_QUESTION("公開 API の名前を v2 にするか？\n- A: する\n- B: しない（推奨）"))]);
+  const actions = decide(s);
+  const [a, ...rest] = grillingDecisions(actions);
+  assert.deepEqual(rest, []);
+  assert.equal(a.kind, "request-grilling-decision");
+  assert.equal(a.key, `request-grilling-decision:20:21:${GS}`);
+  assert.deepEqual([a.map, a.ticket, a.since, a.threadId, a.title, a.tab], [20, 21, GS, "900", "ticket 21", "wayfinder #21"]);
+  assert.deepEqual(a.tail, ["line1", "line2"]);
+  assert.ok(a.question.includes("公開 API の名前を v2 にするか？") && a.question.includes("B: しない（推奨）"), a.question);
+});
+
+test("grilling の判断依頼: 同じ停止で「工程のセッションの停止」の判断依頼（request-map-decision）を重ねて出さない。停止の key も出ない", () => {
+  const actions = decide(grillingWorld([byViewer(G_QUESTION("q"))]));
+  assert.equal(grillingDecisions(actions).length, 1);
+  assert.deepEqual(mapDecisions(actions), []);
+  assert.deepEqual(stalls(actions), []);
+});
+
+test("grilling の判断依頼: 送り済み（「送る」の印が ticket にある）なら出ない。停止の判断依頼にも切り替わらない", () => {
+  const actions = decide(grillingWorld([byViewer(G_SEND())]));
+  assert.deepEqual(grillingDecisions(actions), []);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("grilling の判断依頼: 同じスナップショットで印を足して 2 周しても 1 度だけ（再起動後の 2 周目は出ない）", () => {
+  const s = grillingWorld([byViewer(G_QUESTION("q"))]);
+  assert.equal(grillingDecisions(decide(s)).length, 1);
+  addToTicket(s, G_SEND());
+  assert.deepEqual(grillingDecisions(decide(s)), []);
+  assert.deepEqual(mapDecisions(decide(s)), []);
+});
+
+test("grilling の判断依頼: dispatched に key があれば出さない", () => {
+  const s = { ...grillingWorld(), dispatched: [`request-grilling-decision:20:21:${GS}`] };
+  assert.deepEqual(grillingDecisions(decide(s)), []);
+});
+
+test("grilling の判断依頼: 別の停止（since が前方一致）・別の ticket（#2 と #21）の印では送り済みとみなさない", () => {
+  const s = grillingWorld([byViewer(G_SEND(21, "176000000000")), byViewer(G_SEND(2, GS)), byViewer(G_SENT(2, GS)), byViewer(G_SENT(21, "176000000000"))]);
+  const [a, ...rest] = grillingDecisions(decide(s));
+  assert.deepEqual(rest, []);
+  assert.deepEqual([a.ticket, a.since], [21, GS]);
+});
+
+test("grilling の判断依頼: 他人が書いた印や、行の途中に字面があるだけのコメントでは送り済みとみなさない", () => {
+  const s = grillingWorld([{ author: "someone", body: G_SEND() }, byViewer(`メモ: ${G_SEND()}`)]);
+  assert.equal(grillingDecisions(decide(s)).length, 1);
+});
+
+test("grilling の判断依頼: 問いの記録が ticket に無ければ、問いの欄に「問いの記録が ticket に無い」と入れる。他人の「判断の問い」コメントは読まない", () => {
+  const none = grillingDecisions(decide(grillingWorld()))[0];
+  assert.equal(none.question, NO_QUESTION);
+  const foreign = grillingDecisions(decide(grillingWorld([{ author: "someone", body: G_QUESTION("他人の問い") }])))[0];
+  assert.equal(foreign.question, NO_QUESTION);
+});
+
+test("grilling の判断依頼: 問いのコメントが複数あれば、viewer の最後のものを読む", () => {
+  const s = grillingWorld([byViewer(G_QUESTION("古い問い")), byViewer("案内役以外の話")], {});
+  addToTicket(s, G_QUESTION("新しい問い"));
+  const [a] = grillingDecisions(decide(s));
+  assert.ok(a.question.includes("新しい問い") && !a.question.includes("古い問い"), a.question);
+});
+
+test("grilling の判断依頼: 過去に「grilling のセッションの停止」の印が map にあっても、後の hook の入力待ちには判断依頼が出る（停止の判断依頼は出ない）", () => {
+  const s = grillingWorld([byViewer(G_QUESTION("q"))], { mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE("grilling")))) });
+  const actions = decide(s);
+  assert.equal(grillingDecisions(actions).length, 1);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("grilling の判断依頼: map にスレッドが無ければ、先に create-map-thread だけが出る（判断依頼は出ない）", () => {
+  const actions = decide(grillingWorld([], { mapComments: [] }));
+  assert.equal(creates(actions).length, 1);
+  assert.deepEqual(grillingDecisions(actions), []);
+});
+
+test("grilling の判断依頼: hook 以外の入力待ち（prompt-text・title・source なし）は従来どおり停止の判断依頼で、grilling の判断依頼は出ない", () => {
+  for (const wait of [{ waitSource: "prompt-text", waitSince: GS }, { waitSource: "title" }, {}]) {
+    const actions = decide(grillingWorld([], { sessions: { term_1: obs({ waiting: true, ...wait }) } }));
+    assert.deepEqual(grillingDecisions(actions), [], JSON.stringify(wait));
+    assert.equal(mapDecisions(actions).length, 1, JSON.stringify(wait));
+    assert.match(mapDecisions(actions)[0].reason, /入力待ち/);
+  }
+});
+
+test("grilling の判断依頼: hook でも停止の識別子（since）が無ければ判断依頼を出さず、従来の停止の判断依頼に任せる", () => {
+  const actions = decide(grillingWorld([], { sessions: { term_1: obs({ waiting: true, waitSource: "hook" }) } }));
+  assert.deepEqual(grillingDecisions(actions), []);
+  assert.equal(mapDecisions(actions).length, 1);
+});
+
+test("grilling の判断依頼: セッションが見つからない・入力待ちでない（時間内）grilling は従来どおり。見つからなければ停止の判断依頼、動いていれば何も出ない", () => {
+  const gone = decide(grillingWorld([byViewer(G_SENT())], { sessions: { term_1: obs({ found: false, tail: [] }) } }));
+  assert.deepEqual(grillingDecisions(gone), []);
+  assert.equal(mapDecisions(gone).length, 1);
+  const running = decide(grillingWorld([], { sessions: { term_1: obs() } }));
+  assert.deepEqual([...grillingDecisions(running), ...mapDecisions(running)], []);
+});
+
+test("grilling の判断依頼: research・task の hook の入力待ちには出ない（従来の停止の判断依頼）。grilling の ticket にだけ出る", () => {
+  for (const type of ["research", "task"]) {
+    const s = stallOf([launchedTicket(21, type)], { sessions: { term_1: hookWait() } });
+    const actions = decide(s);
+    assert.deepEqual(grillingDecisions(actions), [], type);
+    assert.equal(mapDecisions(actions).length, 1, type);
+  }
+});
+
+test("grilling の判断依頼: research・task の停止の印が map にあれば、これまでどおり出ない（観測の対象に grilling だけが残っても他の種類は変わらない）", () => {
+  for (const type of ["research", "task"]) {
+    const s = stallOf([launchedTicket(21, type)], {
+      mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE(type)))),
+      sessions: { term_1: obs({ found: false, tail: [] }) },
+    });
+    assert.deepEqual(mapDecisions(decide(s)), [], type);
+  }
+});
+
+test("grilling の判断依頼: grilling でも、map に停止の印がある hook 以外の停止（見つからない）には、停止の判断依頼を重ねて出さない", () => {
+  const s = grillingWorld([], {
+    mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE("grilling")))),
+    sessions: { term_1: obs({ found: false, tail: [] }) },
+  });
+  assert.deepEqual(mapDecisions(decide(s)), []);
+});
+
+test("ticketSessionsToObserve: grilling は map に停止の印があっても観測の対象に残る（後の hook の入力待ちを見るため）。返す形は変わらない", () => {
+  const s = grillingWorld([], { mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE("grilling")))) });
+  assert.deepEqual(D.ticketSessionsToObserve(s), [{ map: 20, ticket: 21, type: "grilling", handle: "term_1", startedAt: T0 }]);
+});
+
+// -- 本人の回答の書き戻し --
+
+const SENT_THREAD = [byViewer(G_QUESTION("q")), byViewer(G_SEND()), byViewer(G_SENT())];
+
+test("書き戻し: 判断依頼のメッセージへの本人の返信があれば、ticket への write-back-answer が 1 件出る（本文は返信の内容）。流し込みはまだ出ない", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("B 案で行く。理由は後方互換")] } });
+  const actions = decide(s);
+  const [a, ...rest] = writeBacks(actions);
+  assert.deepEqual(rest, []);
+  assert.equal(a.kind, "write-back-answer");
+  assert.equal(a.key, `write-back-answer:21:${GS}`);
+  assert.deepEqual([a.ticket, a.since, a.answer], [21, GS, "B 案で行く。理由は後方互換"]);
+  assert.deepEqual(injects(actions), []);
+  assert.deepEqual(grillingDecisions(actions), []);
+});
+
+test("書き戻し: 本人以外の返信だけなら書き戻さない（流し込みも出ない）", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("勝手に A", "U-other"), reply("こっちも", "U-bot")] } });
+  const actions = decide(s);
+  assert.deepEqual(writeBacks(actions), []);
+  assert.deepEqual(injects(actions), []);
+});
+
+test("書き戻し: 本人以外の返信が混ざっても、本人の返信の内容だけを書き戻す（他人の内容を使わない）", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("他人の A", "U-other"), reply("本人の B"), reply("他人の C", "U-other")] } });
+  assert.deepEqual(writeBacks(decide(s)).map((a) => a.answer), ["本人の B"]);
+});
+
+test("書き戻し: 本人の返信が複数あれば、最も古い 1 件だけを 1 回書き戻す", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("最初の答え"), reply("言い直し")] } });
+  assert.deepEqual(writeBacks(decide(s)).map((a) => a.answer), ["最初の答え"]);
+});
+
+test("書き戻し: 本人の返信でも本文が空（空白だけ）なら書き戻さない", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply(""), reply("  \n ")] } });
+  assert.deepEqual(writeBacks(decide(s)), []);
+});
+
+test("書き戻し: 本人の ID が分からない（discordUserId が無い）ときは、誰の返信も書き戻さない", () => {
+  const s = grillingWorld(SENT_THREAD, { owner: null, replies: { M1: [reply("x", "U-other"), reply("y", null)] } });
+  assert.deepEqual(writeBacks(decide(s)), []);
+});
+
+test("書き戻し: 返信が無い・返信の読み出しが無い（decisionReplies なし）・別のメッセージへの返信だけなら出ない", () => {
+  assert.deepEqual(writeBacks(decide(grillingWorld(SENT_THREAD, { replies: { M1: [] } }))), []);
+  assert.deepEqual(writeBacks(decide(grillingWorld(SENT_THREAD))), []);
+  assert.deepEqual(writeBacks(decide(grillingWorld(SENT_THREAD, { replies: { M2: [reply("別のメッセージへの返信")] } }))), []);
+});
+
+test("書き戻し: 判断依頼を送った印（メッセージの ID つき）が無ければ、返信があっても書き戻さない（「送る」の印だけでも出ない）", () => {
+  const s = grillingWorld([byViewer(G_SEND())], { replies: { M1: [reply("答え")] } });
+  assert.deepEqual(writeBacks(decide(s)), []);
+});
+
+test("書き戻し: 書き戻し済み（viewer の書き戻しの印がある）なら、新しい返信があっても出ない。同じスナップショットで印を足して 2 周しても 1 度だけ", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("答え")] } });
+  assert.equal(writeBacks(decide(s)).length, 1);
+  addToTicket(s, G_WRITTEN("答え"));
+  assert.deepEqual(writeBacks(decide(s)), []);
+});
+
+test("書き戻し: dispatched に key があれば出さない。他人が書いた書き戻しの印や別の停止・別の ticket の印では書き戻し済みとみなさない", () => {
+  const replies = { M1: [reply("答え")] };
+  assert.deepEqual(writeBacks(decide({ ...grillingWorld(SENT_THREAD, { replies }), dispatched: [`write-back-answer:21:${GS}`] })), []);
+  const others = grillingWorld([...SENT_THREAD, { author: "someone", body: G_WRITTEN("偽") }, byViewer(G_WRITTEN("x", 2, GS)), byViewer(G_WRITTEN("x", 21, "176000000000"))], { replies });
+  assert.equal(writeBacks(decide(others)).length, 1);
+});
+
+test("書き戻し: 他人が書いた「送った」印では、その返信を読まない", () => {
+  const s = grillingWorld([byViewer(G_SEND()), { author: "someone", body: G_SENT() }], { replies: { M1: [reply("答え")] } });
+  assert.deepEqual(writeBacks(decide(s)), []);
+});
+
+test("grillingRepliesToRead: 送った印があり書き戻し前の open な grilling だけ、スレッドとメッセージの ID を返す", () => {
+  const s = snapshot([
+    issue(20, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [21, 22, 23, 24, 25, 26].map((number) => ({ number, state: "OPEN" })) }),
+    launchedTicket(21, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_1")), byViewer(G_SENT(21, GS, "900", "M1"))] }),
+    launchedTicket(22, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_2")), byViewer(G_SENT(22, GS, "900", "M2")), byViewer(G_WRITTEN("済", 22))] }),
+    launchedTicket(23, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_3")), byViewer(G_SEND(23))] }),
+    launchedTicket(24, "grilling", { state: "CLOSED", comments: [byViewer(G_SENT(24, GS, "900", "M4"))] }),
+    launchedTicket(25, "research", { comments: [byViewer(G_SENT(25, GS, "900", "M5"))] }),
+    launchedTicket(26, "grilling", { comments: [{ author: "someone", body: G_SENT(26, GS, "900", "M6") }] }),
+  ]);
+  assert.deepEqual(D.grillingRepliesToRead(s), [{ threadId: "900", messageId: "M1" }]);
+});
+
+// -- 回答の流し込み --
+
+const WRITTEN_THREAD = [...SENT_THREAD, byViewer(G_WRITTEN("B 案で行く"))];
+
+test("流し込み: 書き戻し前は、本人の返信があっても流し込みが出ない（流し込みの判定は GitHub の書き戻しだけを読む）", () => {
+  const s = grillingWorld(SENT_THREAD, { replies: { M1: [reply("B 案で行く")] } });
+  assert.deepEqual(injects(decide(s)), []);
+});
+
+test("流し込み: 書き戻し後、同じ停止（hook・同じ since）のままなら inject-answer が 1 件。handle は起動の印のもの、回答は書き戻しコメントのもの", () => {
+  const actions = decide(grillingWorld(WRITTEN_THREAD));
+  const [a, ...rest] = injects(actions);
+  assert.deepEqual(rest, []);
+  assert.equal(a.kind, "inject-answer");
+  assert.equal(a.key, `inject-answer:21:${GS}`);
+  assert.deepEqual([a.ticket, a.since, a.handle, a.answer], [21, GS, "term_1", "B 案で行く"]);
+  assert.deepEqual(grillingDecisions(actions), []);
+  assert.deepEqual(writeBacks(actions), []);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("流し込み: 回答は GitHub の書き戻しコメントから作る。Discord の返信（decisionReplies）が違う内容でも、返信は使わない", () => {
+  const s = grillingWorld(WRITTEN_THREAD, { replies: { M1: [reply("Discord 側の別の内容"), reply("他人", "U-other")] } });
+  assert.deepEqual(injects(decide(s)).map((a) => a.answer), ["B 案で行く"]);
+  assert.deepEqual(injects(decide(grillingWorld(WRITTEN_THREAD, { replies: {} }))).map((a) => a.answer), ["B 案で行く"]);
+});
+
+test("流し込み: 複数行の回答も、書き戻しコメントの 2 行目以降（空行の後）をそのまま回答にする", () => {
+  const s = grillingWorld([...SENT_THREAD, byViewer(G_WRITTEN("1 行目\n2 行目"))]);
+  assert.deepEqual(injects(decide(s)).map((a) => a.answer), ["1 行目\n2 行目"]);
+});
+
+test("流し込み: 流し込みの印があれば出ない。同じスナップショットで印を足して 2 周しても 1 度だけ（流し込み直後にまだ入力待ちが見えても重ねない）", () => {
+  const s = grillingWorld(WRITTEN_THREAD);
+  assert.equal(injects(decide(s)).length, 1);
+  addToTicket(s, G_INJECT());
+  const again = decide(s);
+  assert.deepEqual(injects(again), []);
+  assert.deepEqual(grillingDecisions(again), []);
+  assert.deepEqual(mapDecisions(again), []);
+});
+
+test("流し込み: dispatched に key があれば出さない", () => {
+  assert.deepEqual(injects(decide({ ...grillingWorld(WRITTEN_THREAD), dispatched: [`inject-answer:21:${GS}`] })), []);
+});
+
+test("流し込み: タブが別の入力待ち（since が違う）や hook 以外・入力待ちでない・見つからないときは流し込まない（別の入力へ回答を混ぜない）", () => {
+  for (const session of [hookWait("1760000099999"), obs({ waiting: true, waitSource: "prompt-text", waitSince: GS }), obs(), obs({ found: false, tail: [] })]) {
+    const actions = decide(grillingWorld(WRITTEN_THREAD, { sessions: { term_1: session } }));
+    assert.deepEqual(injects(actions), [], JSON.stringify(session));
+  }
+});
+
+test("流し込み: 他人が書いた書き戻しの印、別の停止・別の ticket の書き戻しの印では流し込まない", () => {
+  const base = [...SENT_THREAD];
+  for (const wb of [{ author: "someone", body: G_WRITTEN("偽の回答") }, byViewer(G_WRITTEN("x", 21, "176000000000")), byViewer(G_WRITTEN("x", 2, GS))]) {
+    assert.deepEqual(injects(decide(grillingWorld([...base, wb]))), []);
+  }
+});
+
+test("流し込み: 他人が書いた流し込みの印や別の停止の印では流し込み済みとみなさない", () => {
+  const s = grillingWorld([...WRITTEN_THREAD, { author: "someone", body: G_INJECT() }, byViewer(G_INJECT(21, "176000000000")), byViewer(G_INJECT(2, GS))]);
+  assert.equal(injects(decide(s)).length, 1);
+});
+
+test("流し込み: 起動の印が複数あれば、最後の起動の印の handle のタブへ流し込む（セッションは作り直さない: wayfinder の起動は出ない）", () => {
+  const launched = [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1")), byViewer(WF_LAUNCHED_AT("term_2", at(5)))];
+  const s = grillingWorld(WRITTEN_THREAD, { launched, sessions: { term_1: obs({ found: false, tail: [] }), term_2: hookWait() } });
+  const actions = decide(s);
+  assert.deepEqual(injects(actions).map((a) => a.handle), ["term_2"]);
+  assert.deepEqual(wfActions(actions), []);
+});
+
+test("流し込み: 閉じた ticket・閉じた map の ticket には出さない", () => {
+  const closed = stallOf([launchedTicket(21, "grilling", { state: "CLOSED", comments: [byViewer(WF_LAUNCHED_AT("term_1")), ...WRITTEN_THREAD] })], { sessions: { term_1: hookWait() } });
+  assert.deepEqual(injects(decide(closed)), []);
+});
+
+// -- 同じタブでの連続（停止 → 判断依頼 → 書き戻し → 流し込み → 次の停止） --
+
+test("連続: 同じタブ（handle）で 1 回目の停止を最後まで処理した後、次の hook の入力待ち（別の since）には新しい判断依頼だけが 1 件出る", () => {
+  const S2 = "1760000500000";
+  const s = grillingWorld([byViewer(G_QUESTION("q1"))], { replies: { M1: [reply("B 案")] } });
+  assert.equal(grillingDecisions(decide(s)).length, 1);
+  addToTicket(s, G_SEND(), G_SENT());
+  assert.equal(writeBacks(decide(s)).length, 1);
+  addToTicket(s, G_WRITTEN("B 案"));
+  assert.equal(injects(decide(s)).length, 1);
+  addToTicket(s, G_INJECT());
+  assert.deepEqual([...grillingDecisions(decide(s)), ...writeBacks(decide(s)), ...injects(decide(s))], []);
+  // 同じタブが次の入力待ち（since が変わる）へ進んだ
+  s.sessions.term_1 = hookWait(S2);
+  addToTicket(s, G_QUESTION("q2"));
+  const next = decide(s);
+  assert.deepEqual(grillingDecisions(next).map((a) => [a.since, a.key]), [[S2, `request-grilling-decision:20:21:${S2}`]]);
+  assert.ok(grillingDecisions(next)[0].question.includes("q2"));
+  assert.deepEqual([...writeBacks(next), ...injects(next), ...mapDecisions(next)], []);
+});
+
+test("連続: 同じ周に複数の grilling ticket があれば、ticket ごとに 1 件ずつ出る（印は ticket ごと）", () => {
+  const s = stallOf(
+    [
+      launchedTicket(21, "grilling"),
+      launchedTicket(22, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_2")), byViewer(G_SEND(22, "1760000000777"))] }),
+      launchedTicket(23, "grilling", { comments: [byViewer(WF_LAUNCHED_AT("term_3"))] }),
+    ],
+    { sessions: { term_1: hookWait(), term_2: hookWait("1760000000777"), term_3: hookWait("1760000000999") } },
+  );
+  assert.deepEqual(grillingDecisions(decide(s)).map((a) => [a.ticket, a.since]), [[21, GS], [23, "1760000000999"]]);
+});
+
+test("grilling の 3 段の遷移: 純粋性（入力を変更せず、同じ入力に同じ出力を返す）", () => {
+  const s = deepFreeze(grillingWorld(WRITTEN_THREAD, { replies: { M1: [reply("x")] } }));
+  const first = decide(s);
+  assert.deepEqual(decide(s), first);
+  assert.deepEqual(D.grillingRepliesToRead(s), D.grillingRepliesToRead(s));
+  const fresh = deepFreeze(grillingWorld([byViewer(G_QUESTION("q"))]));
+  assert.equal(grillingDecisions(decide(fresh)).length, 1);
+});
+
 // -- 保留の map --
 
 const ON_HOLD = { labels: ["wayfinder:map", "wayfinder:on-hold"] };

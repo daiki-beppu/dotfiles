@@ -12,11 +12,15 @@ import {
   MARKER_WAYFINDER_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
   decisionMarker,
+  grillingInjectMarker,
+  grillingSendingMarker,
+  grillingSentMarker,
+  grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
 } from "./decide.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, taktRunDirs, sendToSession }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -101,6 +105,28 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         tab: action.tab,
         tail: action.tail,
       });
+    } else if (action.kind === "request-grilling-decision") {
+      // 送る前の印 → 問いつきで送信 → スレッドとメッセージの ID つきの印。印は送信より先（再起動しても再送しない）。
+      github.comment(action.ticket, grillingSendingMarker(action.ticket, action.since));
+      const { messageId } = await discord.sendDecisionRequest({
+        threadId: action.threadId,
+        map: action.map,
+        issue: action.ticket,
+        title: action.title,
+        url: `https://github.com/${repo}/issues/${action.ticket}`,
+        reason: "grilling が不可逆な判断を人に聞いている（AskUserQuestion の入力待ち）",
+        step: "wayfinder",
+        tab: action.tab,
+        tail: action.tail,
+        question: action.question,
+      });
+      github.comment(action.ticket, grillingSentMarker(action.ticket, action.since, action.threadId, messageId));
+    } else if (action.kind === "write-back-answer") {
+      github.comment(action.ticket, grillingWrittenMarker(action.ticket, action.since, action.answer));
+    } else if (action.kind === "inject-answer") {
+      // 印は送信より先。改行は空白にして 1 行で送る（改行で入力が途中で確定しないように）。
+      github.comment(action.ticket, grillingInjectMarker(action.ticket, action.since));
+      await sendToSession({ handle: action.handle, text: action.answer.replace(/\s*\r?\n\s*/g, " ").trim() });
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

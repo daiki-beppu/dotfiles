@@ -9,6 +9,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { observeSession } from "./orca-agent.mjs";
+// 送信（新しい公開物）は名前空間で読む（未実装でも既存の観測のテストは動かす）。
+import * as O from "./orca-agent.mjs";
 
 const AGENT_WAIT = {
   none: null,
@@ -40,10 +42,10 @@ const fakeOrca = ({ show = showReply(null), read = readReply(["a"]), wait = time
   return { calls, run };
 };
 
-test("observeSession: orca terminal show / read を handle 指定で呼び、観測の形 { found, waiting, tail } を作る", () => {
+test("observeSession: orca terminal show / read を handle 指定で呼び、観測の形 { found, waiting, waitSource, waitSince, idle, tail } を作る", () => {
   const { calls, run } = fakeOrca({ read: readReply(["x", "y"]) });
   const o = observeSession({ cwd: "/x", handle: "term_1" }, run);
-  assert.deepEqual(o, { found: true, waiting: false, idle: false, tail: ["x", "y"] });
+  assert.deepEqual(o, { found: true, waiting: false, waitSource: null, waitSince: null, idle: false, tail: ["x", "y"] });
   assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["terminal show", "terminal read", "terminal wait"]);
   for (const c of calls) {
     assert.ok(c.args.includes("--json"));
@@ -101,4 +103,55 @@ test("observeSession: 見つからない以外の失敗（Orca が応答しな�
   for (const show of [down, other]) assert.throws(() => observeSession({ cwd: "/x", handle: "t" }, fakeOrca({ show }).run));
   assert.throws(() => observeSession({ cwd: "/x", handle: "t" }, fakeOrca({ show: "not json" }).run));
   assert.throws(() => observeSession({ cwd: "/x", handle: "t" }, fakeOrca({ read: new Error("read failed") }).run));
+});
+
+// ---- 入力待ちの種類と停止の識別子 ----
+
+test("observeSession: hook の入力待ちは waitSource: \"hook\" と、その停止の識別子 waitSince（agentWait.since の文字列）を返す", () => {
+  const o = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca({ show: showReply(AGENT_WAIT.hook) }).run);
+  assert.deepEqual([o.found, o.waiting, o.waitSource, o.waitSince], [true, true, "hook", "1792200233506"]);
+});
+
+test("observeSession: hook 以外の入力待ち（prompt-text・title）は waitSource にその種類を返し、waiting は従来どおり true", () => {
+  const prompt = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca({ show: showReply(AGENT_WAIT.prompt) }).run);
+  assert.deepEqual([prompt.waiting, prompt.waitSource], [true, "prompt-text"]);
+  const title = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca({ show: showReply(AGENT_WAIT.title) }).run);
+  assert.deepEqual([title.waiting, title.waitSource, title.waitSince ?? null], [true, "title", null]);
+});
+
+test("observeSession: 待ちなし（agentWait: null）は waitSource・waitSince が null", () => {
+  const o = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca().run);
+  assert.deepEqual([o.waiting, o.waitSource, o.waitSince], [false, null, null]);
+});
+
+test("observeSession: hook でも since が無ければ waitSince は null（識別子を捏造しない）", () => {
+  const o = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca({ show: showReply({ source: "hook" }) }).run);
+  assert.deepEqual([o.waitSource, o.waitSince], ["hook", null]);
+});
+
+// ---- 回答の流し込み（orca terminal send） ----
+
+test("sendToSession: handle のタブへ --text と --enter つきで `orca terminal send` を 1 回呼ぶ（cwd を渡す。新しいセッションは作らない）", () => {
+  const calls = [];
+  O.sendToSession({ cwd: "/x", handle: "term_1", text: "B 案で行く" }, (args, opts) => { calls.push({ args, cwd: opts.cwd }); return JSON.stringify({ ok: true, result: {} }); });
+  assert.equal(calls.length, 1);
+  const { args, cwd } = calls[0];
+  assert.equal(cwd, "/x");
+  assert.deepEqual(args.slice(0, 2), ["terminal", "send"]);
+  assert.equal(args[args.indexOf("--terminal") + 1], "term_1");
+  assert.equal(args[args.indexOf("--text") + 1], "B 案で行く");
+  assert.ok(args.includes("--enter") && args.includes("--json"));
+  assert.ok(!args.includes("launch"));
+});
+
+test("sendToSession: 回答の本文はそのまま 1 つの引数で渡す（空白・引用符・シェルの記号を含んでも分割・加工しない）", () => {
+  const text = `A 案 "x" $(rm -rf /) ; echo 'y'`;
+  let argv;
+  O.sendToSession({ cwd: "/x", handle: "term_1", text }, (args) => { argv = args; return "{}"; });
+  assert.equal(argv.filter((a) => a === text).length, 1);
+});
+
+test("sendToSession: orca が失敗したら例外にする（handle を含む）", () => {
+  const down = () => { throw Object.assign(new Error("Command failed"), { status: 1, stdout: JSON.stringify({ ok: false, error: { code: "terminal_handle_stale" } }) }); };
+  assert.throws(() => O.sendToSession({ cwd: "/x", handle: "term_gone", text: "x" }, down), /term_gone/);
 });

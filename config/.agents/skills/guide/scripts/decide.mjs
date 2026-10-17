@@ -17,13 +17,17 @@
 //     | { kind: "notify-human-ticket", key, map, ticket, title, threadId }   （frontier の prototype ticket を map のスレッドへ知らせる。印は map に書く）
 //     | { kind: "request-map-decision", key, map, issue, cause, title, threadId, reason, step, tab, tail }
 //       （wayfinder で起動した ticket のセッションが止まった。map のスレッドへ判断依頼を送る。印は map に書く）
+//     | { kind: "request-grilling-decision", key, map, ticket, since, title, threadId, tab, tail, question }
+//       （grilling のセッションが hook の入力待ち（AskUserQuestion）。map のスレッドへ問いつきの判断依頼を送る。印は ticket に書く）
+//     | { kind: "write-back-answer", key, ticket, since, answer }   （判断依頼への本人の返信を ticket のコメントに書き戻す）
+//     | { kind: "inject-answer", key, ticket, since, handle, answer }   （書き戻しの後、同じ停止のままのタブへ回答を流し込む）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, reports }
 //       （sub-issue の takt の run が ABORT、または仕様の formal-spec の検証が失敗。仕様の Discord スレッドへ判断依頼を送る）
 //     | { kind: "request-decision", key, spec, issue, cause, title, threadId, reason, step, tab, tail }
 //       （Orca で起動した工程のセッションが、結果を GitHub に出さないまま止まった。reports は無く、タブの名前と画面の最後の行を持つ）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
-//   sessions: { [handle]: { found, waiting, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
-//   waiting は入力待ち（確認・許可）、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
+//   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
+//   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
 
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
@@ -71,6 +75,21 @@ export const CAUSE_ABORT = "takt の ABORT";
 export const CAUSE_FORMAL_SPEC = "formal-spec の検証失敗";
 const stallCause = (step) => `${step} のセッションの停止`;
 export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
+
+// grilling の不可逆な判断（AskUserQuestion の hook の入力待ち）の 3 段。印はすべて ticket に書く。S は停止の識別子（agentWait.since）、t は ticket の番号。
+// 送る前 → 送った後（スレッドとメッセージの ID）→ 書き戻し（回答の本文つき）→ 流し込む前。閉じ括弧まで含めて照合する。
+export const grillingSendingMarker = (ticket, since) => decisionMarker(ticket, `grilling の問い ${since}`);
+export const grillingSentMarker = (ticket, since, threadId, messageId) =>
+  `案内役: Discord に判断依頼を送った（#${ticket} grilling の問い ${since} / スレッド ${threadId} / メッセージ ${messageId}）`;
+export const grillingWrittenMarker = (ticket, since, answer) => `案内役: Discord の回答を書き戻した（#${ticket} grilling の問い ${since}）\n\n${answer}`;
+export const grillingInjectMarker = (ticket, since) => `案内役: 回答をタブに流し込む（#${ticket} grilling の問い ${since}）`;
+const GRILLING_SENDING = /^案内役: Discord に判断依頼を送る（#(\d+) grilling の問い (\d+)）$/;
+const GRILLING_SENT = /^案内役: Discord に判断依頼を送った（#(\d+) grilling の問い (\d+) \/ スレッド ([^\s/）]+) \/ メッセージ ([^\s/）]+)）$/;
+const GRILLING_WRITTEN = /^案内役: Discord の回答を書き戻した（#(\d+) grilling の問い (\d+)）(?:\r?\n\r?\n([\s\S]*))?$/;
+const GRILLING_INJECT = /^案内役: 回答をタブに流し込む（#(\d+) grilling の問い (\d+)）$/;
+// grilling が AskUserQuestion の前に ticket へ書く問いのコメントの 1 行目。判断依頼の本文に載せる。
+export const QUESTION_HEADING = "## 判断の問い";
+export const NO_QUESTION = "（問いの記録が ticket に無い）";
 
 // formal-spec が仕様の issue に書くコメントの 1 行目。末尾が「で failed）」なら検証失敗。
 const FORMAL_SPEC_HEADING = "## Formal Spec（";
@@ -444,11 +463,100 @@ export function ticketSessionsToObserve(snapshot) {
         .map((b) => LAUNCHED.exec(b))
         .filter((m) => m && m[1] === "wayfinder")
         .at(-1);
-      if (launched === undefined || ownMap.includes(decisionMarker(ticket.number, stallCause(type)))) continue;
+      // grilling だけは、過去の停止の印があっても観測に残す（後の hook の入力待ちに判断依頼を出すため）。
+      if (launched === undefined || (type !== "grilling" && ownMap.includes(decisionMarker(ticket.number, stallCause(type))))) continue;
       targets.push({ map: map.number, ticket: ticket.number, type, handle: launched[2], startedAt: launched[3] });
     }
   }
   return targets;
+}
+
+// ticket の grilling の印を、ticket の番号と停止の識別子ごとに読む（viewer のコメントだけ。別の ticket・別の停止の印は数えない）。
+function grillingMarks(ticket, viewer) {
+  const sending = new Set();
+  const sent = [];
+  const written = new Map();
+  const injected = new Set();
+  for (const body of markers(ticket, viewer)) {
+    let m;
+    if ((m = GRILLING_SENDING.exec(body)) && Number(m[1]) === ticket.number) sending.add(m[2]);
+    else if ((m = GRILLING_SENT.exec(body)) && Number(m[1]) === ticket.number) sent.push({ since: m[2], threadId: m[3], messageId: m[4] });
+    else if ((m = GRILLING_WRITTEN.exec(body)) && Number(m[1]) === ticket.number) written.set(m[2], (m[3] ?? "").trim());
+    else if ((m = GRILLING_INJECT.exec(body)) && Number(m[1]) === ticket.number) injected.add(m[2]);
+  }
+  return { sending, sent, written, injected };
+}
+
+// viewer の最後の「判断の問い」コメント（1 行目が見出し）の 2 行目以降。無ければ NO_QUESTION。
+function lastQuestion(ticket, viewer) {
+  const body = markers(ticket, viewer)
+    .filter((b) => b.split(/\r?\n/)[0].trimEnd() === QUESTION_HEADING)
+    .at(-1);
+  const text = body === undefined ? "" : body.split(/\r?\n/).slice(1).join("\n").trim();
+  return text === "" ? NO_QUESTION : text;
+}
+
+// セッションが hook の入力待ち（停止の識別子つき）か。
+const awaitsHookInput = (observation) => Boolean(observation?.found && observation.waitSource === "hook" && observation.waitSince);
+
+// 観測の後に、ticket のコメントを読み直すべき grilling の ticket の番号。hook の入力待ちで、その停止の判断依頼をまだ送っていない（送る前の印も無い）もの。
+export function grillingQuestionsToRefresh(snapshot) {
+  const refresh = [];
+  for (const { ticket, type, handle } of ticketSessionsToObserve(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    if (type !== "grilling" || !awaitsHookInput(observation)) continue;
+    const since = String(observation.waitSince);
+    const marks = grillingMarks(snapshot.issues.find((i) => i.number === ticket), snapshot.viewer);
+    if (marks.sending.has(since) || marks.sent.some((s) => s.since === since)) continue;
+    refresh.push(ticket);
+  }
+  return refresh;
+}
+
+// 判断依頼を送り済みで、回答がまだ書き戻されていない grilling の ticket の、送った判断依頼（停止の識別子・スレッド・メッセージ）。
+function pendingGrillingReplies(snapshot) {
+  const pending = [];
+  for (const { ticket, type } of ticketSessionsToObserve(snapshot)) {
+    if (type !== "grilling") continue;
+    const marks = grillingMarks(snapshot.issues.find((i) => i.number === ticket), snapshot.viewer);
+    const seen = new Set();
+    for (const s of marks.sent) {
+      if (marks.written.has(s.since) || seen.has(s.since)) continue;
+      seen.add(s.since);
+      pending.push({ ticket, ...s });
+    }
+  }
+  return pending;
+}
+
+// 本人の返信を読むべき判断依頼のスレッドとメッセージ。
+export const grillingRepliesToRead = (snapshot) => pendingGrillingReplies(snapshot).map(({ threadId, messageId }) => ({ threadId, messageId }));
+
+// grilling の回答の 2 段: ① 判断依頼への本人の返信を ticket に書き戻す ② 書き戻しの後、同じ停止のままのタブへ回答を流し込む。
+// ②の回答は ticket の書き戻しコメントだけから作る（Discord の返信は読まない）。
+function decideGrillingAnswers(snapshot, dispatched) {
+  const { viewer, discordUserId } = snapshot;
+  const actions = [];
+  for (const { ticket, type, handle } of ticketSessionsToObserve(snapshot)) {
+    if (type !== "grilling") continue;
+    const marks = grillingMarks(snapshot.issues.find((i) => i.number === ticket), viewer);
+    for (const { since, messageId } of pendingGrillingReplies(snapshot).filter((p) => p.ticket === ticket)) {
+      const key = `write-back-answer:${ticket}:${since}`;
+      if (dispatched.has(key) || discordUserId == null) continue;
+      const mine = (snapshot.decisionReplies?.[messageId] ?? []).find(
+        (r) => r.userId === discordUserId && typeof r.content === "string" && r.content.trim() !== "",
+      );
+      if (mine !== undefined) actions.push({ kind: "write-back-answer", key, ticket, since, answer: mine.content.trim() });
+    }
+    const observation = snapshot.sessions?.[handle];
+    for (const [since, answer] of marks.written) {
+      const key = `inject-answer:${ticket}:${since}`;
+      if (answer === "" || marks.injected.has(since) || dispatched.has(key)) continue;
+      if (!(observation?.found && observation.waitSource === "hook" && String(observation.waitSince) === since)) continue;
+      actions.push({ kind: "inject-answer", key, ticket, since, handle, answer });
+    }
+  }
+  return actions;
 }
 
 // map ごとの Discord への知らせ。知らせること（frontier の prototype の通知、止まった ticket の判断依頼）があるのにスレッドが無ければ、
@@ -469,13 +577,28 @@ function decideMapNotices(snapshot, dispatched) {
   for (const { map: mapNumber, ticket, type, handle, startedAt } of ticketSessionsToObserve(snapshot)) {
     const observation = snapshot.sessions?.[handle];
     if (observation === undefined) continue;
+    const ticketIssue = issues.find((i) => i.number === ticket);
+    const mapIssue = issues.find((i) => i.number === mapNumber);
+    // grilling の hook の入力待ち（停止の識別子つき）は不可逆な判断の問い。停止の判断依頼は重ねず、grilling の判断依頼だけを出す。
+    if (type === "grilling" && awaitsHookInput(observation)) {
+      const since = String(observation.waitSince);
+      const key = `request-grilling-decision:${mapNumber}:${ticket}:${since}`;
+      const marks = grillingMarks(ticketIssue, viewer);
+      if (dispatched.has(key) || marks.sending.has(since) || marks.sent.some((s) => s.since === since)) continue;
+      noticesOf(mapIssue).push({
+        kind: "request-grilling-decision", key, map: mapNumber, ticket, since, title: ticketIssue.title,
+        tab: tabTitle("wayfinder", ticket), tail: observation.tail ?? [], question: lastQuestion(ticketIssue, viewer),
+      });
+      continue;
+    }
     const reason = stallReason(observation, startedAt, snapshot);
     if (reason === null) continue;
     const cause = stallCause(type);
+    if (markers(mapIssue, viewer).includes(decisionMarker(ticket, cause))) continue;
     const key = `request-map-decision:${mapNumber}:${ticket}:${cause}`;
     if (dispatched.has(key)) continue;
-    noticesOf(issues.find((i) => i.number === mapNumber)).push({
-      kind: "request-map-decision", key, map: mapNumber, issue: ticket, cause, title: issues.find((i) => i.number === ticket).title,
+    noticesOf(mapIssue).push({
+      kind: "request-map-decision", key, map: mapNumber, issue: ticket, cause, title: ticketIssue.title,
       reason, step: "wayfinder", tab: tabTitle("wayfinder", ticket), tail: observation.tail ?? [],
     });
   }
@@ -563,6 +686,7 @@ export function decide(snapshot) {
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideMapNotices(snapshot, dispatched),
+    ...decideGrillingAnswers(snapshot, dispatched),
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),
