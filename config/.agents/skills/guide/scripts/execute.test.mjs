@@ -5,16 +5,23 @@ import { decide } from "./decide.mjs";
 import { createDiscord } from "./discord.mjs";
 import { createExecute } from "./execute.mjs";
 import { runRound } from "./loop.mjs";
+import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
 
 const REPO = "o/r";
 const VIEWER = "me";
 // 承認依頼は送り済み（world は discord を渡さないので、マーカーが無いと承認依頼の行動が出てしまう）
-const SENT_COMMENTS = [
+const SENT_ONLY = [
   { author: VIEWER, body: "案内役: Discord に承認依頼を送る" },
   { author: VIEWER, body: "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）" },
 ];
+// formal-spec は起動済みで passed。to-tickets・takt-sequence を見るテストは、この状態から始める。
+const FS_DONE = [
+  { author: VIEWER, body: "案内役: formal-spec を起動する" },
+  { author: VIEWER, body: "## Formal Spec（takt 0.71.0 の検証器で passed）" },
+];
+const SENT_COMMENTS = [...SENT_ONLY, ...FS_DONE];
 const issue = (number, over = {}) => ({ number, state: "OPEN", labels: [], body: "", comments: [], subIssues: [], ...over });
 
 const LAUNCHED_AT = "2026-10-17T00:00:00.000Z";
@@ -39,6 +46,7 @@ const world = (issues, over = {}) => {
   const deps = {
     github, cwd: "/x", repo: REPO,
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
+    launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
     now: NOW,
     startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
     ...over,
@@ -136,6 +144,103 @@ test("to-tickets: タブ題名の変更が失敗したら例外で止まり、�
   assert.equal(orcaArgv(calls).filter((a) => a[1] === "launch").length, 1, "再起動しない");
 });
 
+// ---- formal-spec: 承認依頼を送った仕様に、印 → orca で起動 → handle と時刻の印 ----
+
+const FS_BEFORE = "comment #12 案内役: formal-spec を起動する";
+const FS_AFTER = `comment #12 案内役: formal-spec を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`;
+const sentOnlyWorld = (over = {}, specOver = {}) => {
+  const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_ONLY], ...specOver })];
+  return { issues, ...world(issues, over) };
+};
+
+test("formal-spec: 起動前の印 → orca agent launch → タブ題名 → handle と時刻つきの印の順に実行し、新しい dispatched で再起動しても出ない", async () => {
+  const { calls, round } = sentOnlyWorld();
+  await round();
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0], FS_BEFORE);
+  assert.ok(calls[1].startsWith("orca agent launch "), calls[1]);
+  assert.ok(calls[2].startsWith("orca terminal rename "), calls[2]);
+  assert.equal(calls[3], FS_AFTER);
+  await round(new Set());
+  assert.equal(calls.length, 4, "to-tickets も出ない（Formal Spec コメントがまだ無い）");
+});
+
+test("formal-spec: orca agent launch に claude・main checkout の worktree・プロンプトを渡し、--allowedTools は渡さない", async () => {
+  const { calls, round } = sentOnlyWorld();
+  await round();
+  const launch = orcaArgv(calls)[0];
+  assert.deepEqual(launch.slice(0, 7), ["agent", "launch", "--agent", "claude", "--worktree", "path:/x", "--prompt"]);
+  assert.equal(launch.at(-1), "--json");
+  assert.ok(!launch.includes("--allowedTools"));
+  assert.ok(!launch.includes("-p"));
+  assert.ok(!orcaArgv(calls).flat().includes("--allowedTools"));
+});
+
+test("formal-spec: プロンプトは /formal-spec #仕様 で始まり、確認待ちにせず結果のコメントまで進めること・矛盾なら failed のコメントを書いて終えることを含む", async () => {
+  const { calls, round } = sentOnlyWorld();
+  await round();
+  const prompt = orcaArgv(calls)[0][7];
+  assert.equal(prompt.split("\n")[0], "/formal-spec #12");
+  assert.match(prompt, /確認待ちにせず/);
+  assert.match(prompt, /手順 1/);
+  assert.match(prompt, /結果のコメント/);
+  assert.match(prompt, /手順 3/);
+  assert.match(prompt, /failed/);
+});
+
+test("formal-spec: 起動の応答の handle でタブの題名に工程と仕様の番号を入れ、印の handle と時刻は応答と注入した now から取る", async () => {
+  const { calls, round } = sentOnlyWorld({
+    launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls, { launch: launchReply("term_99") })),
+    now: () => new Date("2026-01-02T03:04:05.678Z"),
+  });
+  await round();
+  const rename = orcaArgv(calls)[1];
+  assert.deepEqual(rename.slice(0, 4), ["terminal", "rename", "--terminal", "term_99"]);
+  const title = rename[rename.indexOf("--title") + 1];
+  assert.match(title, /formal-spec/);
+  assert.match(title, /#12/);
+  assert.equal(calls.at(-1), "comment #12 案内役: formal-spec を起動した（ターミナル term_99 / 2026-01-02T03:04:05.678Z）");
+});
+
+test("formal-spec: 応答から handle が取れなければ例外で止まり、起動後の印は書かず、再起動で再度起動しない", async () => {
+  for (const launch of ['{"result":{"outcome":{}}}', "launched OK (not json)"]) {
+    const { calls, issues, round } = sentOnlyWorld({ launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls, { launch })) });
+    await assert.rejects(round(), /handle/, launch);
+    assert.equal(calls[0], FS_BEFORE, "印は起動より先");
+    assert.ok(!calls.some((c) => c.startsWith("comment #12 案内役: formal-spec を起動した（")), launch);
+    assert.ok(issues[0].comments.some((c) => c.body === "案内役: formal-spec を起動する"));
+    const before = calls.length;
+    await round(new Set());
+    assert.equal(calls.length, before, "流し直しても再起動しない");
+  }
+});
+
+test("formal-spec: orca agent launch 自体が失敗しても起動前の印は残り、再起動で再度起動しない", async () => {
+  const { calls, round } = sentOnlyWorld({ launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls, { launch: new Error("orca down") })) });
+  await assert.rejects(round(), /orca down/);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], FS_BEFORE);
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("formal-spec: 承認依頼を送る前の仕様では起動しない", async () => {
+  const { calls, round } = sentOnlyWorld({}, { comments: [{ author: VIEWER, body: "案内役: Discord に承認依頼を送る" }] });
+  await round();
+  assert.deepEqual(calls, []);
+});
+
+test("formal-spec: 結果が passed になった次の周で to-tickets を起動し、その周では formal-spec を再び起動しない", async () => {
+  const { calls, issues, round } = sentOnlyWorld();
+  await round();
+  assert.equal(calls.length, 4);
+  issues[0].comments.push({ author: VIEWER, body: "## Formal Spec（takt 0.71.0 の検証器で passed）" });
+  await round(new Set());
+  assert.equal(calls.length, 8);
+  assert.equal(calls[4], BEFORE);
+  assert.equal(orcaArgv(calls).filter((a) => a[1] === "launch").length, 2);
+});
+
 test("takt-sequence: 渡したマーカーを起動より先に書き、再起動しても渡さない", async () => {
   const issues = [issue(12, { labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS] }), issue(20, { body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] })];
   const { calls, round } = world(issues);
@@ -175,6 +280,7 @@ const approvalWorld = (issues, discordOver = {}) => {
   const deps = {
     github, discord, cwd: "/x", repo: APPROVAL_REPO,
     launchToTickets: (a) => launchToTickets(a, fakeOrca(calls)),
+    launchFormalSpec: (a) => launchFormalSpec(a, fakeOrca(calls)),
     now: NOW,
     startTaktSequence: ({ issues: is }) => { calls.push(`takt ${is.join(",")}`); },
   };
@@ -186,6 +292,8 @@ const approvalWorld = (issues, discordOver = {}) => {
     }, dispatched);
   return { calls, round };
 };
+// 承認の周の fixture: formal-spec は起動済みで passed（formal-spec の遷移は別のテストで見る）
+const SENT_COMMENTS_FOR_APPROVAL = [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）" }, ...FS_DONE];
 const unapproved = (over = {}) => issue(12, { title: "仕様A", labels: ["spec"], reactions: [], ...over });
 
 test("承認依頼: チャンネル確保 → 「送る」マーカー → 送信 → ID 付きの「送った」マーカーの順に実行する", async () => {
@@ -208,7 +316,9 @@ test("承認依頼: 新しい dispatched で回し直しても（再起動して
   const { calls, round } = approvalWorld(issues);
   await round();
   await round(new Set());
-  assert.equal(calls.length, 4);
+  // 2 周目は formal-spec を起動するだけで、承認依頼は再送しない
+  assert.equal(calls.filter((c) => c.startsWith("send ") || c.startsWith("channel ")).length, 2);
+  assert.equal(calls.filter((c) => c.includes(SENDING)).length, 1);
 });
 
 test("承認依頼: 送信が失敗しても「送る」マーカーは残り、再起動で二重に送らない", async () => {
@@ -233,7 +343,7 @@ test("承認依頼: チャンネルの確保が失敗したらマーカーを書
 
 test("承認: 本人の ✅ で spec-approved ラベルを付け、コメントは書かない。次の周は to-tickets が拾う", async () => {
   const issues = [unapproved({
-    comments: [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）" }],
+    comments: [...SENT_COMMENTS_FOR_APPROVAL],
     reactions: [{ emoji: "✅", userId: OWNER }],
   })];
   const { calls, round } = approvalWorld(issues);
@@ -250,7 +360,7 @@ test("承認: 本人の ✅ で spec-approved ラベルを付け、コメント�
 
 test("差し戻し: 本人の ❌ で issue にコメントを 1 件書き（ラベルは付けない）、再起動しても繰り返さない", async () => {
   const issues = [unapproved({
-    comments: [{ author: VIEWER, body: SENDING }, { author: VIEWER, body: "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）" }],
+    comments: [...SENT_COMMENTS_FOR_APPROVAL],
     reactions: [{ emoji: "❌", userId: OWNER }],
   })];
   const { calls, round } = approvalWorld(issues);
@@ -295,6 +405,7 @@ const knowledgeWorld = (over = {}) => {
     taktRunDirs: () => ["/w/a/.takt/runs"],
     launchKnowledge: (a) => launchKnowledge(a, fakeOrca(calls)),
     launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchFormalSpec: async () => assert.fail("formal-spec は起動しない"),
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
     ...over,
   };
@@ -423,6 +534,7 @@ const decisionWorld = (sendOver) => {
   const deps = {
     github, discord, cwd: "/x", repo: REPO,
     launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchFormalSpec: async () => assert.fail("formal-spec は起動しない"),
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
   };
   const round = (dispatched = new Set()) =>
@@ -479,6 +591,7 @@ const stallWorld = (fetchOver) => {
   const deps = {
     github, discord, cwd: "/x", repo: REPO,
     launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchFormalSpec: async () => assert.fail("formal-spec は起動しない"),
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
   };
   const snapshot = () => ({

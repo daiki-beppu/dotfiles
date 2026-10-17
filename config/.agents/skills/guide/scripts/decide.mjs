@@ -6,6 +6,7 @@
 //             taktTasks: [{ issue, kind, createdAt, step, error, worktreePath }] }
 //   fromSpec: 指定があれば、番号がそれ以上の仕様だけを扱う（既存の仕様が多い repo に向けるとき、新しい仕様だけを流すため）
 // 行動: { kind: "request-approval", key, spec, title } | { kind: "approve-spec", key, spec } | { kind: "reject-spec", key, spec }
+//     | { kind: "formal-spec", key, spec }   （承認依頼を送り済みで、formal-spec の起動の印が無い仕様。承認は待たない）
 //     | { kind: "to-tickets", key, spec } | { kind: "takt-sequence", key, parent, issues }
 //     | { kind: "knowledge", key, spec, parents, subIssues }   （snapshot.pullRequests: [{ number, state, author, body, autoMerge }]）
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
@@ -24,6 +25,8 @@ export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動す�
 export const MARKER_STARTED = "案内役: to-tickets を起動した";
 const LAUNCHED_PREFIX = `${MARKER_STARTED}（ターミナル `;
 // Orca のタブで起動した工程の印。工程名・ターミナルの handle・起動時刻を持つ。to-tickets の既存の印と同じ形。
+export const MARKER_FORMAL_SPEC_LAUNCHING = "案内役: formal-spec を起動する";
+const FORMAL_SPEC_LAUNCHED_PREFIX = "案内役: formal-spec を起動した";
 export const launchedMarker = (step, handle, launchedAt) => `案内役: ${step} を起動した（ターミナル ${handle} / ${launchedAt}）`;
 const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）/;
 // Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
@@ -45,6 +48,8 @@ export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${
 // formal-spec が仕様の issue に書くコメントの 1 行目。末尾が「で failed）」なら検証失敗。
 const FORMAL_SPEC_HEADING = "## Formal Spec（";
 const FORMAL_SPEC_FAILED_SUFFIX = "で failed）";
+const FORMAL_SPEC_PASSED_SUFFIX = "で passed）";
+const FORMAL_SPEC_NOT_APPLICABLE = "## Formal Spec（対象外）";
 const FORMAL_SPEC_RUN_DIR = /^検証器の作業ディレクトリ: (.+)$/m;
 
 const APPROVAL_SENT = /^案内役: Discord に承認依頼を送った（スレッド (\d+) \/ メッセージ (\d+)）/;
@@ -136,13 +141,46 @@ function decideApproval(snapshot, dispatched) {
   return actions;
 }
 
-// viewer の最後の Formal Spec コメントが failed なら、その検証器の作業ディレクトリ（記録が無ければ説明文）。failed でなければ null。
-function formalSpecFailure(spec, viewer) {
-  const last = markers(spec, viewer)
+// viewer の最後の Formal Spec コメント（1 行目が見出しで始まるもの）を 1 度だけ分類する。
+// { status: "passed" | "not-applicable" | "failed" | "other", body }。コメントが無ければ null。
+function lastFormalSpec(spec, viewer) {
+  const body = markers(spec, viewer)
     .filter((b) => b.split(/\r?\n/)[0].startsWith(FORMAL_SPEC_HEADING))
     .at(-1);
-  if (last === undefined || !last.split(/\r?\n/)[0].trimEnd().endsWith(FORMAL_SPEC_FAILED_SUFFIX)) return null;
-  return FORMAL_SPEC_RUN_DIR.exec(last)?.[1].trim() ?? "（検証器の作業ディレクトリの記録なし）";
+  if (body === undefined) return null;
+  const head = body.split(/\r?\n/)[0].trimEnd();
+  let status = "other";
+  if (head === FORMAL_SPEC_NOT_APPLICABLE) status = "not-applicable";
+  else if (head.endsWith(FORMAL_SPEC_PASSED_SUFFIX)) status = "passed";
+  else if (head.endsWith(FORMAL_SPEC_FAILED_SUFFIX)) status = "failed";
+  return { status, body };
+}
+
+// viewer の最後の Formal Spec コメントが failed なら、その検証器の作業ディレクトリ（記録が無ければ説明文）。failed でなければ null。
+function formalSpecFailure(spec, viewer) {
+  const last = lastFormalSpec(spec, viewer);
+  if (last === null || last.status !== "failed") return null;
+  return FORMAL_SPEC_RUN_DIR.exec(last.body)?.[1].trim() ?? "（検証器の作業ディレクトリの記録なし）";
+}
+
+// to-tickets を起動済み（起動前の印・起動後の印・古い版の印・終了の印のどれか）か。
+const ticketsStarted = (own) =>
+  own.some((b) => b.startsWith(MARKER_TO_TICKETS_LAUNCHING) || b.startsWith(MARKER_STARTED) || FINISHED.test(b));
+
+// 承認依頼を送り済みの仕様ごとの formal-spec の起動。承認は待たない。
+// viewer の formal-spec の印（1 段目か 2 段目）がある仕様と、to-tickets を起動済みの古い仕様には出さない。
+function decideFormalSpec(snapshot, dispatched) {
+  const { viewer } = snapshot;
+  const actions = [];
+  for (const spec of openSpecs(snapshot)) {
+    if (sentApprovalRequest(spec, viewer) === null) continue;
+    const own = markers(spec, viewer);
+    if (own.some((b) => b.startsWith(MARKER_FORMAL_SPEC_LAUNCHING) || b.startsWith(FORMAL_SPEC_LAUNCHED_PREFIX))) continue;
+    if (ticketsStarted(own)) continue;
+    const key = `formal-spec:${spec.number}`;
+    if (!dispatched.has(key)) actions.push({ kind: "formal-spec", key, spec: spec.number });
+  }
+  return actions;
 }
 
 // issue の最新の takt タスク（createdAt が最も新しいもの）が failed（= workflow が ABORT で終わった）なら、そのタスク。
@@ -262,13 +300,11 @@ export function decide(snapshot) {
 
   const approved = openSpecs(snapshot).filter((i) => hasLabel(i, "spec-approved"));
 
-  const actions = decideApproval(snapshot, dispatched);
+  const actions = [...decideApproval(snapshot, dispatched), ...decideFormalSpec(snapshot, dispatched)];
   const handedParents = new Set();
 
   for (const spec of approved) {
     const specMarkers = markers(spec, viewer);
-    const launching = specMarkers.some((b) => b.startsWith(MARKER_TO_TICKETS_LAUNCHING));
-    const launched = specMarkers.some((b) => b.startsWith(LAUNCHED_PREFIX));
     const legacyStarted = specMarkers.some((b) => b.startsWith(MARKER_STARTED) && !b.startsWith(LAUNCHED_PREFIX));
     const finished = specMarkers.map((b) => FINISHED.exec(b)).filter(Boolean);
     const ticketed = finished.some((m) => m[1] === "0");
@@ -277,9 +313,10 @@ export function decide(snapshot) {
       .filter((i) => i.number !== spec.number && !isSpec(i) && isParentOf(i, spec.number))
       .sort((a, b) => a.number - b.number);
 
-    // 遷移 1
+    // 遷移 1: viewer の最後の Formal Spec コメントが passed か対象外になるまで待つ
     const key = `to-tickets:${spec.number}`;
-    if (candidates.length === 0 && !launching && !launched && !legacyStarted && finished.length === 0 && !dispatched.has(key)) {
+    const formalSpecDone = ["passed", "not-applicable"].includes(lastFormalSpec(spec, viewer)?.status);
+    if (formalSpecDone && candidates.length === 0 && !ticketsStarted(specMarkers) && !dispatched.has(key)) {
       actions.push({ kind: "to-tickets", key, spec: spec.number });
     }
 
