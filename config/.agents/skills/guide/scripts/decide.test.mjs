@@ -3489,3 +3489,22 @@ test("tabsToClose: 結果が出た工程・takt-sequence の handle を返す（
 test("closedTabMarker: 工程と handle を持つ", () => {
   assert.equal(closedTabMarker("to-tickets", "term_1"), "案内役: to-tickets のタブを閉じた（ターミナル term_1）");
 });
+
+test("タブを閉じる: formal-spec の最後の結果が failed なら、判断依頼の前後を問わず閉じない（人が答える場所）", () => {
+  const FAILED = "## Formal Spec（takt 0.71.0 の検証器で failed）";
+  const s = snapshot([spec(12, { comments: [...SENT_ALL, byViewer(launchedMarker("formal-spec", "term_f", T0)), byViewer(FAILED)] })], { sessions: { term_f: obs({ idle: true }) }, now: at(1) });
+  assert.deepEqual(closes(decide(s)), []);
+});
+
+test("タブを閉じる: 結果があり idle でも、入力待ち（waiting）なら閉じない", () => {
+  assert.deepEqual(closes(decide(doneWorld({ sessions: { term_1: obs({ idle: true, waiting: true }) } }))), []);
+});
+
+test("タブを閉じる: 閉じた印がある handle は、結果が消えても停止の観測に戻さない（工程・takt-sequence）", () => {
+  const closedStep = stallWorld({ comments: [byViewer(closedTabMarker("to-tickets", "term_1"))], sessions: { term_1: obs({ found: false }) } });
+  assert.deepEqual(sessionsToObserve(closedStep), []);
+  assert.deepEqual(stalls(decide(closedStep)), []);
+  const reopened = seqWorld({ parentComments: [byViewer(HANDED(21, 22, 23)), byViewer(SEQ_LAUNCHED()), byViewer(closedTabMarker("takt-sequence", "term_s"))], sessions: { term_s: obs({ found: false }) } });
+  assert.deepEqual(sequencesToObserve(reopened), []);
+  assert.deepEqual(seqStalls(decide(reopened)), []);
+});

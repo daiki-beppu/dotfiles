@@ -1,7 +1,7 @@
 // snapshot.mjs のテスト。GitHub・Discord は偽物。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
+import { closedTabMarker, decide, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { REVIEW_FAILED, fixLaunchedMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 
@@ -111,9 +111,9 @@ test("sessions: handle の無い印・結果が出て閉じた工程・承認依
   const pr = [{ number: 50, state: "OPEN", author: VIEWER, body: "学びの元の仕様: #13", autoMerge: true }];
   const { read, observed } = buildObserved(
     [
-      issue(12, { comments: [...sent, launched("to-tickets", "term_done"), { author: VIEWER, body: "案内役: to-tickets のタブを閉じた（ターミナル term_done）" }] }),
+      issue(12, { comments: [...sent, launched("to-tickets", "term_done"), { author: VIEWER, body: closedTabMarker("to-tickets", "term_done") }] }),
       parent,
-      issue(13, { comments: [...sent, launched("knowledge", "term_pr"), { author: VIEWER, body: "案内役: knowledge のタブを閉じた（ターミナル term_pr）" }] }),
+      issue(13, { comments: [...sent, launched("knowledge", "term_pr"), { author: VIEWER, body: closedTabMarker("knowledge", "term_pr") }] }),
       issue(14, { comments: [...sent, legacy] }),
       issue(15, { comments: [{ author: VIEWER, body: SENDING }, launched("to-tickets", "term_unsent")] }),
     ],
@@ -141,7 +141,7 @@ test("sessions: takt-sequence の起動の印（handle つき）がある親で�
     issue(12, { comments: sent }),
     issue(20, { labels: [], body: "仕様: #12", comments: [handed(21), launched("takt-sequence", "term_seq")], subIssues: [{ number: 21, state: "OPEN" }] }),
     issue(30, { labels: [], body: "仕様: #12", comments: [handed(31)], subIssues: [{ number: 31, state: "OPEN" }] }),
-    issue(40, { labels: [], body: "仕様: #12", comments: [handed(41), launched("takt-sequence", "term_closed"), { author: VIEWER, body: "案内役: takt-sequence のタブを閉じた（ターミナル term_closed）" }], subIssues: [{ number: 41, state: "CLOSED" }] }),
+    issue(40, { labels: [], body: "仕様: #12", comments: [handed(41), launched("takt-sequence", "term_closed"), { author: VIEWER, body: closedTabMarker("takt-sequence", "term_closed") }], subIssues: [{ number: 41, state: "CLOSED" }] }),
   ]);
   const snap = await read();
   assert.deepEqual(observed, ["term_seq"]);
@@ -152,7 +152,7 @@ test("sessions: 結果が出て閉じた印が無い工程のタブも観測す�
   const parent = issue(20, { labels: [], body: "仕様: #12", subIssues: [{ number: 21, state: "OPEN" }] });
   const { read, observed } = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_done")] }), parent]);
   assert.deepEqual((await read(), observed), ["term_done"]);
-  const closed = { author: VIEWER, body: "案内役: to-tickets のタブを閉じた（ターミナル term_done）" };
+  const closed = { author: VIEWER, body: closedTabMarker("to-tickets", "term_done") };
   const after = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_done"), closed] }), parent]);
   await after.read();
   assert.deepEqual(after.observed, []);
