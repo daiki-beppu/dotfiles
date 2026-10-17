@@ -701,3 +701,194 @@ test("wayfinder: task の ticket は origin/main から作った worktree で起
   assert.equal(launches[0][launches[0].indexOf("--worktree") + 1], "path:/x");
   assert.equal(launches[1][launches[1].indexOf("--worktree") + 1], "path:/wt/new");
 });
+
+// ---- wayfinder の map のスレッド・人が見る ticket・ticket のセッションの停止 ----
+const MT_CREATING = "案内役: Discord に map のスレッドを立てる";
+const MT_CREATED = "案内役: Discord に map のスレッドを立てた（スレッド T900）";
+const HUMAN_MARKER = "案内役: Discord に人が見る ticket を知らせる（#21）";
+const TICKET_STALL_MARKER = "案内役: Discord に判断依頼を送る（#21 research のセッションの停止）";
+const byViewer = (body) => ({ author: VIEWER, body });
+
+// 偽の GitHub（書いたコメントを次の読み出しで viewer のコメントにする）と偽の Discord。calls に順序つきで記録する。
+const mapNoticeWorld = (issues, { discordOver = {}, sessions, now = "2026-10-17T00:10:00.000Z" } = {}) => {
+  const calls = [];
+  const byNumber = (n) => issues.find((i) => i.number === n);
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); byNumber(n).comments.push(byViewer(body)); } };
+  const discord = {
+    ensureChannel: async (name) => { calls.push(`channel ${name}`); return "C1"; },
+    createMapThread: async (req) => { calls.push(`thread ${JSON.stringify(req)}`); return { threadId: "T900" }; },
+    sendHumanTicket: async (req) => { calls.push(`human ${JSON.stringify(req)}`); },
+    sendDecisionRequest: async (req) => { calls.push(`decision ${JSON.stringify(req)}`); },
+    ...discordOver,
+  };
+  const deps = {
+    github, discord, cwd: "/x", repo: REPO,
+    launchWayfinder: async () => assert.fail("prototype・停止した ticket ではセッションを起動しない"),
+    launchToTickets: async () => assert.fail("to-tickets は起動しない"),
+    launchFormalSpec: async () => assert.fail("formal-spec は起動しない"),
+    now: NOW,
+    startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
+  };
+  const round = (dispatched = new Set()) =>
+    runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues, taktIssues: [], now, sessions }), execute: createExecute(deps), log: () => {} }, dispatched);
+  return { calls, round };
+};
+const mapIssues = (children, mapComments = []) => [
+  issue(20, { title: "地図", labels: ["wayfinder:map"], comments: mapComments, subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
+  ...children,
+];
+const protoTicket = (over = {}) => wfTicket(21, "prototype", { title: "見た目の試作", ...over });
+const stalledTicket = (over = {}) =>
+  wfTicket(21, "research", { title: "調べる ticket", assignees: [VIEWER], comments: [byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`)], ...over });
+const SCREEN_10 = Array.from({ length: 10 }, (_, i) => `画面 ${i + 1} 行目`);
+const gone = { term_1: { found: false, waiting: false, idle: false, tail: [] } };
+
+test("map のスレッド: repo 名のチャンネル確保 → 「立てる」印を map に → スレッド作成（map の題名つき）→ ID つきの「立てた」印を map に、の順に実行する", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()]));
+  await round();
+  assert.equal(calls.length, 4);
+  assert.equal(calls[0], "channel r");
+  assert.equal(calls[1], `comment #20 ${MT_CREATING}`);
+  assert.deepEqual(JSON.parse(calls[2].replace(/^thread /, "")), { channelId: "C1", map: 20, title: "地図" });
+  assert.equal(calls[3], `comment #20 ${MT_CREATED}`);
+});
+
+test("map のスレッド: 新しい dispatched で回し直しても（再起動しても）二重に立てず、次の周から通知を map のスレッドへ送る", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()]));
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.filter((c) => c.startsWith("thread ")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("channel ")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("human ")).length, 1);
+});
+
+test("map のスレッド: 作成が失敗しても「立てる」印は残り、再起動で立て直さない（成否不明のまま再作成しない）", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()]), { discordOver: { createMapThread: async () => { throw new Error("discord down"); } } });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, ["channel r", `comment #20 ${MT_CREATING}`]);
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("map のスレッド: チャンネルの確保が失敗したら印を書かず、流し直せば立てられる", async () => {
+  let fail = true;
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()]), { discordOver: { ensureChannel: async () => { if (fail) throw new Error("no channel"); return "C1"; } } });
+  await assert.rejects(round(), /no channel/);
+  assert.deepEqual(calls, []);
+  fail = false;
+  await round(new Set());
+  assert.ok(calls.some((c) => c === `comment #20 ${MT_CREATING}`));
+});
+
+test("人が見る ticket: 通知の印を map に書いてから、map のスレッドへ ticket の題名とリンクつきで送る。セッションは起動しない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()], [byViewer(MT_CREATED)]));
+  await round();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `comment #20 ${HUMAN_MARKER}`);
+  assert.deepEqual(JSON.parse(calls[1].replace(/^human /, "")), {
+    threadId: "T900", map: 20, ticket: 21, title: "見た目の試作", url: "https://github.com/o/r/issues/21",
+  });
+});
+
+test("人が見る ticket: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()], [byViewer(MT_CREATED)]));
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("人が見る ticket: 送信が失敗しても印は残り、再起動で再送しない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()], [byViewer(MT_CREATED)]), { discordOver: { sendHumanTicket: async () => { throw new Error("discord down"); } } });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, [`comment #20 ${HUMAN_MARKER}`]);
+  await round(new Set());
+  assert.equal(calls.length, 1);
+});
+
+test("人が見る ticket: 印は ticket ではなく map に書く", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([protoTicket()], [byViewer(MT_CREATED)]));
+  await round();
+  assert.ok(calls.filter((c) => c.startsWith("comment ")).every((c) => c.startsWith("comment #20 ")), calls.join("\n"));
+});
+
+test("ticket の停止: 判断依頼の印を map に書いてから、map のスレッドへ ticket・タブ・画面・理由つきで送る。印は map に書き、ticket には書かない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([stalledTicket()], [byViewer(MT_CREATED)]), { sessions: gone });
+  await round();
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `comment #20 ${TICKET_STALL_MARKER}`);
+  const req = JSON.parse(calls[1].replace(/^decision /, ""));
+  assert.equal(req.threadId, "T900");
+  assert.equal(req.map, 20);
+  assert.equal(req.issue, 21);
+  assert.equal(req.title, "調べる ticket");
+  assert.equal(req.url, "https://github.com/o/r/issues/21");
+  assert.equal(req.step, "wayfinder");
+  assert.equal(req.tab, "wayfinder #21");
+  assert.deepEqual(req.tail, []);
+  assert.match(req.reason, /見つから/);
+  assert.equal(req.spec, undefined);
+});
+
+test("ticket の停止: 新しい dispatched で回し直しても（再起動しても）二度送らない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([stalledTicket()], [byViewer(MT_CREATED)]), { sessions: gone });
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("ticket の停止: 送信が失敗しても印は残り、再起動で再送しない", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([stalledTicket()], [byViewer(MT_CREATED)]), {
+    sessions: gone, discordOver: { sendDecisionRequest: async () => { throw new Error("discord down"); } },
+  });
+  await assert.rejects(round(), /discord down/);
+  assert.deepEqual(calls, [`comment #20 ${TICKET_STALL_MARKER}`]);
+  await round(new Set());
+  assert.equal(calls.length, 1);
+});
+
+test("ticket の停止: スレッドが無い map では、まずスレッドを立て、次の周で判断依頼を新しいスレッドへ送る", async () => {
+  const { calls, round } = mapNoticeWorld(mapIssues([stalledTicket()]), { sessions: gone });
+  await round();
+  assert.deepEqual(calls.map((c) => c.split(" ")[0]), ["channel", "comment", "thread", "comment"]);
+  await round(new Set());
+  assert.equal(JSON.parse(calls.at(-1).replace(/^decision /, "")).threadId, "T900");
+});
+
+test("ticket の停止（Discord アダプタ経由）: 入力待ちの画面の最後の 10 行・理由・ticket・タブの名前が map のスレッドのメッセージに入る", async () => {
+  const posts = [];
+  const fetch = async (url, init) => { posts.push({ path: new URL(url).pathname, content: JSON.parse(init.body).content }); return { ok: true, status: 200, json: async () => ({ id: "M" }) }; };
+  const discord = createDiscord({ token: "t", guildId: "g", userId: "U", fetch });
+  const { round } = mapNoticeWorld(mapIssues([stalledTicket()], [byViewer(MT_CREATED)]), {
+    discordOver: { sendDecisionRequest: (req) => discord.sendDecisionRequest(req) },
+    sessions: { term_1: { found: true, waiting: true, idle: false, tail: SCREEN_10 } },
+  });
+  await round();
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].path, "/api/v10/channels/T900/messages");
+  for (const part of ["map #20", "#21", "調べる ticket", "wayfinder #21", "入力待ち", ...SCREEN_10]) assert.ok(posts[0].content.includes(part), `本文に ${part} が無い: ${posts[0].content}`);
+});
+
+test("人が見る ticket（Discord アダプタ経由）: スレッドのメッセージに ticket の題名とリンクが入る", async () => {
+  const posts = [];
+  const fetch = async (url, init) => { posts.push({ path: new URL(url).pathname, content: JSON.parse(init.body).content }); return { ok: true, status: 200, json: async () => ({ id: "M" }) }; };
+  const discord = createDiscord({ token: "t", guildId: "g", userId: "U", fetch });
+  const { round } = mapNoticeWorld(mapIssues([protoTicket()], [byViewer(MT_CREATED)]), { discordOver: { sendHumanTicket: (req) => discord.sendHumanTicket(req) } });
+  await round();
+  assert.equal(posts[0].path, "/api/v10/channels/T900/messages");
+  assert.ok(posts[0].content.includes("見た目の試作") && posts[0].content.includes("https://github.com/o/r/issues/21"), posts[0].content);
+});
+
+test("map のスレッド → 通知 → 停止の流れ: 各行動の印が GitHub に残り、再起動しても同じ行動を繰り返さない", async () => {
+  const issues = mapIssues([protoTicket({ number: 22 }), stalledTicket()]);
+  const { calls, round } = mapNoticeWorld(issues, { sessions: gone });
+  await round();
+  await round(new Set());
+  await round(new Set());
+  const kinds = calls.map((c) => c.split(" ")[0]);
+  assert.equal(kinds.filter((k) => k === "thread").length, 1);
+  assert.equal(kinds.filter((k) => k === "human").length, 1);
+  assert.equal(kinds.filter((k) => k === "decision").length, 1);
+});

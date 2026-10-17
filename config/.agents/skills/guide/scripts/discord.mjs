@@ -45,9 +45,27 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       return { threadId: thread.id, messageId: message.id };
     },
 
-    // 承認依頼のスレッドに判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
-    async sendDecisionRequest({ threadId, spec, issue, title, url, reason, reports, step, tab, tail }) {
-      const head = `判断依頼: 仕様 #${spec} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
+    // map ごとの公開スレッドを立てる。最初のメッセージは送らない（スレッドの ID を印に残すだけ）。
+    async createMapThread({ channelId, map, title }) {
+      const thread = await call("POST", `/channels/${channelId}/threads`, {
+        name: `#${map} ${title}`.slice(0, 100),
+        type: PUBLIC_THREAD,
+        auto_archive_duration: 10080,
+      });
+      return { threadId: thread.id };
+    },
+
+    // frontier の prototype ticket（人が見る ticket）を map のスレッドに知らせる。
+    async sendHumanTicket({ threadId, map, ticket, title, url }) {
+      await call("POST", `/channels/${threadId}/messages`, {
+        content: `人が見る ticket: map #${map} の #${ticket} ${title}\n${url}`,
+        allowed_mentions: { parse: [] },
+      });
+    },
+
+    // 承認依頼のスレッド（map があれば map のスレッド）に判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
+    async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail }) {
+      const head = `判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
       const reportLine = reports === undefined ? "" : `\ntakt のレポート: ${reports}`;
       // 2000 文字の上限で切れるのは理由と画面だけにする（工程・仕様・タブ・URL・レポートの場所を必ず残す）。
       const room = Math.max(0, MAX_CONTENT - head.length - reportLine.length - "理由: ".length);

@@ -145,3 +145,50 @@ test("sessions: takt-sequence の起動の印（handle つき）がある親で�
   assert.deepEqual(observed, ["term_seq"]);
   assert.deepEqual(snap.sessions, { term_seq: { found: true, waiting: false, idle: true, startedAt: T0, tail: ["t"] } });
 });
+
+// ---- wayfinder の ticket のセッションの観測 ----
+
+const MT_CREATED = { author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" };
+const ticketIssue = (number, over = {}) =>
+  issue(number, { labels: ["wayfinder:research"], assignees: [VIEWER], blockedBy: [], comments: [launched("wayfinder", "term_t")], ...over });
+const mapIssue = (children, over = {}) =>
+  issue(20, { labels: ["wayfinder:map"], comments: [MT_CREATED], subIssues: children.map((c) => ({ number: c.number, state: c.state })), ...over });
+
+test("sessions: 起動の印（handle つき）がある open な wayfinder の ticket のセッションを、既存の observeSession で観測して入れる", async () => {
+  const ticket = ticketIssue(21);
+  const { read, observed } = buildObserved([mapIssue([ticket]), ticket]);
+  const snap = await read();
+  assert.deepEqual(observed, ["term_t"]);
+  assert.deepEqual(snap.sessions, { term_t: { found: true, waiting: false, idle: true, startedAt: T0, tail: ["t"] } });
+});
+
+test("sessions: ticket の観測が失敗したら例外にする。見つからない観測（found: false）は入れる", async () => {
+  const ticket = ticketIssue(21);
+  const gone = buildObserved([mapIssue([ticket]), ticket], { observe: () => ({ found: false, waiting: false, idle: false, tail: [] }) });
+  assert.equal((await gone.read()).sessions.term_t.found, false);
+  const failing = buildObserved([mapIssue([ticket]), ticket], { observe: () => { throw new Error("orca down"); } });
+  await assert.rejects(failing.read(), /orca down/);
+});
+
+test("sessions: 閉じた ticket・判断依頼の印が map にある ticket・起動前の印だけの ticket・閉じた map の子は観測しない（orca を呼ばない）", async () => {
+  const closed = ticketIssue(21, { state: "CLOSED" });
+  const decided = ticketIssue(22);
+  const prelaunch = ticketIssue(23, { comments: [{ author: VIEWER, body: "案内役: wayfinder を起動する" }] });
+  const underClosed = ticketIssue(41);
+  const decision = { author: VIEWER, body: "案内役: Discord に判断依頼を送る（#22 research のセッションの停止）" };
+  const { read, observed } = buildObserved([
+    mapIssue([closed, decided, prelaunch], { comments: [MT_CREATED, decision] }),
+    mapIssue([underClosed], { number: 40, state: "CLOSED" }),
+    closed, decided, prelaunch, underClosed,
+  ]);
+  const snap = await read();
+  assert.deepEqual(observed, []);
+  assert.deepEqual(snap.sessions, {});
+});
+
+test("sessions: 仕様の工程と wayfinder の ticket が同じ周にあれば、両方の handle を観測する", async () => {
+  const ticket = ticketIssue(21);
+  const { read, observed } = buildObserved([issue(12, { comments: [...sent, launched("to-tickets", "term_1")] }), mapIssue([ticket]), ticket]);
+  await read();
+  assert.deepEqual([...observed].sort(), ["term_1", "term_t"]);
+});

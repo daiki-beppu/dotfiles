@@ -287,3 +287,77 @@ test("判断依頼（セッションの停止）: 画面と理由が長くても
   assert.ok(content.length <= 2000, String(content.length));
   for (const part of ["#12", "to-tickets #12", "https://github.com/o/r/issues/12", "仕様A"]) assert.ok(content.includes(part), part);
 });
+
+// ---- map のスレッド・人が見る ticket・map の判断依頼 ----
+
+test("map のスレッド: repo のチャンネルに公開スレッドを map の題名つきの名前で立て、スレッドの ID を返す。メッセージは送らない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/C1/threads": json({ id: "T9" }) });
+  const result = await discord.createMapThread({ channelId: "C1", map: 20, title: "地図" });
+  assert.deepEqual(result, { threadId: "T9" });
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/C1/threads"]);
+  assert.equal(calls[0].body.type, 11);
+  assert.ok(calls[0].body.name.includes("#20") && calls[0].body.name.includes("地図"), calls[0].body.name);
+  assert.ok(Number.isInteger(calls[0].body.auto_archive_duration));
+});
+
+test("map のスレッド: 名前は 100 文字以内に収める。作成が失敗したら例外にする", async () => {
+  const long = adapter({ "POST /api/v10/channels/C1/threads": json({ id: "T9" }) });
+  await long.discord.createMapThread({ channelId: "C1", map: 20, title: "あ".repeat(300) });
+  assert.ok(long.calls[0].body.name.length <= 100);
+  const down = adapter({ "POST /api/v10/channels/C1/threads": json({ message: "x" }, 403) });
+  await assert.rejects(down.discord.createMapThread({ channelId: "C1", map: 20, title: "地図" }), /403/);
+});
+
+test("人が見る ticket: map のスレッドに、ticket の題名とリンクと map の番号を本文に入れて 1 件送る。新しいスレッドは作らない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendHumanTicket({ threadId: "T1", map: 20, ticket: 21, title: "見た目の試作", url: "https://github.com/o/live-mindmap/issues/21" });
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["人が見る ticket", "#20", "#21", "見た目の試作", "https://github.com/o/live-mindmap/issues/21"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(!content.includes("undefined"));
+});
+
+test("人が見る ticket: 題名の @everyone でメンション通知が飛ばない。送信が失敗したら例外にする", async () => {
+  const ok = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await ok.discord.sendHumanTicket({ threadId: "T1", map: 20, ticket: 21, title: "@everyone", url: "u" });
+  assert.deepEqual(ok.calls[0].body.allowed_mentions, { parse: [] });
+  const down = adapter({ "POST /api/v10/channels/T1/messages": json({ message: "x" }, 403) });
+  await assert.rejects(down.discord.sendHumanTicket({ threadId: "T1", map: 20, ticket: 21, title: "t", url: "u" }), /403/);
+});
+
+test("判断依頼（map の ticket のセッションの停止）: map のスレッドに、ticket・タブの名前・画面の最後の行・理由を本文に含め、見出しは map にする", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", map: 20, issue: 21, title: "調べる ticket", url: "https://github.com/o/r/issues/21",
+    reason: "セッションが入力待ち（確認・許可）で止まっている", step: "wayfinder", tab: "wayfinder #21", tail: ["Allow? (y/n)", "rm -rf build"],
+  });
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), ["POST /api/v10/channels/T1/messages"]);
+  const content = calls[0].body.content;
+  for (const part of ["map #20", "#21", "調べる ticket", "wayfinder #21", "Allow? (y/n)", "rm -rf build", "入力待ち", "https://github.com/o/r/issues/21"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+  }
+  assert.ok(!content.includes("仕様 #"), content);
+  assert.ok(!content.includes("takt のレポート"));
+  assert.ok(!content.includes("undefined"));
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+});
+
+test("判断依頼（map の ticket のセッションの停止）: 画面と理由が長くても 2000 文字以内に収め、map・ticket・タブ・URL は切り落とさない", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({
+    threadId: "T1", map: 20, issue: 21, title: "調べる ticket", url: "https://github.com/o/r/issues/21",
+    reason: "r".repeat(3000), step: "wayfinder", tab: "wayfinder #21", tail: Array.from({ length: 10 }, () => "z".repeat(500)),
+  });
+  const content = calls[0].body.content;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["map #20", "#21", "wayfinder #21", "https://github.com/o/r/issues/21", "調べる ticket"]) assert.ok(content.includes(part), part);
+});
+
+test("判断依頼: map を渡さなければ従来どおり仕様の見出しのまま（既存の送り先を変えない）", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest({ threadId: "T1", spec: 12, issue: 21, title: "実装A", url: "u", reason: "r", reports: "p" });
+  assert.ok(calls[0].body.content.includes("仕様 #12"));
+  assert.ok(!calls[0].body.content.includes("map #"));
+});
