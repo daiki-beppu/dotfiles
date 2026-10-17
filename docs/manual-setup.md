@@ -35,3 +35,13 @@ codex mcp add takt -- ~/.local/bin/takt-mcp-root
 ```
 
 読み取り専用の `takt_list_tasks` / `takt_get_run` は `config/.claude/settings.json` で許可済み。`takt_tell_run` / `takt_enqueue_task` は都度確認になる。
+
+## 5. 案内役（guide）の Discord Bot
+
+案内役は Bot のトークン・サーバー ID・ユーザー ID をキーチェーンから読む。キーチェーンは Mac ごとなので、新しい Mac では入れ直す。
+
+```sh
+~/ghq/github.com/daiki-beppu/dotfiles/scripts/setup-guide-discord.sh
+```
+
+移行なら、既存のサーバーとアプリケーションを使い、トークンだけ Reset して入れ直す（古い Mac の案内役は止まる）。

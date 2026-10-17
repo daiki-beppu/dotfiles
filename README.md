@@ -82,6 +82,7 @@ dotfiles/
 │   ├── sync-agent-skills.sh         # スキルのリンク（Codex Cloud では --manifest）
 │   ├── setup-codex-cloud.sh         # Codex Cloud の bootstrap
 │   ├── check-codex-cloud-evidence.sh  # Cloud の録画環境の検証
+│   ├── setup-guide-discord.sh       # 案内役の Discord Bot を用意するウィザード
 │   └── gyazo-retire.sh              # Gyazo 退会ウィザード（cap.so へ移行）
 ├── .github/workflows/ci.yml  # CI（scripts/check.sh を実行）
 ├── .takt/                 # このリポジトリ用の takt 設定
@@ -166,6 +167,10 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 - Vite+ の確認
 - アプリの初期設定（1Password・Google Drive・Cap 等）
 - takt MCP の登録
+- 案内役（guide）の Discord Bot: `scripts/setup-guide-discord.sh` を実行する
+
+キーチェーンや外部サービスの値など、人の手が要る手順は `/wizard` で対話式のスクリプトにして `scripts/` に置く。
+新しい Mac では、手順を読み直したり AI に説明し直したりせず、スクリプトを実行する。
 
 ## PATH 優先順位
 
