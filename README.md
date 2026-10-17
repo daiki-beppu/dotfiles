@@ -8,25 +8,28 @@ Nix (nix-darwin + Home Manager) で宣言的に管理する。
 
 ### 新しい Mac のセットアップ
 
+ターミナルで次を実行すると、ウィザード（`scripts/setup-new-mac.sh`）が適用までを 1 段ずつ案内する。
+
 ```bash
-# 1. Determinate Nix をインストール
-curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
-
-# 2. シェル再起動
-exec $SHELL
-
-# 3. ghq の標準配置へリポジトリをクローン
-nix run nixpkgs#ghq -- get https://github.com/daiki-beppu/dotfiles.git
-ln -sf ~/ghq/github.com/daiki-beppu/dotfiles ~/.dotfiles
-
-# 4. 初回ビルド（nix-darwin + Home Manager + Homebrew cask 全て）
-cd ~/ghq/github.com/daiki-beppu/dotfiles
-sudo nix run nix-darwin -- switch --flake .
-# ホスト名が一致しない場合は .#mba / .#MacBook-Pro-3 を明示する
-
-# 5. 2回目以降
-sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles
+bash <(curl -fsSL https://raw.githubusercontent.com/daiki-beppu/dotfiles/main/scripts/setup-new-mac.sh)
 ```
+
+`| bash` ではなく `bash <(...)` で渡す。ウィザードはキー入力を待つので、標準入力を端末に残す必要がある。
+済んだ段は飛ばすので、途中で止めても同じコマンドで流し直せる。
+
+| 段 | 内容 |
+|----|------|
+| 1 | `$USER` を flake の `hosts` と照合して `.#<host>` を決める。無ければ足すエントリを示して止まる |
+| 2〜4 | Xcode Command Line Tools・Determinate Nix・Homebrew（nix-darwin は Homebrew 自体を入れない） |
+| 5 | App Store にサインイン（`masApps` に必要） |
+| 6 | ghq でクローンし、`~/.dotfiles` を張る |
+| 7 | 初回の `sudo nix run nix-darwin -- switch --flake .#<host>` |
+| 8〜10 | [手動で設定が必要な項目](#手動で設定が必要な項目)（ディスプレイ・アプリ・takt） |
+| 11 | `vp` の確認 |
+
+2 回目以降は `sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles` で適用する。
+
+人の手が要る手順は `/wizard` スキルで対話式のスクリプトにして `scripts/` に置く。手順を変えたら、ウィザードの段も合わせて直す。
 
 ## 管理構成
 
@@ -82,6 +85,7 @@ dotfiles/
 │   ├── sync-agent-skills.sh         # スキルのリンク（Codex Cloud では --manifest）
 │   ├── setup-codex-cloud.sh         # Codex Cloud の bootstrap
 │   ├── check-codex-cloud-evidence.sh  # Cloud の録画環境の検証
+│   ├── setup-new-mac.sh             # 新しい Mac に適用するまでのウィザード
 │   └── gyazo-retire.sh              # Gyazo 退会ウィザード（cap.so へ移行）
 ├── .github/workflows/ci.yml  # CI（scripts/check.sh を実行）
 ├── .takt/                 # このリポジトリ用の takt 設定
