@@ -14,7 +14,7 @@
 //     | { kind: "wayfinder", key, map, ticket, type }
 //       （open な wayfinder:map の frontier = open・unblocked・未 claim の research / grilling / task の ticket。印は ticket に書く）
 //     | { kind: "to-spec", key, map }
-//       （open な map が晴れた: 霧が無く、子がすべて閉じていて、to-spec の起動の印が無い。印は map に書く）
+//       （open な map が晴れた: 霧が無く、子がすべて閉じていて、to-spec の起動の印が無い。同じ周に差し戻しで開き直す子がある map には出さない。印は map に書く）
 //     | { kind: "create-map-thread", key, map, title }   （知らせることがある open な map に Discord のスレッドが無い。印は map に書く）
 //     | { kind: "notify-human-ticket", key, map, ticket, title, threadId }   （frontier の prototype ticket を map のスレッドへ知らせる。印は map に書く）
 //     | { kind: "request-map-decision", key, map, issue, cause, title, threadId, reason, step, tab, tail }
@@ -381,11 +381,14 @@ export function hasFog(body) {
 // 晴れた map ごとの to-spec の起動。子が 1 件以上あり、すべて閉じていて、霧が無く、viewer の起動の印（1 段目か 2 段目）が無い map だけ。
 // 子が 0 件の map は、起票の途中の map かもしれず、コメントも読まれないので印も見えないため出さない。frontier ではなく子の状態を直接見る
 // （claim 済み・ブロック中の ticket が開いていれば、frontier が空でも待つため）。
+// 同じ周の差し戻し（reject-provisional-decision）がその子を開き直すので、開き直される子を持つ map は待つ（行動一覧では to-spec が先に実行されるため）。
 function decideToSpec(snapshot, dispatched) {
   const actions = [];
+  const reopening = new Set(rejectedProvisionals(snapshot).map(({ ticket }) => ticket.number));
   for (const map of openMaps(snapshot)) {
     const children = map.subIssues ?? [];
     if (children.length === 0 || children.some((c) => c.state !== "CLOSED") || hasFog(map.body)) continue;
+    if (children.some((c) => reopening.has(c.number))) continue;
     if (markers(map, snapshot.viewer).some((b) => b.startsWith(MARKER_TO_SPEC_LAUNCHING) || b.startsWith(TO_SPEC_LAUNCHED_PREFIX))) continue;
     const key = `to-spec:${map.number}`;
     if (dispatched.has(key)) continue;
@@ -794,14 +797,20 @@ function pendingRejections(snapshot) {
 export const provisionalRejectionsToRead = (snapshot) =>
   pendingRejections(snapshot).map(({ threadId, messageId }) => ({ threadId, messageId }));
 
+// 本人の ❌ がある未処理の仮決め（差し戻しの判定。reject-provisional-decision と to-spec の除外が共有する）。
+function rejectedProvisionals(snapshot) {
+  const { discordUserId } = snapshot;
+  if (discordUserId == null) return [];
+  return pendingRejections(snapshot).filter(({ messageId }) =>
+    (snapshot.provisionalReactions?.[messageId] ?? []).some((r) => r.userId === discordUserId && r.emoji === REJECT_EMOJI),
+  );
+}
+
 // 閉じた ticket の仮決めに本人の ❌ があれば、ticket への書き戻し・開き直し・claim の解除を 1 つの行動にする。
 // 同じ ticket の複数の仮決めは 1 件に束ねる（開き直しは 1 回。新しいセッションが全部の差し戻しを知って解けるように）。
 function decideProvisionalRejections(snapshot, dispatched) {
-  const { viewer, discordUserId } = snapshot;
-  if (discordUserId == null) return [];
-  const rejected = pendingRejections(snapshot).filter(({ messageId }) =>
-    (snapshot.provisionalReactions?.[messageId] ?? []).some((r) => r.userId === discordUserId && r.emoji === REJECT_EMOJI),
-  );
+  const { viewer } = snapshot;
+  const rejected = rejectedProvisionals(snapshot);
   const byTicket = new Map();
   for (const r of rejected) {
     const id = `${r.map}:${r.ticket.number}`;

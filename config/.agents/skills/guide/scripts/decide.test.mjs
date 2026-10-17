@@ -2615,6 +2615,34 @@ const closedChild = (n) => wfTicket(n, "research", { state: "CLOSED" });
 const clearWorld = ({ body = FOG_TEMPLATE, children = [closedChild(21), closedChild(22)], map = {}, over = {} } = {}) =>
   mapWorld(children, { map: { body, ...map }, over });
 
+// 差し戻し（本人の ❌）が同じ周に子を開き直す map には、to-spec を出さない。
+test("to-spec: 同じ周の差し戻しで開き直す子がある晴れた map には出さず、差し戻しだけを出す。❌ が無ければ出る", () => {
+  const w = rjWorld({}, { map: { body: FOG_TEMPLATE } });
+  const found = decide(w);
+  assert.deepEqual(rejects(found).map((a) => [a.map, a.ticket]), [[20, 21]]);
+  assert.deepEqual(toSpecs(found), []);
+  const noReaction = decide(rjWorld({}, { map: { body: FOG_TEMPLATE }, reactions: {} }));
+  assert.deepEqual(rejects(noReaction), []);
+  assert.deepEqual(toSpecs(noReaction), [toSpecAction()]);
+});
+
+test("to-spec: 差し戻しの書き戻しの印がある（開き直し済みで再び閉じた）map には出る。未処理の ❌ が残れば出ない", () => {
+  const done = rjWorld({ comments: [byViewer(ONE), byViewer(PD_SENDING(21, 1)), byViewer(PD_SENT(21, 1, "900", "M1")), byViewer(RJ(21, 1))] }, { map: { body: FOG_TEMPLATE } });
+  assert.deepEqual(rejects(decide(done)), []);
+  assert.deepEqual(toSpecs(decide(done)), [toSpecAction()]);
+});
+
+test("to-spec: 差し戻し対象の ticket を子に持たないほかの晴れた map には出る。共有された子を持つ map は除外する", () => {
+  const base = rjWorld({}, { map: { body: FOG_TEMPLATE } });
+  const clear = (n, child) => issue(n, { labels: ["wayfinder:map"], title: "別", comments: threaded(), body: FOG_TEMPLATE, subIssues: [{ number: child, state: "CLOSED" }] });
+  const other = { ...base, issues: [...base.issues, clear(30, 31), wfTicket(31, "research", { state: "CLOSED" })] };
+  assert.deepEqual(toSpecs(decide(other)).map((a) => a.key), ["to-spec:30"]);
+  assert.deepEqual(rejects(decide(other)).map((a) => [a.map, a.ticket]), [[20, 21]]);
+  const shared = { ...base, issues: [...base.issues, clear(40, 21)] };
+  assert.deepEqual(toSpecs(decide(shared)), []);
+  assert.deepEqual(rejects(decide(shared)).map((a) => [a.map, a.ticket]), [[20, 21]]);
+});
+
 test("to-spec: 霧が無く子がすべて CLOSED で印も無い map に、map 単位の起動を 1 件だけ出す", () => {
   assert.deepEqual(toSpecs(decide(clearWorld())), [toSpecAction()]);
 });

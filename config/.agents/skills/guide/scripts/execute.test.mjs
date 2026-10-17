@@ -1215,21 +1215,22 @@ const RJ_OWNER = "U-owner";
 const RJ_SENT = byViewer("案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド T900 / メッセージ M42）");
 const RJ_MARKER = "案内役: Discord で仮決めが差し戻された（#21 仮決め 1）";
 // 偽の GitHub は reopen・removeAssignees の結果を次の読み出しに反映する（開き直した ticket が frontier に戻る流れを周をまたいで再現する）。
-const rejectWorld = ({ failOn } = {}) => {
+const rejectWorld = ({ failOn, mapBody = FOGGY } = {}) => {
   const ticket = wfTicket(21, "grilling", {
     title: "parser を選ぶ", state: "CLOSED", assignees: [VIEWER],
     comments: [byViewer(PD_BODY), byViewer(PD_SENDING_MARKER), RJ_SENT, byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_old / ${LAUNCHED_AT}）`)],
   });
-  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], body: FOGGY, comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
+  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], body: mapBody, comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
   const calls = [];
   const github = {
-    comment: (n, body) => { calls.push(`comment #${n} ${body}`); ticket.comments.push(byViewer(body)); },
+    comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push(byViewer(body)); },
     reopen: (n) => { calls.push(`reopen #${n}`); if (failOn === "reopen") throw new Error("gh down"); ticket.state = "OPEN"; },
     removeAssignees: (n, logins) => { calls.push(`unassign #${n} ${logins.join(",")}`); ticket.assignees = []; },
   };
   const deps = {
     github, cwd: "/x", repo: REPO,
     launchWayfinder: (a) => launchWayfinder(a, fakeOrca(calls), () => {}),
+    launchToSpec: (a) => launchToSpec(a, fakeOrca(calls)),
     now: NOW,
     discord: {},
   };
@@ -1246,7 +1247,7 @@ const rejectWorld = ({ failOn } = {}) => {
       dispatched,
     );
   };
-  return { calls, round, ticket };
+  return { calls, round, ticket, issues };
 };
 const rjKinds = (calls) => calls.map((c) => c.split(" ")[0] + (c.startsWith("comment ") ? ` ${c.split(" ")[1]}` : ""));
 
@@ -1272,6 +1273,22 @@ test("差し戻し: 周をまとめて回しても、書き戻し・開き直し
   // 書き戻しの後に書かれた印は、新しい回の起動前と起動後の 2 件だけ。
   const bodies = w.ticket.comments.map((c) => c.body);
   assert.deepEqual(bodies.slice(bodies.findIndex((b) => b.startsWith(RJ_MARKER)) + 1), ["案内役: wayfinder を起動する", `案内役: wayfinder を起動した（ターミナル term_1 / ${LAUNCHED_AT}）`]);
+});
+
+test("差し戻し × to-spec: 開き直される子を持つ晴れた map には、同じ周で to-spec の印も起動も出ない。子が再び閉じた周で 1 度だけ起動する", async () => {
+  const w = rejectWorld({ mapBody: "## Not yet specified\n\n<!-- 説明 -->\n" });
+  const mapComments = () => w.issues[0].comments.map((c) => c.body);
+  await w.round();
+  assert.deepEqual(rjKinds(w.calls).slice(0, 3), ["comment #21", "reopen", "unassign"], w.calls.join("\n"));
+  assert.ok(!w.calls.some((c) => c.startsWith("comment #20 案内役: to-spec")), w.calls.join("\n"));
+  assert.ok(!orcaArgv(w.calls).some((a) => a[0] === "agent" && String(a[a.indexOf("--prompt") + 1]).startsWith("/to-spec")));
+  assert.ok(!mapComments().some((b) => b.startsWith("案内役: to-spec")));
+  // 開き直した子が再び閉じる（書き戻しの印は残る）。
+  w.ticket.state = "CLOSED";
+  await w.round(new Set());
+  assert.equal(w.calls.filter((c) => c.startsWith("comment #20 案内役: to-spec を起動する")).length, 1, w.calls.join("\n"));
+  assert.equal(w.calls.filter((c) => c.startsWith("comment #20 案内役: to-spec を起動した")).length, 1);
+  assert.equal(orcaArgv(w.calls).filter((a) => a[0] === "agent" && String(a[a.indexOf("--prompt") + 1]).startsWith("/to-spec #20")).length, 1);
 });
 
 test("差し戻し: 開き直しが失敗したら例外になり、書き戻しの印は残るので、再起動しても書き戻しをやり直さない", async () => {
