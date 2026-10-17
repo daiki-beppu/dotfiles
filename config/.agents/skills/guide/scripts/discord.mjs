@@ -6,15 +6,31 @@ const PUBLIC_THREAD = 11;
 const MAX_CONTENT = 2000;
 const EMOJIS = ["✅", "❌"];
 
-export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch, warn = console.error }) {
+// 429（レート制限）は、応答の retry_after（秒。無ければ Retry-After ヘッダ）だけ待ってやり直す。続けば RATE_LIMIT_RETRIES 回で諦める。
+const RATE_LIMIT_RETRIES = 3;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function retryAfterMs(res) {
+  const body = await res.json().catch(() => ({}));
+  const seconds = Number(body.retry_after ?? res.headers.get("retry-after") ?? 1);
+  return Math.ceil((Number.isFinite(seconds) ? seconds : 1) * 1000);
+}
+
+export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch, warn = console.error, sleep = wait }) {
   async function call(method, path, body) {
-    const res = await fetch(`${BASE}${path}`, {
-      method,
-      headers: { Authorization: `Bot ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Discord ${method} ${path.split("?")[0]} が ${res.status}`);
-    return res.status === 204 ? undefined : res.json();
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`${BASE}${path}`, {
+        method,
+        headers: { Authorization: `Bot ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (res.status === 429 && attempt < RATE_LIMIT_RETRIES) {
+        await sleep(await retryAfterMs(res));
+        continue;
+      }
+      if (!res.ok) throw new Error(`Discord ${method} ${path.split("?")[0]} が ${res.status}`);
+      return res.status === 204 ? undefined : res.json();
+    }
   }
 
   return {
