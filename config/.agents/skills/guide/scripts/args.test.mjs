@@ -6,7 +6,7 @@ test("parseArgs: --stall-minutes の既定は 60、指定した正の数がそ�
   assert.equal(parseArgs(["o/r"]).stallMinutes, 60);
   assert.equal(parseArgs(["o/r", "--stall-minutes", "30"]).stallMinutes, 30);
   assert.deepEqual(parseArgs(["o/r", "--interval", "10", "--from", "5", "--dry-run", "--stall-minutes", "1.5"]), {
-    repo: "o/r", interval: 10, dryRun: true, fromSpec: 5, stallMinutes: 1.5,
+    repo: "o/r", interval: 10, dryRun: true, fromSpec: 5, stallMinutes: 1.5, terminal: undefined,
   });
 });
 
@@ -22,4 +22,18 @@ test("parseArgs: 既存の引数の検証は変わらない", () => {
   assert.equal(parseArgs(["o/r", "--interval", "0"]), null);
   assert.equal(parseArgs(["o/r", "--from", "1.5"]), null);
   assert.equal(parseArgs(["o/r", "--unknown"]), null);
+});
+
+test("parseArgs: --terminal <handle> を受け付け、無ければ undefined", () => {
+  assert.equal(parseArgs(["o/r"]).terminal, undefined);
+  assert.equal(parseArgs(["o/r", "--terminal", "term_abc123"]).terminal, "term_abc123");
+  assert.deepEqual(parseArgs(["o/r", "--terminal", "term_g", "--from", "5", "--interval", "30"]), {
+    repo: "o/r", interval: 30, dryRun: false, fromSpec: 5, stallMinutes: 60, terminal: "term_g",
+  });
+});
+
+test("parseArgs: --terminal の値が無い・空・別の引数なら拒否する", () => {
+  for (const bad of [["--terminal"], ["--terminal", ""], ["--terminal", "--dry-run"]]) {
+    assert.equal(parseArgs(["o/r", ...bad]), null, bad.join(" "));
+  }
 });

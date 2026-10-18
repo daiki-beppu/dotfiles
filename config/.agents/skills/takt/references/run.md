@@ -4,6 +4,8 @@
 
 ## runner の確認と起動
 
+案内役と一緒に使うときは、guide スキルの `scripts/desk.mjs` で立てる（repo の main checkout で `node <guide>/scripts/desk.mjs <owner/repo>`）。1 つのタブに takt watch・案内役・align-behind のペインを並べ、既に動いているものは起動しない。以下は watch を単独で立てるときの手順。
+
 まず、この repo を見張る watch が既にあるか確かめる。
 
 ```sh

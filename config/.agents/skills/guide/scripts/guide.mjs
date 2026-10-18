@@ -1,5 +1,6 @@
 // 案内役の入口。仕様の承認依頼を Discord に送り、承認済みの仕様を to-tickets から takt-sequence まで流す。
-// 使い方（対象 repo の root で）: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--dry-run]
+// 使い方（対象 repo の root で）: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--terminal <自分のペインの handle>] [--dry-run]
+// --terminal は desk.mjs が渡す。あれば takt-sequence を新しいタブではなく、自分のペインの下に分割して起動する。
 // 状態は GitHub の issue（マーカーのコメント）に持つ。止めて流し直しても続きから動く。
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "./args.mjs";
@@ -19,13 +20,13 @@ import { launchReviewFix } from "./review-fix.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
 
 const usage = () => {
-  console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--dry-run]");
+  console.error("usage: node guide.mjs <owner/repo> [--interval 60] [--from <仕様の issue 番号>] [--stall-minutes 60] [--terminal <自分のペインの handle>] [--dry-run]");
   process.exit(2);
 };
 
 const parsed = parseArgs(process.argv.slice(2));
 if (parsed === null) usage();
-const { repo, interval, dryRun, fromSpec, stallMinutes } = parsed;
+const { repo, interval, dryRun, fromSpec, stallMinutes, terminal } = parsed;
 
 const cwd = process.cwd();
 const log = (s) => console.log(new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }), s);
@@ -62,7 +63,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence: (args) => startTaktSequence({ ...args, terminal }), launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
 
 const deps = { readSnapshot, execute, log };
 try {
