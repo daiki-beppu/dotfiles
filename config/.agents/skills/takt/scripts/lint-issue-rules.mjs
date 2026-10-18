@@ -7,8 +7,11 @@ const CI_AFTER = /\bCI\s*(の|で|が)/i;
 // 「実装レポート」「報告」に載せる・書く旨。実装レポートは PR の本文に写るので、PR の本文に直接書く項目と違い run の中で満たせる
 const REPORT = /(実装レポート|報告)[^、。]*?(に|へ)[^、。]*?(載|書)/;
 const RECOMMENDED = "実装レポートに載せる（PR の本文に写る）";
-const SPEC_WORD = /参照|詳細は|に従|を見て|を読んで|に書いた|のとおり|の通り|\bsee\b/i;
+const SPEC_WORD = /参照|詳細は|に従|を見て|を読んで|に書いた|のとおり|の通り|一次資料|解決コメント|\bsee\b/i;
 const ISSUE_REF = /(^|[^\w&])#\d+\b|github\.com\/[\w.-]+\/[\w.-]+\/(issues|pull)\/\d+/;
+const ISSUE_NUMBERS = /(?:^|[^\w&])#(\d+)\b|github\.com\/[\w.-]+\/[\w.-]+\/(?:issues|pull)\/(\d+)/g;
+// 見出しに「写し」を含む節。リンク先の該当部分をここに写してあれば、その issue への参照は写し済みとみなす
+const COPY_HEADING = /写し/;
 // 「仕様の『機能ごとの設定』」のように、リンク先の節を名前で指す書き方。本文に同じ見出しがあれば写してあるとみなす
 const SECTION_REF = /(?:仕様|親 ?issue|spec)\s*の?\s*[「『]([^」』]+)[」』]/gi;
 const BRANCH_REF = /git (fetch|checkout|switch|cherry-pick|merge)\b|origin\/(?!main\b|master\b)[\w./-]+/;
@@ -19,6 +22,7 @@ export function lintIssue({ body, comments }) {
   const warnings = [];
   const sources = [["本文", body ?? ""], ...(comments ?? []).map((c, i) => [`コメント ${i + 1}（${c.author?.login ?? "?"}）`, c.body ?? ""])];
   const headings = new Set(sources.flatMap(([, text]) => text.split("\n").filter((l) => /^#{1,6}\s/.test(l)).map(norm)));
+  const copied = copiedIssues(sources.map(([, text]) => text));
   for (const [where, text] of sources) {
     let heading = "";
     let inFence = false;
@@ -38,7 +42,8 @@ export function lintIssue({ body, comments }) {
       if (agentItem && REPORT.test(line) && !PR_BODY.test(line)) {
         warnings.push(`${at}: 実装レポートや報告に載せる完了条件に、載せる先が PR の本文だと書かれていない。レビューは PR の本文とコメントを読む。証跡は PR の本文に載せる、と書く（例: ${RECOMMENDED}）\n    ${line.trim()}`);
       }
-      if (ISSUE_REF.test(line) && SPEC_WORD.test(line)) {
+      const uncopied = issueNumbers(line).some((n) => !copied.has(n));
+      if (ISSUE_REF.test(line) && SPEC_WORD.test(line) && uncopied) {
         warnings.push(`${at}: 仕様をリンク先の issue / PR に頼っている。takt のエージェントはリンク先を読めないので、要る内容を本文かコメントに写す\n    ${line.trim()}`);
       }
       const unseen = [...line.matchAll(SECTION_REF)].map((m) => m[1]).filter((name) => !headings.has(norm(name)));
@@ -51,4 +56,20 @@ export function lintIssue({ body, comments }) {
     });
   }
   return warnings;
+}
+
+const issueNumbers = (text) => [...text.matchAll(ISSUE_NUMBERS)].map((m) => m[1] ?? m[2]);
+
+// 見出しに「写し」を含む節に出てくる issue 番号
+function copiedIssues(texts) {
+  const copied = new Set();
+  for (const text of texts) {
+    let inCopy = false;
+    for (const line of text.split("\n")) {
+      const h = line.match(/^#{1,6}\s+(.*)/);
+      if (h) { inCopy = COPY_HEADING.test(h[1]); continue; }
+      if (inCopy) for (const n of issueNumbers(line)) copied.add(n);
+    }
+  }
+  return copied;
 }

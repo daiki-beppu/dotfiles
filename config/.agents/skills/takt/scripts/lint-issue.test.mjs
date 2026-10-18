@@ -93,6 +93,30 @@ test("既存の警告: リンク先の issue に頼る仕様", () => {
   assert.match(ws[0], /リンク先の issue \/ PR に頼っている/);
 });
 
+test("一次資料として他 issue の解決コメントを指すだけの行も警告する", () => {
+  const ws = lint("テストごとの振り分けの一次資料: #1119（audioMix の行） の解決コメント。");
+  assert.equal(ws.length, 1);
+  assert.match(ws[0], /リンク先の issue \/ PR に頼っている/);
+});
+
+test("リンク先の該当行を「写し」の節に写してあれば、その issue への参照は警告しない", () => {
+  const body = "一次資料: #1119（audioMix の行） の解決コメント";
+  const copy = { author: { login: "a" }, body: "## 一次資料の写し（takt 用）\n#1119 の解決コメントから写した。\n| audioMix.heavy:46 | unit へ |" };
+  assert.deepEqual(lint(body, [copy]), []);
+});
+
+test("写しの節に無い issue を指していれば、写しがあっても警告する", () => {
+  const body = "一次資料: #1119（audioMix の行）、#1121（server の節） の解決コメント";
+  const copy = { author: { login: "a" }, body: "## 一次資料の写し\n#1119 から写した。" };
+  const ws = lint(body, [copy]);
+  assert.equal(ws.length, 1);
+});
+
+test("写しの節の外で issue 番号に触れても、写したことにはならない", () => {
+  const body = "## 背景\n#1119 で決めた。\n\n## What to build\n一次資料: #1119 の解決コメント";
+  assert.equal(lint(body).length, 1);
+});
+
 test("既存の警告: ほかのブランチ", () => {
   const ws = lint("- git fetch origin feature/x して読む");
   assert.equal(ws.length, 1);
