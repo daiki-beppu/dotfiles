@@ -30,7 +30,7 @@ const start = (processes, args = ARGS) => {
 // --command の文字列に、takt-sequence.mjs と、その後ろに引数がこの順でそのまま並び、案内役と同じ終わりの行が続くこと
 const assertSequenceCommand = (command) => {
   const [sequence, done] = command.split("; ");
-  assert.match(sequence, /^'[^']*\/takt-node\.sh' '[^']*\/takt-sequence\.mjs' '701' '702' '--workflow' 'takt-default' '--base' 'develop' '--interval' '60' '--fix-wait' '15'$/);
+  assert.match(sequence, /^TAKT_SEQUENCE_LAUNCHER=1 '[^']*\/takt-node\.sh' '[^']*\/takt-sequence\.mjs' '701' '702' '--workflow' 'takt-default' '--base' 'develop' '--interval' '60' '--fix-wait' '15'$/);
   assert.match(done, new RegExp(SEQUENCE_DONE));
 };
 

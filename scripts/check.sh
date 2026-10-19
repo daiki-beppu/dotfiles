@@ -274,7 +274,8 @@ check_guide() {
     config/.agents/skills/takt/scripts/align-decide.test.mjs \
     config/.agents/skills/takt/scripts/lint-issue.test.mjs \
     config/.agents/skills/takt/scripts/review-stage.test.mjs \
-    config/.agents/skills/takt/scripts/start-sequence.test.mjs
+    config/.agents/skills/takt/scripts/start-sequence.test.mjs \
+    config/.agents/skills/takt/scripts/takt-sequence.test.mjs
 }
 
 # ---------------------------------------------------------------------------

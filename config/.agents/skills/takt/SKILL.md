@@ -35,7 +35,7 @@ MCP が使えない場合だけ [fallbacks.md](references/fallbacks.md) を読�
 
 ## 実行と完了
 
-実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。runner は repo ごとに常駐する `takt watch` 1 本で、既にあれば起動せず、無ければ Orca の新しいターミナルタブで起動する。大量の stdout をコンテキストへ流さず、タスク状態で完了を追跡する。待機 timeout だけで runner を立て直さない。
+実行依頼・途中経過の確認・実行中タスクへの追加指示のときだけ [run.md](references/run.md) を読む。複数 issue を順にマージまで回す入口は、repo root で流す `node <skill>/scripts/start-sequence.mjs <issue>...` で、desk の案内役のペインの下に開く。runner は repo ごとに常駐する `takt watch` 1 本で、既にあれば起動せず、無ければ Orca の新しいターミナルタブで起動する。大量の stdout をコンテキストへ流さず、タスク状態で完了を追跡する。待機 timeout だけで runner を立て直さない。
 
 後片付けは `scripts/takt-cleanup.mjs` を使う（使い方は [run.md](references/run.md)）。
 

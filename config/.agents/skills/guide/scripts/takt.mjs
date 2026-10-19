@@ -45,10 +45,13 @@ export function mergeTasks(cwd, run = runTaktNode) {
     }));
 }
 
+// takt-sequence.mjs は、起動の入口（ここ）を通った印の LAUNCHER_ENV が無ければ止まる。
+export const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
+
 // takt-sequence の後に SEQUENCE_DONE の行を出す。タブは閉じずにシェルへ戻るので、終わったことはこの行で見分ける。
 // terminal（案内役の自分のペインの handle。desk.mjs が --terminal で渡す）があれば、新しいタブではなくそのペインを下へ分割して起動する。
 export function startTaktSequence({ cwd, repo, issues, terminal }, run = runOrca) {
-  const sequence = [`${TAKT_SCRIPTS}takt-node.sh`, `${TAKT_SCRIPTS}takt-sequence.mjs`, ...issues.map(String)].map(q).join(" ");
+  const sequence = `${LAUNCHER_ENV}=1 ` + [`${TAKT_SCRIPTS}takt-node.sh`, `${TAKT_SCRIPTS}takt-sequence.mjs`, ...issues.map(String)].map(q).join(" ");
   const command = `${sequence}; echo "${SEQUENCE_DONE}（exit $?）"`;
   if (terminal !== undefined) {
     const reply = run(["terminal", "split", "--terminal", terminal, "--direction", SPLIT_DOWN, "--command", command, "--json"], { cwd });

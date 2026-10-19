@@ -15,8 +15,10 @@
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
-// 使い方（repo root で、watch が動いている状態で）:
-//   <skill>/scripts/takt-node.sh <skill>/scripts/takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
+// 人・エージェントは start-sequence.mjs で起動する（repo root で。desk の案内役のペインの下に開く。引数は同じ）:
+//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
+// このファイルを直に流すのは、start-sequence.mjs と guide の takt.mjs（startTaktSequence）だけ。印の環境変数 LAUNCHER_ENV が無ければ、
+// start-sequence.mjs を案内する 1 行を出して止める。
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
 import { execFileSync, spawn } from "node:child_process";
 import { closeSync, openSync, realpathSync } from "node:fs";
@@ -26,6 +28,12 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
 import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
+
+const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
+if (!process.env[LAUNCHER_ENV]) {
+  console.error(`takt-sequence は repo root で node ${fileURLToPath(new URL("./start-sequence.mjs", import.meta.url))} <issue>... で起動する（desk の案内役のペインの下に開く）`);
+  process.exit(2);
+}
 
 const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES) };
 const issues = [];
@@ -38,7 +46,7 @@ for (let i = 0; i < argv.length; i++) {
 }
 const fixWait = Number(opts["fix-wait"]);
 if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0) {
-  console.error("usage: takt-node.sh takt-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
+  console.error("usage: start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
   process.exit(2);
 }
 
