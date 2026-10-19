@@ -6,8 +6,10 @@ const prompt = (map) =>
   [
     `/to-spec #${map}`,
     "",
-    `map #${map} は晴れた（霧が無く、子 ticket がすべて閉じている）。map の本文と、閉じた子 ticket の resolution を素材にして仕様 issue を 1 つ作る。`,
-    `仕様 issue には spec ラベルを付け、本文に「${MAP_SPEC_PREFIX}${map}」だけの行を書く。`,
+    `map #${map} は晴れた（霧が無く、子 ticket がすべて閉じている）。map の本文と、閉じた子 ticket の resolution を素材にして仕様 issue を作る。`,
+    "map の Decisions so far と閉じた子 ticket の resolution に、仕様の切り方（数・範囲・順・前提の仕様）の決定があればそれに従う。無ければ 1 つ作る。",
+    `どの仕様にも spec ラベルを付け、本文に「${MAP_SPEC_PREFIX}${map}」だけの行を書く。`,
+    "複数作るときは、前提の仕様を本文の Further Notes に「前提の仕様: #n」と書く。",
   ].join("\n");
 
 export function launchToSpec({ cwd, map }, run) {
