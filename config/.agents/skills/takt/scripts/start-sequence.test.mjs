@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SPLIT_DOWN } from "../../guide/scripts/pane.mjs";
-import { guideTerminal, parseSequenceArgs, startSequence } from "./start-sequence.mjs";
+import { SEQUENCE_DONE } from "../../guide/scripts/decide.mjs";
+import { guideTerminal, checkSequenceArgs, startSequence } from "./start-sequence.mjs";
 
 const fakeOrca = () => {
   const calls = [];
@@ -18,7 +19,7 @@ const fakeOrca = () => {
 
 const opt = (args, name) => args[args.indexOf(name) + 1];
 const guide = (over = {}) => ({ pid: "101", cwd: "/repo", command: "node /x/guide/scripts/guide.mjs o/r --terminal term_guide --from 5", ...over });
-const ARGS = ["701", "702", "--workflow", "takt-default", "--base", "develop", "--fix-wait", "15"];
+const ARGS = ["701", "702", "--workflow", "takt-default", "--base", "develop", "--interval", "60", "--fix-wait", "15"];
 const start = (processes, args = ARGS) => {
   const { calls, run } = fakeOrca();
   const lines = [];
@@ -26,9 +27,11 @@ const start = (processes, args = ARGS) => {
   return { handle, calls, lines };
 };
 
-// --command の文字列に、takt-sequence.mjs と、その後ろに引数がこの順でそのまま並ぶこと
+// --command の文字列に、takt-sequence.mjs と、その後ろに引数がこの順でそのまま並び、案内役と同じ終わりの行が続くこと
 const assertSequenceCommand = (command) => {
-  assert.match(command, /'[^']*\/takt-node\.sh' '[^']*\/takt-sequence\.mjs' '701' '702' '--workflow' 'takt-default' '--base' 'develop' '--fix-wait' '15'$/);
+  const [sequence, done] = command.split("; ");
+  assert.match(sequence, /^'[^']*\/takt-node\.sh' '[^']*\/takt-sequence\.mjs' '701' '702' '--workflow' 'takt-default' '--base' 'develop' '--interval' '60' '--fix-wait' '15'$/);
+  assert.match(done, new RegExp(SEQUENCE_DONE));
 };
 
 test("repo root で --terminal 付きの案内役が動いていれば、その handle から下へ split して起動する", () => {
@@ -82,12 +85,12 @@ test("guideTerminal: repo root の案内役のうち、--terminal を持つも�
   assert.equal(guideTerminal([guide({ command: "node guide.mjs o/r --terminal" })], "/repo"), undefined);
 });
 
-test("parseSequenceArgs: issue の並びと --workflow・--base・--fix-wait を受け取り、それ以外と issue の無い並びは断る", () => {
-  assert.deepEqual(parseSequenceArgs(ARGS), ARGS);
-  assert.deepEqual(parseSequenceArgs(["#701"]), ["#701"]);
-  assert.equal(parseSequenceArgs([]), null);
-  assert.equal(parseSequenceArgs(["--base", "main"]), null);
-  assert.equal(parseSequenceArgs(["701", "--merge"]), null);
-  assert.equal(parseSequenceArgs(["701", "--workflow"]), null);
-  assert.equal(parseSequenceArgs(["701", "--fix-wait", "0"]), null);
+test("checkSequenceArgs: issue の並びと --workflow・--base・--interval・--fix-wait を受け取り、それ以外と issue の無い並びは断る", () => {
+  assert.deepEqual(checkSequenceArgs(ARGS), ARGS);
+  assert.deepEqual(checkSequenceArgs(["#701"]), ["#701"]);
+  assert.equal(checkSequenceArgs([]), null);
+  assert.equal(checkSequenceArgs(["--base", "main"]), null);
+  assert.equal(checkSequenceArgs(["701", "--merge"]), null);
+  assert.equal(checkSequenceArgs(["701", "--workflow"]), null);
+  assert.equal(checkSequenceArgs(["701", "--fix-wait", "0"]), null);
 });

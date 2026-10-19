@@ -50,7 +50,7 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 複数の issue を 1 件ずつ積み、PR の自動マージまで見届けて次を積むよう頼まれたら、`takt-wait.mjs` の代わりに repo root で次を流して takt-sequence を起動する。watch は別に動いている前提。
 
 ```sh
-node <skill>/scripts/start-sequence.mjs <issue>... [--workflow <name>] [--base main] [--fix-wait 10]
+node <skill>/scripts/start-sequence.mjs <issue>... [--workflow <name>] [--base main] [--interval 30] [--fix-wait 10]
 ```
 
 repo root で案内役が desk のペイン（コマンド行に `--terminal <handle>`）で動いていれば、そのペインの下に分割して開き、そうでなければ Orca の新しいタブ（題名 `takt sequence <owner/repo>`）に開く。どちらで開いたかと handle を 1 行出して終わる。
