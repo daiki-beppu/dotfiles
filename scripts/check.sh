@@ -273,7 +273,8 @@ check_guide() {
     config/.agents/skills/guide/scripts/desk.test.mjs \
     config/.agents/skills/takt/scripts/align-decide.test.mjs \
     config/.agents/skills/takt/scripts/lint-issue.test.mjs \
-    config/.agents/skills/takt/scripts/review-stage.test.mjs
+    config/.agents/skills/takt/scripts/review-stage.test.mjs \
+    config/.agents/skills/takt/scripts/start-sequence.test.mjs
 }
 
 # ---------------------------------------------------------------------------
