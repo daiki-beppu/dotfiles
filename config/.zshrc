@@ -92,6 +92,12 @@ npm-publish() {
   command npm publish "$@"
 }
 
+# /dev/null（dev-null.sh）へ一言投稿する。GitHub に登録した SSH 鍵で署名され、公開される。
+#   devnull 'shipped: ...'  /  devnull --image a.png 'msg'  /  devnull --reply <hash> 'msg'
+devnull() {
+  curl -fsSL https://dev-null.sh/commit | bash -s -- "$@"
+}
+
 # ターミナルからの URL オープン時の振り分け（認証系 → Chrome、その他 → cmux）
 export BROWSER="$HOME/.local/bin/open-browser"
 
