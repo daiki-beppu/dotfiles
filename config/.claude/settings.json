@@ -314,7 +314,7 @@
       "### User-specific",
       "**Primary use of Claude Code**: software development — maintaining a personal Nix + nix-darwin + Home Manager dotfiles repo, including `config/.agents/skills/` skills and `config/.claude/` settings that are symlinked into `~/.claude/`",
       "**Trusted repo**: `/Users/mba/ghq/github.com/daiki-beppu/dotfiles` (symlinked as `~/.dotfiles`) and its remote `github.com:daiki-beppu/dotfiles.git`. This repo is PUBLIC: only this repo's own dotfiles work belongs there; content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility",
-      "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `ni`/`nr`/`nlx` (package-manager wrappers), `codex`",
+      "**Org-specific CLIs**: `takt` (workflow runner, also a flake input and a sibling repo), `nix` / `darwin-rebuild` / `nh` / `nix-collect-garbage` (Nix + nix-darwin toolchain), `codex`",
       "**Routine under `config/.claude/` prefix**: edits to skills and the global `AGENTS.md` live in `config/.agents/`; hooks and settings live in `config/.claude/`; all are symlinked into `~/.claude/` (the global `AGENTS.md` as `~/.claude/CLAUDE.md`); editing there is routine, while writing directly into `~/.claude/` would replace a managed symlink and is not"
     ]
   }
