@@ -2,9 +2,9 @@
 // 動いているプロセスの一覧（pid・cwd・コマンド行）も偽物を渡す。実機の応答の形は desk.test.mjs と同じ（create は result.terminal.handle、split は result.split.handle）。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { SPLIT_DOWN } from "../../guide/scripts/pane.mjs";
+import { SPLIT_DOWN, SPLIT_RIGHT } from "../../guide/scripts/pane.mjs";
 import { SEQUENCE_DONE } from "../../guide/scripts/decide.mjs";
-import { guideTerminal, checkSequenceArgs, orcaHandleIn, startSequence } from "./start-sequence.mjs";
+import { guideTerminal, checkSequenceArgs, startSequence } from "./start-sequence.mjs";
 
 const fakeOrca = () => {
   const calls = [];
@@ -20,10 +20,10 @@ const fakeOrca = () => {
 const opt = (args, name) => args[args.indexOf(name) + 1];
 const guide = (over = {}) => ({ pid: "101", cwd: "/repo", command: "node /x/guide/scripts/guide.mjs o/r --terminal term_guide --from 5", ...over });
 const ARGS = ["701", "702", "--workflow", "takt-default", "--base", "develop", "--interval", "60", "--fix-wait", "15"];
-const start = (processes, args = ARGS, watch = undefined) => {
+const start = (processes, args = ARGS, watch = undefined, align = undefined) => {
   const { calls, run } = fakeOrca();
   const lines = [];
-  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, watch, run, log: (s) => lines.push(s) });
+  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, watch, align, run, log: (s) => lines.push(s) });
   return { handle, calls, lines };
 };
 
@@ -69,28 +69,33 @@ test("案内役が動いていなければ、terminal create で新しいタブ�
   assertNewTab(start([]));
 });
 
-test("案内役がいなくても repo root の takt watch のペインがあれば、その下へ split して起動する", () => {
+test("案内役がいなくても repo root の takt watch のペインがあれば、その右へ split して起動する（desk の右の列と同じ位置）", () => {
   const { handle, calls, lines } = start([], ARGS, "term_watch");
   assert.equal(calls.length, 1);
   const [{ args }] = calls;
   assert.deepEqual(args.slice(0, 2), ["terminal", "split"]);
   assert.equal(opt(args, "--terminal"), "term_watch");
-  assert.equal(opt(args, "--direction"), SPLIT_DOWN);
+  assert.equal(opt(args, "--direction"), SPLIT_RIGHT);
   assertSequenceCommand(opt(args, "--command"));
   assert.equal(handle, "term_split");
-  assert.match(lines[0], /takt watch のペイン term_watch/);
+  assert.match(lines[0], /takt watch のペイン term_watch の右/);
+});
+
+test("案内役がいなくて align-behind のペインがあれば、watch の右の列にある align-behind の下へ split して起動する", () => {
+  const { calls, lines } = start([], ARGS, "term_watch", "term_align");
+  assert.equal(opt(calls[0].args, "--terminal"), "term_align");
+  assert.equal(opt(calls[0].args, "--direction"), SPLIT_DOWN);
+  assert.match(lines[0], /align-behind のペイン term_align の下/);
+});
+
+test("案内役と align-behind のペインが両方あれば、案内役のペインを選ぶ", () => {
+  const { calls } = start([guide()], ARGS, "term_watch", "term_align");
+  assert.equal(opt(calls[0].args, "--terminal"), "term_guide");
 });
 
 test("案内役と takt watch のペインが両方あれば、案内役のペインを選ぶ", () => {
   const { calls } = start([guide()], ARGS, "term_watch");
   assert.equal(opt(calls[0].args, "--terminal"), "term_guide");
-});
-
-test("orcaHandleIn: ps eww の行から ORCA_TERMINAL_HANDLE の値を取り出す", () => {
-  assert.equal(orcaHandleIn("node /x/takt/bin/takt watch TERM=xterm ORCA_TERMINAL_HANDLE=term_98f2 ORCA_TAB_ID=238f"), "term_98f2");
-  assert.equal(orcaHandleIn("node /x/takt/bin/takt watch TERM=xterm"), undefined);
-  // 別の変数の値の途中に現れた文字列は拾わない
-  assert.equal(orcaHandleIn("node x FOO=ORCA_TERMINAL_HANDLE=term_bad"), undefined);
 });
 
 test("案内役が別の repo root で動いていれば、新しいタブに起動する", () => {
