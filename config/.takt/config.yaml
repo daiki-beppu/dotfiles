@@ -54,7 +54,7 @@ workflow_command_gates:
 
 # ── takt merge ──
 # takt-sequence（takt スキル）が、タスクの PR を査読・修正してから GitHub の自動マージを予約するための workflow。
-# CI 待ちとマージを外してあるので、手で `takt merge <PR>` を流しても takt はマージしない（査読と push まで）。
+# マージを外してあるので、手で `takt merge <PR>` を流しても takt はマージしない（査読と push、CI が落ちたらその回復まで）。
 # `takt merge --workflow` はグローバルの -w/--workflow に吸われて効かない（0.71.0）ので、ここで指定する
 merge:
   workflow: ~/.agents/skills/takt/workflows/merge-review-automerge.yaml

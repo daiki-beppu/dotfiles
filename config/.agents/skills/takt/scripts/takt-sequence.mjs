@@ -6,7 +6,7 @@
 // - タスクが無いか終わっていない issue に、閉じる予定の open な PR（closingIssuesReferences）があれば、
 //   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
 // - タスクが PR を作ったら、`takt merge <PR>` を workflows/merge-review-automerge.yaml で流す（base との同期・AI の競合解消・
-//   査読と修正・push）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
+//   査読と修正・push・CI が落ちたら調べて直すか再実行）。その workflow が PR に「TAKT review completed」とコメントしたら、自動マージを予約する。
 //   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたら、案内役が修正を起動する（PR に印を書く）のを待つ（--fix-wait 分まで。印は読むだけ）。
 //   印があれば修正中として待ち、push で head が変われば新しい head をレビューする。やり直しの印があれば失敗を数え直してレビューし直す（head ごとに 1 回）。
 //   やり直しの後の失敗・現在の head で 2 回落ちた・起動の印が上限・待ち時間切れは止める。判定は review-stage.mjs。
