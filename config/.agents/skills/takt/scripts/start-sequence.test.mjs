@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SPLIT_DOWN } from "../../guide/scripts/pane.mjs";
 import { SEQUENCE_DONE } from "../../guide/scripts/decide.mjs";
-import { guideTerminal, checkSequenceArgs, startSequence } from "./start-sequence.mjs";
+import { guideTerminal, checkSequenceArgs, orcaHandleIn, startSequence } from "./start-sequence.mjs";
 
 const fakeOrca = () => {
   const calls = [];
@@ -20,10 +20,10 @@ const fakeOrca = () => {
 const opt = (args, name) => args[args.indexOf(name) + 1];
 const guide = (over = {}) => ({ pid: "101", cwd: "/repo", command: "node /x/guide/scripts/guide.mjs o/r --terminal term_guide --from 5", ...over });
 const ARGS = ["701", "702", "--workflow", "takt-default", "--base", "develop", "--interval", "60", "--fix-wait", "15"];
-const start = (processes, args = ARGS) => {
+const start = (processes, args = ARGS, watch = undefined) => {
   const { calls, run } = fakeOrca();
   const lines = [];
-  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, run, log: (s) => lines.push(s) });
+  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, watch, run, log: (s) => lines.push(s) });
   return { handle, calls, lines };
 };
 
@@ -67,6 +67,30 @@ const assertNewTab = ({ handle, calls, lines }) => {
 
 test("案内役が動いていなければ、terminal create で新しいタブに起動する", () => {
   assertNewTab(start([]));
+});
+
+test("案内役がいなくても repo root の takt watch のペインがあれば、その下へ split して起動する", () => {
+  const { handle, calls, lines } = start([], ARGS, "term_watch");
+  assert.equal(calls.length, 1);
+  const [{ args }] = calls;
+  assert.deepEqual(args.slice(0, 2), ["terminal", "split"]);
+  assert.equal(opt(args, "--terminal"), "term_watch");
+  assert.equal(opt(args, "--direction"), SPLIT_DOWN);
+  assertSequenceCommand(opt(args, "--command"));
+  assert.equal(handle, "term_split");
+  assert.match(lines[0], /takt watch のペイン term_watch/);
+});
+
+test("案内役と takt watch のペインが両方あれば、案内役のペインを選ぶ", () => {
+  const { calls } = start([guide()], ARGS, "term_watch");
+  assert.equal(opt(calls[0].args, "--terminal"), "term_guide");
+});
+
+test("orcaHandleIn: ps eww の行から ORCA_TERMINAL_HANDLE の値を取り出す", () => {
+  assert.equal(orcaHandleIn("node /x/takt/bin/takt watch TERM=xterm ORCA_TERMINAL_HANDLE=term_98f2 ORCA_TAB_ID=238f"), "term_98f2");
+  assert.equal(orcaHandleIn("node /x/takt/bin/takt watch TERM=xterm"), undefined);
+  // 別の変数の値の途中に現れた文字列は拾わない
+  assert.equal(orcaHandleIn("node x FOO=ORCA_TERMINAL_HANDLE=term_bad"), undefined);
 });
 
 test("案内役が別の repo root で動いていれば、新しいタブに起動する", () => {
