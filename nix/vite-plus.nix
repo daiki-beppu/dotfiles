@@ -13,6 +13,10 @@ let
       install -Dm755 vp "$out/bin/vp"
     '';
   };
+  # vp 管理の Node.js で動かすグローバル CLI。nixpkgs 未収録のもの。
+  globalPackages = [
+    "vercel"
+  ];
 in
 {
   # nixpkgs 未収録。Homebrew 版は Node.js とその依存を更新するため使わない。
@@ -23,13 +27,22 @@ in
     if [ "$(readlink "$VP_HOME/current" 2>/dev/null)" != "${version}" ] ||
        ! "$VP_HOME/bin/vp" --version >/dev/null 2>&1; then
       # PATH は dotfiles の .zshenv が ~/.vite-plus/env を読んで通すので、
-      # シェル設定ファイルは書き換えさせない。shim は system-first にする。
+      # シェル設定ファイルは書き換えさせない。
       run --quiet env VP_HOME="$VP_HOME" \
         VP_SELF_SETUP_SHELL=sh \
         VP_SELF_SETUP_NO_MODIFY_PATH=1 \
-        VP_NODE_MANAGER=no \
         CI=true \
         ${vp}/bin/vp
     fi
+
+    # node は vp 管理にする（Homebrew の node は置かない）。既に managed なら何もしない。
+    run --quiet env VP_HOME="$VP_HOME" "$VP_HOME/bin/vp" env on node
+
+    # 未導入のグローバル CLI だけ入れる。入れた時点の Node.js に固定される。
+    for pkg in ${lib.escapeShellArgs globalPackages}; do
+      if [ ! -f "$VP_HOME/packages/$pkg.json" ]; then
+        run env VP_HOME="$VP_HOME" "$VP_HOME/bin/vp" install -g "$pkg"
+      fi
+    done
   '';
 }

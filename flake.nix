@@ -227,7 +227,6 @@
 
                   brews = [
                     "git-lfs"
-                    "vercel" # Vercel CLI。nixpkgs 未収録（vercel-pkg は別物のバンドラ）
                   ];
 
                   casks = [

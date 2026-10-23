@@ -44,8 +44,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/daiki-beppu/dotfiles/main/sc
 | **Nix (security.pam)** | sudo の Touch ID 認証 |
 | **Nix (launchd)** | 週次の自動クリーン（Nix ストア・Codex セッション） |
 | **Nix (home.activation)** | dotfiles 一式のシンボリックリンク (.zshenv, .zshrc, .zprofile, .oh-my-zsh（nixpkgs の oh-my-zsh）, .local/bin/*, .config/zsh-abbr/*, .claude/*, .codex/AGENTS.md, .agents/skills, .takt/*) |
-| **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`（shim は system-first） |
-| **Homebrew (brews)** | nixpkgs にないツール (git-lfs, ni, vercel) |
+| **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`、Node.js（vp 管理）、npm 配布のグローバル CLI (vercel) |
+| **Homebrew (brews)** | nixpkgs にないツール (git-lfs) |
 | **Homebrew (casks)** | GUI アプリ (Claude, Codex, Cursor, Orca, Raycast 等) |
 | **Homebrew (masApps)** | Mac App Store 限定アプリ (Klack) |
 
@@ -176,8 +176,10 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 `vp` は `~/.vite-plus/bin/vp` に導入され、既存の `.zshenv` が `~/.vite-plus/env` を読み込むため、非対話の zsh でも利用できる。新しいシェルを開いたら `command -v vp` と `vp --version` で動作を確認する。起動済みのアプリが古い PATH を保持している場合は、ターミナルや Codex を再起動する。
 
 Vite+ は nixpkgs に未収録である。Homebrew 版が Node.js とその依存を更新するのを避けるため、npm 配布の `vp` バイナリをバージョンとハッシュで固定し、Home Manager の activation 時の self-setup で `~/.vite-plus` に展開している。
-`VP_SELF_SETUP_NO_MODIFY_PATH=1` でシェル設定ファイルの自動書き換えを防ぎ、`VP_NODE_MANAGER=no` で `node` / `npm` / `pnpm` の shim を system-firstにする。
-通常の `node` / `npm` / `pnpm` の管理は維持し、`vp` 内の実行環境は各プロジェクトの指定に従わせる。
+`VP_SELF_SETUP_NO_MODIFY_PATH=1` でシェル設定ファイルの自動書き換えを防ぐ。
+`node` / `npm` / `pnpm` は vp 管理（managed）にする。プロジェクトの指定が無いときは最新の LTS を使う。
+Node.js を Homebrew や nixpkgs で入れないのは、脆弱性修正の反映が遅れることがあるため（nixpkgs の `nodejs_24` は staging を経由する）。修正版は `vp env install <version>` ですぐ入れられる。
+npm 配布のグローバル CLI は `nix/vite-plus.nix` の `globalPackages` に並べ、activation で未導入のものだけ `vp install -g` する。入れた時点の Node.js に固定されるので、その版を `vp env clean` で消したら `vp install -g <pkg>` で入れ直す。
 各リポジトリの `vite-plus` 依存と lockfile は変更しない。
 グローバル CLI の更新は `vp upgrade` ではなく、上記の Nix 設定を介して行う。
 なお、activation で取得したファイルは Nix store 外にあるため、Nix の rollback だけでは `vp` は元の状態に戻らない。以前の `version` / `hash` に戻したうえで switch を実行する。
