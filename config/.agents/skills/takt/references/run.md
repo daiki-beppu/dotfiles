@@ -4,24 +4,24 @@
 
 ## runner の確認と起動
 
-案内役と一緒に使うときは、guide スキルの `scripts/desk.mjs` で立てる（repo の main checkout で `node <guide>/scripts/desk.mjs <owner/repo>`）。1 つのタブに takt watch・案内役・align-behind のペインを並べ、既に動いているものは起動しない。以下は watch を単独で立てるときの手順。
+Orca では、runner は guide スキルの `scripts/desk.mjs` で立てる。repo の main checkout の root で流す。
 
-まず、この repo を見張る watch が既にあるか確かめる。
+```sh
+node <guide>/scripts/desk.mjs <owner/repo>              # 案内役と一緒に使うとき
+node <guide>/scripts/desk.mjs <owner/repo> --no-guide   # 案内役を立てないとき
+```
+
+1 つのタブの左に takt watch、右の列に案内役と align-behind のペインを並べる（`--no-guide` なら右の列は align-behind から始まる）。takt-sequence は start-sequence.mjs が、この右の列に足す。既に動いているものは起動せず、動いている watch のペインの右に足す。watch・align-behind・takt-sequence を、ばらばらのタブに手で立てない。
+
+watch が既にあるかは、desk と同じく cwd で確かめられる。
 
 ```sh
 for p in $(pgrep -f '/bin/takt (watch|run)'); do lsof -a -p "$p" -d cwd -Fn | sed -n 's/^n//p'; done
 ```
 
-出力に `<repo_root>` があれば、その runner が拾うので何も起動しない。同じ repo に 2 本目を起動しても `TAKT run is already running for this project (PID N)` で断られる（0.71.0）。
+出力に `<repo_root>` があれば、その runner が拾う。同じ repo に 2 本目を起動しても `TAKT run is already running for this project (PID N)` で断られる（0.71.0）。watch はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。
 
-無ければ Orca の新しいターミナルタブで watch を起動する。出力はタブに出て、ユーザーが進行を見られる。takt はタブのシェルの子なので、エージェント側のコマンド上限で止まらない。パスは shell quote する。`--worktree` は `path:<repo_root>` で指す。`active` だと、その時点で前面にある別の worktree にタブができ、ユーザーが見つけられない。タブのシェルは指した worktree で始まるので `cd` は要らない。
-
-```sh
-orca terminal create --worktree path:<repo_root> --title "takt watch <repo>" --json \
-  --command "takt watch"
-```
-
-- タブの出力は `orca terminal read --terminal <handle> --json` で読む。handle は create の `.result.terminal.handle`。読んだ結果は `.result.terminal` の `tail[]`（行の配列）・`nextCursor`（次に `--cursor` へ渡すと新しい行だけ返る）・`status`（`running` など）。
+- タブの出力は `orca terminal read --terminal <handle> --json` で読む。handle は desk が出す。読んだ結果は `.result.terminal` の `tail[]`（行の配列）・`nextCursor`（次に `--cursor` へ渡すと新しい行だけ返る）・`status`（`running` など）。
 - 出力はタブに出すだけで、ファイルには取らない。途中経過と失敗箇所は takt MCP と実行クローンの reports から読む。
 - watch は並列数（`concurrency`・`TAKT_CONCURRENCY`）を起動時に一度だけ読む。途中で上げるには立て直すしかない。`kill -INT <watch の pid>` を外から送ると、実行中のタスクの完了を待たずに止まる（0.68.0、2026-10-10 に #663 が write_tests の途中で止まった）。立て直すときは、実行中のタスクが無いときに行うか、止まったタスクを [gotchas.md](gotchas.md) の「外から止められたタスク」の手順で `resume-checkpoint` から積み直す
 - watch は全タスクが終わっても常駐し続ける。タブは閉じず、次に積んだタスクもこの watch が拾う。止めるのはユーザーが Ctrl+C したとき（実行中のタスクの完了を待って止まる）。
@@ -53,9 +53,9 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 node <skill>/scripts/start-sequence.mjs <issue>... [--workflow <name>] [--base main] [--interval 30] [--fix-wait 10]
 ```
 
-repo root で案内役が desk のペイン（コマンド行に `--terminal <handle>`）で動いていれば、そのペインの下に分割して開く。案内役がいなければ、repo root の takt watch のペインの下に分割して開き、どちらも無いときだけ Orca の新しいタブ（題名 `takt sequence <owner/repo>`）に開く。takt watch のペインは、watch のプロセスの環境変数 `ORCA_TERMINAL_HANDLE` で見つける。どこで開いたかと handle を 1 行出して終わる。
+repo root で案内役が desk のペイン（コマンド行に `--terminal <handle>`）で動いていれば、そのペインの下に分割して開く。案内役がいなければ repo root の align-behind のペインの下、それも無ければ takt watch のペインの右に分割して開き（desk と同じく watch の右の列に並ぶ）、どれも無いときだけ Orca の新しいタブ（題名 `takt sequence <owner/repo>`）に開く。align-behind と takt watch のペインは、そのプロセスの環境変数 `ORCA_TERMINAL_HANDLE` で見つける。どこで開いたかと handle を 1 行出して終わる。
 
-takt-sequence は、開いたペインかタブで、起動直後に対象の issue をタイトルと今の段階つきで 1 行ずつ出し、あとは出来事が起きたときだけ `2026/10/13 18:01:40 自動マージ予約: #701 <タイトル> <PR URL>` の形で 1 行出す（投入・レビュー開始・レビュー修正待ち・レビュー失敗・自動マージ予約・main に揃うのを待つ・マージ完了・CI失敗・競合修正待ち・タスク失敗）。タスクが PR を作ると、`takt merge <PR>` を [merge-review-automerge.yaml](../workflows/merge-review-automerge.yaml) で流す（global の `~/.takt/config.yaml` の `merge.workflow` で指す。起動時に確かめ、別の workflow なら止まる）。base と同期し（競合は AI が解く）、査読と修正を push し、CI を待つ。CI が落ちたら takt が原因を調べ、repo の不具合なら査読つきで 2 回まで直して push し、外部要因なら 1 回だけ再実行する。CI が通るか、CI の無い repo（約 2 分でチェックが現れない）か、30 分待っても終わらなければ、PR に `TAKT review completed` とコメントし、シーケンスが自動マージを予約する。回復を諦めたときは `TAKT evaluation failed` のコメントになる。takt はマージ前に終わる merge タスクを failed と記録するので、成否は takt list でなく PR のコメントで判断する。レビューの出力は `$TMPDIR/takt-sequence-review-<PR>.log` に出る。レビュー失敗（`TAKT evaluation failed for head <sha>` のコメント）はすぐには止めず、案内役が PR に書く修正の起動の印を待つ。現在の head に起動の印（`案内役: review-fix を起動する（head <sha>）` か `…を起動した（head <sha> / …）`）があれば「レビュー修正待ち」で待ち、PR に push されて head が変われば新しい head をレビューする。印が無いまま失敗のコメントから `--fix-wait` 分（既定 10 分）を過ぎるか、起動の印が PR に 2 回分あるのに現在の head に印が無いと「レビュー失敗」で止まる。印は案内役が書き、シーケンスは読むだけ。修正のセッションが `案内役: レビューのやり直しを頼む for head <sha>` を書くと、それより前の同じ head の失敗と落ちた回数を数えずレビューし直す（やり直しは head ごとに 1 回。やり直しの後にまた失敗したら止まる）。takt merge が現在の head で 2 回落ちたときも止まる（落ちた回数は head ごとに数える）。止まったら直して PR に push してから流し直すと、レビューからやり直す。印の文言は [review-stage.mjs](../scripts/review-stage.mjs) が正本。自動マージを予約した PR が main に遅れて（BEHIND）も、シーケンスは揃えずに待つ。揃えるのは常駐させる `node <skill>/scripts/align-behind.mjs`（repo root で。desk が無ければ、新しいタブにせず takt watch のペインの下に `orca terminal split --terminal <watch の handle> --direction horizontal --json --command "node <skill>/scripts/align-behind.mjs"` で開く。watch の handle は、起動したときの create の応答か、動いている watch の `ps eww -o command= -p <pid> | grep -o 'ORCA_TERMINAL_HANDLE=term_[^ ]*'`。作者を問わず、予約済みの BEHIND を予約の古い順に 1 件ずつ揃え、揃えた 1 件がマージされるか落ちるまで次を揃えない。DIRTY の PR には head ごとに 1 回コメントで知らせる。`--dry-run` で 1 周の判定だけ見られる）。シーケンスを流すときは、これも動いていることを確かめる。競合（CONFLICTING）なら、シーケンスは今までどおり競合修正待ちで止まる。次に積むのは、並びの先頭から見て blocked_by が全部閉じ、`help wanted` の無い issue。タスクが失敗した issue を手で引き取るときは、PR 本文に `Closes #<issue>` を書く。その issue に閉じる予定の open な PR があれば「手で対応中」と出して積み直さず、ほかの issue を先に進め、その PR のマージを待つ（自動マージは予約しない）。CI 失敗や競合で進めなくなったら「停止」を出して 1 で終わるので、直してから同じコマンドを流し直す。状態は毎周 takt と GitHub から読み直すので、流し直しても二重には積まない。自動マージを予約するので、マージの許可を受けたときだけ使う。
+takt-sequence は、開いたペインかタブで、起動直後に対象の issue をタイトルと今の段階つきで 1 行ずつ出し、あとは出来事が起きたときだけ `2026/10/13 18:01:40 自動マージ予約: #701 <タイトル> <PR URL>` の形で 1 行出す（投入・レビュー開始・レビュー修正待ち・レビュー失敗・自動マージ予約・main に揃うのを待つ・マージ完了・CI失敗・競合修正待ち・タスク失敗）。タスクが PR を作ると、`takt merge <PR>` を [merge-review-automerge.yaml](../workflows/merge-review-automerge.yaml) で流す（global の `~/.takt/config.yaml` の `merge.workflow` で指す。起動時に確かめ、別の workflow なら止まる）。base と同期し（競合は AI が解く）、査読と修正を push し、CI を待つ。CI が落ちたら takt が原因を調べ、repo の不具合なら査読つきで 2 回まで直して push し、外部要因なら 1 回だけ再実行する。CI が通るか、CI の無い repo（約 2 分でチェックが現れない）か、30 分待っても終わらなければ、PR に `TAKT review completed` とコメントし、シーケンスが自動マージを予約する。回復を諦めたときは `TAKT evaluation failed` のコメントになる。takt はマージ前に終わる merge タスクを failed と記録するので、成否は takt list でなく PR のコメントで判断する。レビューの出力は `$TMPDIR/takt-sequence-review-<PR>.log` に出る。レビュー失敗（`TAKT evaluation failed for head <sha>` のコメント）はすぐには止めず、案内役が PR に書く修正の起動の印を待つ。現在の head に起動の印（`案内役: review-fix を起動する（head <sha>）` か `…を起動した（head <sha> / …）`）があれば「レビュー修正待ち」で待ち、PR に push されて head が変われば新しい head をレビューする。印が無いまま失敗のコメントから `--fix-wait` 分（既定 10 分）を過ぎるか、起動の印が PR に 2 回分あるのに現在の head に印が無いと「レビュー失敗」で止まる。印は案内役が書き、シーケンスは読むだけ。修正のセッションが `案内役: レビューのやり直しを頼む for head <sha>` を書くと、それより前の同じ head の失敗と落ちた回数を数えずレビューし直す（やり直しは head ごとに 1 回。やり直しの後にまた失敗したら止まる）。takt merge が現在の head で 2 回落ちたときも止まる（落ちた回数は head ごとに数える）。止まったら直して PR に push してから流し直すと、レビューからやり直す。印の文言は [review-stage.mjs](../scripts/review-stage.mjs) が正本。自動マージを予約した PR が main に遅れて（BEHIND）も、シーケンスは揃えずに待つ。揃えるのは常駐させる `node <skill>/scripts/align-behind.mjs`（desk が立てる。作者を問わず、予約済みの BEHIND を予約の古い順に 1 件ずつ揃え、揃えた 1 件がマージされるか落ちるまで次を揃えない。DIRTY の PR には head ごとに 1 回コメントで知らせる。`--dry-run` で 1 周の判定だけ見られる）。シーケンスを流すときは、これも動いていることを確かめる。競合（CONFLICTING）なら、シーケンスは今までどおり競合修正待ちで止まる。次に積むのは、並びの先頭から見て blocked_by が全部閉じ、`help wanted` の無い issue。タスクが失敗した issue を手で引き取るときは、PR 本文に `Closes #<issue>` を書く。その issue に閉じる予定の open な PR があれば「手で対応中」と出して積み直さず、ほかの issue を先に進め、その PR のマージを待つ（自動マージは予約しない）。CI 失敗や競合で進めなくなったら「停止」を出して 1 で終わるので、直してから同じコマンドを流し直す。状態は毎周 takt と GitHub から読み直すので、流し直しても二重には積まない。自動マージを予約するので、マージの許可を受けたときだけ使う。
 
 ## 途中経過
 
