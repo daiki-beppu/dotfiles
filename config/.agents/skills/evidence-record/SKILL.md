@@ -1,7 +1,7 @@
 ---
 name: evidence-record
 description: 指示されたブラウザ操作を playwright-cli の screencast でステップタイトル付き動画に録画し、GitHub PR に添付する。動画はローカルに残さない。
-allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bash(ffprobe:*) Bash(gh:*) Bash(mktemp:*) Bash(test:*) Bash(mkdir:*) Bash(rm:*) Bash(ls:*)
+allowed-tools: Bash(playwright-cli:*) Bash(vp:*) Bash(node:*) Bash(ffmpeg:*) Bash(ffprobe:*) Bash(gh:*) Bash(mktemp:*) Bash(test:*) Bash(mkdir:*) Bash(rm:*) Bash(ls:*)
 ---
 
 # evidence-record — ブラウザ操作のエビデンス動画を PR に添付する
@@ -27,7 +27,7 @@ allowed-tools: Bash(playwright-cli:*) Bash(ni:*) Bash(node:*) Bash(ffmpeg:*) Bas
   ```
   無ければ導入する（このスキルは playwright-cli に依存する）。
   ```bash
-  ni -g @playwright/cli@latest
+  vp install -g @playwright/cli@latest
   ```
 - `ffmpeg` が無ければ mp4 化はスキップし webm を添付する。
 - 添付先 PR を確定する。指定が無ければ現ブランチの PR を使い、PR が無ければ**録画せずに止める**（ローカルに動画だけ残る状態を作らない）。
