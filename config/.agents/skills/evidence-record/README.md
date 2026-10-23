@@ -8,7 +8,7 @@
 
 ## 前提
 
-- [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) … 録画に必須。無ければ `ni -g @playwright/cli@latest`。
+- [`playwright-cli`](https://www.npmjs.com/package/@playwright/cli) … 録画に必須。無ければ `vp install -g @playwright/cli@latest`。
 - `ffmpeg` … webm → mp4 変換に使用。無ければ webm を添付。
 - [GitHub CLI](https://cli.github.com/) 2.99.0 以上 … `--attach` での PR 添付に必須。添付先の PR と、対象リポジトリへの push 権限が必要。
 
@@ -44,7 +44,7 @@ evidence-record/
 
 ## アップデートの取り込み方
 
-上流の [dninomiya/evidence-record](https://github.com/dninomiya/evidence-record) が更新されたら、`SKILL.md` / `scripts/*` の差分を確認し、`ni -g` への置き換えなど dotfiles 側の調整を保ったまま手動でマージする。
+上流の [dninomiya/evidence-record](https://github.com/dninomiya/evidence-record) が更新されたら、`SKILL.md` / `scripts/*` の差分を確認し、`vp install -g` への置き換えなど dotfiles 側の調整を保ったまま手動でマージする。
 
 ## ライセンス
 

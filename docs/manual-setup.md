@@ -13,7 +13,7 @@
 
 `darwin-rebuild switch` がグローバル CLI を自動導入する。新しいシェルで
 `command -v vp` と `vp --version` を確認する。`node` / `npm` などの shim は
-system-first に設定し、既存の Node.js／パッケージマネージャーを継続使用する。
+vp 管理（managed）にし、`command -v node` が `~/.vite-plus/bin/node` を指すことを確認する。
 導入方法と更新手順は README の「PATH 優先順位」「よくある操作」を参照。
 
 ## 3. アプリの初期設定

@@ -56,47 +56,11 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1781454065,
-        "narHash": "sha256-d2xfDjnfRuf/xYGdu9VVRHiav/2w5hDL/5cw2TuVAXw=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "9eac87a12312b8f60dd52e1c6e1a265f6fc7f5fc",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixpkgs-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",
-        "nixpkgs": "nixpkgs",
-        "takt": "takt"
-      }
-    },
-    "takt": {
-      "inputs": {
-        "nixpkgs": "nixpkgs_2"
-      },
-      "locked": {
-        "lastModified": 1792050961,
-        "narHash": "sha256-lb1WUzd43QjoV48+uXhhVu6NRmXkGwBdaEJx2l0JEy8=",
-        "owner": "nrslib",
-        "repo": "takt",
-        "rev": "ec7ebff2126b6d4ac99feb78fce0775712c6d796",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nrslib",
-        "ref": "v0.71.0",
-        "repo": "takt",
-        "type": "github"
+        "nixpkgs": "nixpkgs"
       }
     }
   },

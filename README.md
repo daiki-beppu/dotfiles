@@ -37,15 +37,13 @@ bash <(curl -fsSL https://raw.githubusercontent.com/daiki-beppu/dotfiles/main/sc
 |---------|------|
 | **Nix (nixpkgs)** | CLI ツール (git, gh, ffmpeg, uv, turso-cli 等) |
 | **Nix (nixpkgs の上書き)** | gh-stack 0.2.0（`gh` 拡張として登録） |
-| **Nix (自前ビルド)** | nixpkgs 未収録の npm 配布ツール (Cloudflare CLI `cf`: `nix/cf/`) |
-| **Nix (flake input)** | nixpkgs 未収録で upstream が flake を提供するツール (takt) |
 | **Nix (programs.git / programs.nh)** | git の設定 (.gitconfig, .gitignore)、nh |
 | **Nix (system.defaults)** | macOS システム設定 (Dock, Finder, キーボード等) |
 | **Nix (security.pam)** | sudo の Touch ID 認証 |
 | **Nix (launchd)** | 週次の自動クリーン（Nix ストア・Codex セッション） |
 | **Nix (home.activation)** | dotfiles 一式のシンボリックリンク (.zshenv, .zshrc, .zprofile, .oh-my-zsh（nixpkgs の oh-my-zsh）, .local/bin/*, .config/zsh-abbr/*, .claude/*, .codex/AGENTS.md, .agents/skills, .takt/*) |
-| **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`（shim は system-first） |
-| **Homebrew (brews)** | nixpkgs にないツール (git-lfs, ni, vercel) |
+| **Nix (home.activation / vp self-setup)** | Vite+ グローバル CLI `vp`、Node.js（vp 管理）、npm 配布のグローバル CLI (vercel, cf, takt, playwright-cli: `globalPackages`) |
+| **Homebrew (brews)** | nixpkgs にないツール (git-lfs) |
 | **Homebrew (casks)** | GUI アプリ (Claude, Codex, Cursor, Orca, Raycast 等) |
 | **Homebrew (masApps)** | Mac App Store 限定アプリ (Klack) |
 
@@ -60,7 +58,6 @@ dotfiles/
 ├── nix/
 │   ├── packages.nix       # Home Manager 設定（パッケージ, git, シンボリックリンク）
 │   ├── vite-plus.nix      # Vite+ グローバル CLI（vp）の固定と self-setup
-│   └── cf/                # Cloudflare CLI（cf）のビルド定義
 ├── config/
 │   ├── .zshenv            # zsh 環境変数（全セッション共通）
 │   ├── .zshrc             # zsh 設定
@@ -104,9 +101,9 @@ dotfiles/
 | CLI ツール追加 | `nix/packages.nix` の `home.packages` に追加 |
 | GUI アプリ追加 | `flake.nix` の `casks` に追加 |
 | nixpkgs にないツール追加 | upstream が flake を提供しているなら `flake.nix` の `inputs` に、なければ `brews` に追加 |
-| takt を更新 | `flake.nix` の `takt.url` のタグを上げて `nix flake update takt` → switch → `takt update`（provider の SDK を揃える。初回は `takt install claude-sdk` と `takt install codex`） |
+| takt を更新 | `nix/vite-plus.nix` の `globalPackages` の版を上げて switch → `takt update`（provider の SDK を揃える。初回は `takt install claude-sdk` と `takt install codex`） |
 | vp を更新 | `nix/vite-plus.nix` の `version` と npm tarball の `hash` を更新 → switch（ネットワーク接続が必要） |
-| cf を更新 | `nix/cf/default.nix` 冒頭のコメントの手順で `version`・`hash`・`package-lock.json` を差し替える |
+| npm 配布の CLI（vercel, cf, playwright-cli）を更新 | `nix/vite-plus.nix` の `globalPackages` の版を上げて switch |
 | 変更を検証 | `scripts/check.sh`（CI と同じ。`--list` で検査の一覧を表示） |
 | 変更を適用 | `sudo darwin-rebuild switch --flake ~/ghq/github.com/daiki-beppu/dotfiles`（`nh darwin switch` でも可） |
 | パッケージ検索 | `nix search nixpkgs <キーワード>` |
@@ -176,8 +173,10 @@ PR への動画添付には gh 標準の `--attach` を使用する。対象リ�
 `vp` は `~/.vite-plus/bin/vp` に導入され、既存の `.zshenv` が `~/.vite-plus/env` を読み込むため、非対話の zsh でも利用できる。新しいシェルを開いたら `command -v vp` と `vp --version` で動作を確認する。起動済みのアプリが古い PATH を保持している場合は、ターミナルや Codex を再起動する。
 
 Vite+ は nixpkgs に未収録である。Homebrew 版が Node.js とその依存を更新するのを避けるため、npm 配布の `vp` バイナリをバージョンとハッシュで固定し、Home Manager の activation 時の self-setup で `~/.vite-plus` に展開している。
-`VP_SELF_SETUP_NO_MODIFY_PATH=1` でシェル設定ファイルの自動書き換えを防ぎ、`VP_NODE_MANAGER=no` で `node` / `npm` / `pnpm` の shim を system-firstにする。
-通常の `node` / `npm` / `pnpm` の管理は維持し、`vp` 内の実行環境は各プロジェクトの指定に従わせる。
+`VP_SELF_SETUP_NO_MODIFY_PATH=1` でシェル設定ファイルの自動書き換えを防ぐ。
+`node` / `npm` / `pnpm` は vp 管理（managed）にする。プロジェクトの指定が無いときは最新の LTS を使う。
+Node.js を Homebrew や nixpkgs で入れないのは、脆弱性修正の反映が遅れることがあるため（nixpkgs の `nodejs_24` は staging を経由する）。修正版は `vp env install <version>` ですぐ入れられる。
+npm 配布のグローバル CLI は `nix/vite-plus.nix` の `globalPackages` に並べ、activation で未導入のものだけ `vp install -g` する。入れた時点の Node.js に固定されるので、その版を `vp env clean` で消したら `vp install -g <pkg>` で入れ直す。
 各リポジトリの `vite-plus` 依存と lockfile は変更しない。
 グローバル CLI の更新は `vp upgrade` ではなく、上記の Nix 設定を介して行う。
 なお、activation で取得したファイルは Nix store 外にあるため、Nix の rollback だけでは `vp` は元の状態に戻らない。以前の `version` / `hash` に戻したうえで switch を実行する。

@@ -13,6 +13,15 @@ let
       install -Dm755 vp "$out/bin/vp"
     '';
   };
+  # vp 管理の Node.js で動かす npm 配布のグローバル CLI。nixpkgs 未収録のもの。
+  # nixpkgs や upstream flake で入れると Node.js が古い版に固定され、脆弱性修正が遅れる。
+  # 入れた時点の Node.js に固定されるので、その版を vp env clean で消したら入れ直す。
+  globalPackages = {
+    vercel = "65.2.0";
+    cf = "1.0.0-beta.12"; # Cloudflare CLI（wrangler の後継）
+    takt = "0.71.0"; # 更新後は takt update で provider の SDK を揃える
+    "@playwright/cli" = "0.1.22"; # evidence-record スキルの録画に使う
+  };
 in
 {
   # nixpkgs 未収録。Homebrew 版は Node.js とその依存を更新するため使わない。
@@ -23,13 +32,24 @@ in
     if [ "$(readlink "$VP_HOME/current" 2>/dev/null)" != "${version}" ] ||
        ! "$VP_HOME/bin/vp" --version >/dev/null 2>&1; then
       # PATH は dotfiles の .zshenv が ~/.vite-plus/env を読んで通すので、
-      # シェル設定ファイルは書き換えさせない。shim は system-first にする。
+      # シェル設定ファイルは書き換えさせない。
       run --quiet env VP_HOME="$VP_HOME" \
         VP_SELF_SETUP_SHELL=sh \
         VP_SELF_SETUP_NO_MODIFY_PATH=1 \
-        VP_NODE_MANAGER=no \
         CI=true \
         ${vp}/bin/vp
     fi
+
+    # node は vp 管理にする（Homebrew の node は置かない）。既に managed なら何もしない。
+    run --quiet env VP_HOME="$VP_HOME" "$VP_HOME/bin/vp" env on node
+
+    # 未導入か版が違うグローバル CLI だけ入れる。
+    ${lib.concatStrings (
+      lib.mapAttrsToList (name: ver: ''
+        if [ "$(${lib.getExe pkgs.jq} -r .version "$VP_HOME/packages/${name}.json" 2>/dev/null)" != ${lib.escapeShellArg ver} ]; then
+          run env VP_HOME="$VP_HOME" "$VP_HOME/bin/vp" install -g ${lib.escapeShellArg "${name}@${ver}"}
+        fi
+      '') globalPackages
+    )}
   '';
 }

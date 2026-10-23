@@ -10,8 +10,8 @@
 set -euo pipefail
 
 # GUI アプリ（Claude / Codex デスクトップ）から起動されると login shell の PATH を
-# 継がず、home-manager の takt-mcp が見つからないことがある
-export PATH="/etc/profiles/per-user/$USER/bin:$PATH"
+# 継がず、vp で入れた takt-mcp が見つからないことがある
+export PATH="$HOME/.vite-plus/bin:$PATH"
 
 if common_dir=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
   cd "$(dirname "$common_dir")"

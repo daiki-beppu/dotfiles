@@ -14,14 +14,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # takt: AI コーディングエージェント向けの workflow 制御 CLI
-    # nixpkgs 未収録のため upstream flake から直接取得。
-    # リリースタグに固定する: main は未リリースコミットが積まれており、
-    # npm の takt@latest（従来の入手経路）とバージョンが一致しないため。
-    # 更新手順は README「よくある操作」を参照。
-    # nixpkgs.follows は付けない: upstream が flake.lock で検証済みの
-    # nixpkgs / nodejs の組み合わせをそのまま使う
-    takt.url = "github:nrslib/takt/v0.71.0";
   };
 
   outputs =
@@ -29,7 +21,6 @@
       nixpkgs,
       nix-darwin,
       home-manager,
-      takt,
       ...
     }:
     let
@@ -227,7 +218,6 @@
 
                   brews = [
                     "git-lfs"
-                    "vercel" # Vercel CLI。nixpkgs 未収録（vercel-pkg は別物のバンドラ）
                   ];
 
                   casks = [
@@ -275,7 +265,6 @@
               home-manager.backupFileExtension = "backup";
               home-manager.extraSpecialArgs = {
                 inherit hostConfig;
-                taktPkg = takt.packages.${system}.default;
               };
               home-manager.users.${username} = import ./nix/packages.nix;
             }

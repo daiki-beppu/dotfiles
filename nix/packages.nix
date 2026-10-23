@@ -3,7 +3,6 @@
   lib,
   config,
   hostConfig,
-  taktPkg,
   ...
 }:
 
@@ -63,7 +62,6 @@ in
     uv
     sqld
     turso-cli
-    (callPackage ./cf { }) # Cloudflare CLI（wrangler の後継）。nixpkgs 未収録なので nix/cf/ でビルドする。Vercel CLI は flake.nix の homebrew.brews
     zsh-abbr
 
     # Python + youtube-channels 自動化に必要なパッケージ
@@ -86,10 +84,6 @@ in
         pyyaml
       ]
     ))
-  ]
-  ++ [
-    # flake input 由来（nixpkgs 未収録）
-    taktPkg # AI コーディングエージェント向けの workflow 制御 CLI
   ]
   ++ (hostConfig.extraPackages pkgs);
 
