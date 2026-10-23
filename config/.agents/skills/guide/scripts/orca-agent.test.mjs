@@ -73,6 +73,10 @@ test("observeSession: idle は tui-idle の待ちが満たされたときだけ 
   const w = calls.find((c) => c.args[1] === "wait").args;
   assert.equal(w[w.indexOf("--for") + 1], "tui-idle");
   assert.ok(w.includes("--timeout-ms") && w.includes("--json"));
+  // AskUserQuestion などの選択画面では、待ちは満たされずに終了コード 1 で ok: true を返す（live-mindmap #1416、2026-10-23）
+  const prompt = Object.assign(new Error("Command failed: orca terminal wait"), { status: 1, stdout: JSON.stringify({ ok: true, result: { wait: { handle: "term_1", condition: "tui-idle", satisfied: false, status: "running", exitCode: null, blockedReason: "agent-interactive-prompt" } } }) });
+  const asking = observeSession({ cwd: "/x", handle: "term_1" }, fakeOrca({ show: showReply(AGENT_WAIT.hook), wait: prompt }).run);
+  assert.deepEqual([asking.waiting, asking.idle], [true, false]);
   const broken = Object.assign(new Error("x"), { status: 1, stdout: JSON.stringify({ ok: false, error: { code: "runtime_unavailable" } }) });
   assert.throws(() => observeSession({ cwd: "/x", handle: "t" }, fakeOrca({ wait: broken }).run));
 });
