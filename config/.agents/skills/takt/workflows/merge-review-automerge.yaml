@@ -1,11 +1,12 @@
 # takt-sequence.mjs が `takt merge <PR>` で流す。global の ~/.takt/config.yaml の merge.workflow でこのファイルを指す（takt merge --workflow は効かない）。
-# builtin の merge-review-fix-simple から、CI 待ちとマージを外したもの。査読と修正を push したら、
-# 完了の印を PR にコメントして終わる。マージは takt-sequence が GitHub の自動マージ予約で行う。
+# builtin の merge-review-fix-simple（0.72.0）から、マージを外したもの。査読と修正を push し、CI が落ちたら調べて
+# 直すか再実行し、CI が通ったら完了の印を PR にコメントして終わる。マージは takt-sequence が GitHub の自動マージ予約で行う。
+# CI の無い repo では wait_checks が約 2 分でチェックの登録を諦め、CI を待たずに完了の印を付ける。
 # takt はマージされていない PR の merge タスクを failed と記録するので、成否はコメントの印で判断する:
 #   成功: "TAKT review completed for head <sha>;" で始まるコメント / 失敗: "TAKT evaluation failed for head <sha>:" で始まるコメント（<sha> は評価した PR の head）
 name: merge-review-automerge
 description: Sync, review, and fix a PR, then hand it back for GitHub auto-merge
-max_steps: 51
+max_steps: 75
 initial_step: identify
 steps:
   - name: identify
@@ -54,15 +55,163 @@ steps:
         pr: "{context:identify.pr.number}"
     rules:
       - condition: when(effect.push.commit_and_push.success == true)
-        next: reviewed
+        next: caccia
       - condition: when(true)
         next: push_failed
+  # caccia.enabled が無ければ skipped で通る。GitHub 上の head が push したコミットに揃うのを待ち、その head を headSha で返すので、
+  # 以降はこの headSha を「評価した head」として扱う
+  - name: caccia
+    mode: system
+    effects:
+      - type: caccia
+        pr: "{context:identify.pr.number}"
+    rules:
+      - condition: when(effect.caccia.caccia.success == false)
+        next: caccia_failed
+      - condition: when(effect.caccia.caccia.outcome == "success")
+        next: wait_checks
+      - condition: when(effect.caccia.caccia.outcome == "skipped")
+        next: wait_checks
+      - condition: when(true)
+        next: caccia_failed
+  # CI はチェックが 1 つも無いと終わった扱いにならず、wait_ci が 30 分待って timeout する
+  - name: wait_checks
+    mode: system
+    system_inputs:
+      - type: pr_status
+        source: current_pr
+        as: status
+    wait:
+      until: 'when(context.wait_checks.status.headSha == effect.caccia.caccia.headSha && exists(context.wait_checks.status.ci.checks, item.kind == "CheckRun"))'
+      max_retries: 8
+      on_timeout: reviewed
+    rules:
+      - condition: when(true)
+        next: wait_ci
+  - name: wait_ci
+    mode: system
+    system_inputs:
+      - type: pr_status
+        source: current_pr
+        as: status
+        rerun_from: "{effect:rerun_ci.rerun_ci.rerun}"
+    wait:
+      until: 'when(context.wait_ci.status.rerunHeadChanged == true || context.wait_ci.status.ci.finished == true && context.wait_ci.status.headSha == effect.caccia.caccia.headSha)'
+      on_timeout: reviewed
+    rules:
+      - condition: when(context.wait_ci.status.rerunHeadChanged == true)
+        next: collect_ci_failure
+      - condition: when(context.wait_ci.status.ci.passed == false)
+        next: collect_ci_failure
+      - condition: when(true)
+        next: reviewed
+  - name: collect_ci_failure
+    mode: system
+    system_inputs:
+      - type: pr_ci_failure
+        source: current_pr
+        as: failure
+        head_sha: "{effect:caccia.caccia.headSha}"
+    rules:
+      - condition: when(true)
+        next: investigate_ci
+  - name: investigate_ci
+    capabilities: readonly
+    edit: false
+    persona: planner
+    policy: merge-ci-recovery
+    instruction: merge-ci-investigate
+    structured_output:
+      schema_ref: merge-ci-investigation
+    output_contracts:
+      report:
+        - name: ci-investigation.md
+          format: merge-ci-investigation
+    rules:
+      - condition: when(true)
+        next: refresh_ci
+  - name: refresh_ci
+    mode: system
+    system_inputs:
+      - type: pr_status
+        source: current_pr
+        as: status
+        rerun_from: "{effect:rerun_ci.rerun_ci.rerun}"
+    rules:
+      - condition: when(context.refresh_ci.status.headSha == effect.caccia.caccia.headSha && context.refresh_ci.status.ci.passed == true)
+        next: wait_ci
+      - condition: when(context.refresh_ci.status.headSha == effect.caccia.caccia.headSha && context.refresh_ci.status.ci.finished == false)
+        next: wait_ci
+      - condition: when(context.collect_ci_failure.failure.complete == false)
+        next: ci_stopped
+      - condition: when(context.collect_ci_failure.failure.rerunCount > 0)
+        next: ci_stopped
+      - condition: when(structured.investigate_ci.verdict == "defect" && context.collect_ci_failure.failure.fixRounds < 2)
+        next: fix_ci
+      - condition: when(structured.investigate_ci.verdict == "external")
+        next: rerun_ci
+      - condition: when(true)
+        next: ci_stopped
+  - name: fix_ci
+    capabilities: edit
+    edit: true
+    persona: coder
+    policy: merge-ci-recovery
+    instruction: merge-ci-fix
+    output_contracts:
+      report:
+        - name: ci-fix.md
+          format: merge-ci-fix
+    rules:
+      - condition: CIの根本原因を修正して検証した
+        next: review_ci_fix
+      - condition: 裏付けられた原因を安全に修正または検証できない
+        next: ci_stopped
+  - name: review_ci_fix
+    capabilities: readonly
+    edit: false
+    persona: coding-reviewer
+    policy: merge-ci-recovery
+    instruction: merge-ci-review
+    structured_output:
+      schema_ref: simple-review-result
+    output_contracts:
+      report:
+        - name: ci-fix-review.md
+          format: merge-ci-review
+    rules:
+      - condition: when(structured.review_ci_fix.result == "APPROVE")
+        next: push_ci_fix
+      - condition: when(true)
+        next: ci_stopped
+  - name: push_ci_fix
+    mode: system
+    effects:
+      - type: commit_and_push
+        pr: "{context:identify.pr.number}"
+    rules:
+      - condition: when(effect.push_ci_fix.commit_and_push.success == true)
+        next: caccia
+      - condition: when(true)
+        next: ci_push_failed
+  - name: rerun_ci
+    mode: system
+    effects:
+      - type: rerun_ci
+        pr: "{context:identify.pr.number}"
+        failure: "{context:collect_ci_failure.failure}"
+    rules:
+      - condition: when(effect.rerun_ci.rerun_ci.success == true)
+        next: wait_ci
+      - condition: when(true)
+        next: collect_ci_failure
+  # CI を待ちきれなかった（timeout）ときもここに来る。その後の CI は takt-sequence が見て、落ちたら止まる
   - name: reviewed
     mode: system
     effects:
       - type: comment_pr
         pr: "{context:identify.pr.number}"
-        body: "TAKT review completed for head {effect:push.commit_and_push.headSha}; auto-merge is requested next."
+        body: "TAKT review completed for head {effect:caccia.caccia.headSha}; auto-merge is requested next."
     rules:
       - condition: when(effect.reviewed.comment_pr.success == true)
         next: COMPLETE
@@ -109,6 +258,40 @@ steps:
         body: "TAKT evaluation failed for head {context:identify.pr.headSha}: commit_and_push: {effect:push.commit_and_push.error}"
     rules:
       - condition: when(effect.push_failed.comment_pr.success == true)
+        next: COMPLETE
+      - condition: when(true)
+        next: ABORT
+  - name: caccia_failed
+    mode: system
+    effects:
+      - type: comment_pr
+        pr: "{context:identify.pr.number}"
+        body: "TAKT evaluation failed for head {effect:push.commit_and_push.headSha}: caccia: {effect:caccia.caccia.error}"
+    rules:
+      - condition: when(effect.caccia_failed.comment_pr.success == true)
+        next: COMPLETE
+      - condition: when(true)
+        next: ABORT
+  # takt-sequence は本文の先頭で印を照合するので、builtin の body_format: plain_text（全体をコードブロックで囲む）は使わない
+  - name: ci_stopped
+    mode: system
+    effects:
+      - type: comment_pr
+        pr: "{context:identify.pr.number}"
+        body: "TAKT evaluation failed for head {effect:caccia.caccia.headSha}: CI recovery stopped (fix rounds: {context:collect_ci_failure.failure.fixRounds}, reruns: {context:collect_ci_failure.failure.rerunCount}).\n\n調査要点: {structured:investigate_ci.summary}\n\n最後の失敗チェック・run・job・証拠不足: {context:collect_ci_failure.failure.details}"
+    rules:
+      - condition: when(effect.ci_stopped.comment_pr.success == true)
+        next: COMPLETE
+      - condition: when(true)
+        next: ABORT
+  - name: ci_push_failed
+    mode: system
+    effects:
+      - type: comment_pr
+        pr: "{context:identify.pr.number}"
+        body: "TAKT evaluation failed for head {effect:caccia.caccia.headSha}: commit_and_push of the CI fix: {effect:push_ci_fix.commit_and_push.error}"
+    rules:
+      - condition: when(effect.ci_push_failed.comment_pr.success == true)
         next: COMPLETE
       - condition: when(true)
         next: ABORT

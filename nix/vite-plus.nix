@@ -19,7 +19,7 @@ let
   globalPackages = {
     vercel = "65.2.0";
     cf = "1.0.0-beta.12"; # Cloudflare CLI（wrangler の後継）
-    takt = "0.71.0"; # 更新後は takt update で provider の SDK を揃える
+    takt = "0.72.0"; # 更新後は takt update で provider の SDK を揃える
     "@playwright/cli" = "0.1.22"; # evidence-record スキルの録画に使う
   };
 in
