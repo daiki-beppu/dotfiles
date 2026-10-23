@@ -47,6 +47,17 @@ const parseReply = (reply, what) => {
 };
 
 // orca は失敗時に終了コード 1 で、stdout に { ok: false, error: { code } } を出す。その code（読めなければ undefined）。
+// 待ちが満たされないまま止まった応答（終了コード 1 で ok: true、result.wait.satisfied: false）。
+// AskUserQuestion などの選択画面では blockedReason: "agent-interactive-prompt" つきでこれが返る（2026-10-23 に確認）
+function unsatisfied(e) {
+  try {
+    const reply = JSON.parse(e?.stdout);
+    return reply?.ok === true && reply.result?.wait?.satisfied === false;
+  } catch {
+    return false;
+  }
+}
+
 function errorCode(e) {
   try {
     return JSON.parse(e?.stdout)?.error?.code;
@@ -61,7 +72,7 @@ function errorCode(e) {
 //   waiting: show の agentWait が null でない（人にしか答えられない入力待ち。Orca が prompt-text / title / hook のどれかで確かめたもの）
 //   waitSource / waitSince: agentWait の source（hook / prompt-text / title。待ちなしは null）と、その since（文字列。無ければ null）。
 //          hook の since は 1 つの入力待ちの識別子として、同じ停止を 1 度だけ扱うのに使う
-//   idle: `orca terminal wait --for tui-idle` が短い待ちで満たされた（手が止まっている）。待ちが timeout（終了コード 1、error.code: "timeout"）なら false
+//   idle: `orca terminal wait --for tui-idle` が短い待ちで満たされた（手が止まっている）。待ちが timeout（終了コード 1、error.code: "timeout"）か、満たされないまま止まった（選択画面など。終了コード 1、ok: true、satisfied: false）なら false
 //   tail: `orca terminal read` の画面の最後の 10 行
 export function observeSession({ cwd, handle }, run = runOrca) {
   let shown;
@@ -98,7 +109,7 @@ function isIdle({ cwd, handle }, run) {
   try {
     reply = run(["terminal", "wait", "--terminal", handle, "--for", "tui-idle", "--timeout-ms", String(IDLE_PROBE_MS), "--json"], { cwd });
   } catch (e) {
-    if (errorCode(e) === WAIT_TIMEOUT) return false;
+    if (errorCode(e) === WAIT_TIMEOUT || unsatisfied(e)) return false;
     throw new Error(`orca terminal wait が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
   }
   return parseReply(reply, "orca terminal wait").result?.wait?.satisfied === true;
