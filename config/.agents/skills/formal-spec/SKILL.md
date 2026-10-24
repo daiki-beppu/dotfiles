@@ -12,7 +12,7 @@ takt の対話モードの `/verify` から、検証器だけを会話なしで�
 2. **書く。** takt 同梱の制約を先に読む。検証器はこの制約を前提に判定する。
 
    ```sh
-   cat "$(dirname "$(dirname "$(realpath "$(command -v takt)")")")/lib/node_modules/takt/dist/shared/prompts/ja/parts/formal_spec_verifier_constraints.md"
+   cat "$(../takt/scripts/takt-node.sh -p process.env.TAKT_ROOT)/dist/shared/prompts/ja/parts/formal_spec_verifier_constraints.md"
    ```
 
    scratchpad の Markdown に ```` ```quint ```` / ```` ```alloy ```` のブロックで書く。issue に書かれた要件だけを形式化し、要件を足さない。各 `inv*` / `prop*` / `check` の直前のコメントに、どのユーザーストーリー・実装上の決定を表すかを書く。
