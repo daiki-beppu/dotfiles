@@ -1,4 +1,4 @@
-// Orca 起動アダプタ。orca agent launch で knowledge だけを Orca のタブの対話セッションとして起動し（devlog は起動しない）、終わるまで待たない。
+// Orca 起動アダプタ。orca agent launch で devlog → knowledge を 1 つの Orca のタブの対話セッションとして起動し、終わるまで待たない。
 import { KNOWLEDGE_SPEC_PREFIX, tabTitle } from "./decide.mjs";
 import { launchAgent } from "./orca-agent.mjs";
 
@@ -6,10 +6,10 @@ const nums = (ns) => ns.map((n) => `#${n}`).join(" ");
 
 export const prompt = ({ spec, parents, subIssues, runDirs }) =>
   [
-    "/knowledge",
+    "/devlog",
     "",
-    `仕様 #${spec} の sub-issue がすべて閉じたので、その学びをまとめて PR にする。開発ログ（devlog）は無いので書かない。`,
-    "手順 2 の「開発ログの無い作業」の経路で、次を直接読んで素材にする。",
+    `仕様 #${spec} の sub-issue がすべて閉じたので、その学びを開発ログ（devlog）に書き、続けて knowledge スキルでそのエントリを素材に用語集・ADR・知識文書へ振り分け、両方を 1 本の PR にする。`,
+    "devlog の手順 5 では PR を作らない。knowledge の手順 1 はブランチを切らずに読むところだけ行い、devlog のブランチのまま続ける。開発ログの素材として、次を直接読む。",
     `- 仕様の issue: #${spec}`,
     `- 親 issue: ${nums(parents)}`,
     `- 閉じた sub-issue: ${nums(subIssues)}（それぞれを閉じた PR は gh で辿り、差分と resolution コメントを読む）`,

@@ -456,7 +456,7 @@ test("knowledge: 起動後の印の handle は応答から取り、時刻は注�
   assert.equal(calls.at(-1), "comment #12 案内役: knowledge を起動した（ターミナル term_99 / 2026-01-02T03:04:05.678Z）");
 });
 
-test("knowledge: claude をメインの checkout で対話起動し、--allowedTools を渡さない。プロンプトは仕様・親・sub-issue・run の場所を含む", async () => {
+test("knowledge: claude をメインの checkout で対話起動し、--allowedTools を渡さない。プロンプトは devlog から knowledge へ進み、仕様・親・sub-issue・run の場所を含む", async () => {
   const { calls, round } = knowledgeWorld();
   await round();
   const launch = orcaArgv(calls).find((a) => a[0] === "agent");
@@ -464,13 +464,14 @@ test("knowledge: claude をメインの checkout で対話起動し、--allowedT
   assert.ok(!launch.includes("--allowedTools"));
   assert.ok(!launch.includes("-p"));
   const prompt = launch[7];
-  assert.equal(prompt.split("\n")[0], "/knowledge");
+  assert.equal(prompt.split("\n")[0], "/devlog");
   assert.match(prompt, /仕様 #12/);
   assert.match(prompt, /親 issue: #20/);
   assert.match(prompt, /#21 #22/);
   assert.match(prompt, /\/w\/a\/\.takt\/runs/);
   assert.match(prompt, /学びの元の仕様: #12/);
-  assert.match(prompt, /開発ログ（devlog）は無いので書かない/);
+  assert.match(prompt, /knowledge スキル/);
+  assert.match(prompt, /1 本の PR/);
   assert.match(prompt, /自動マージの予約は呼び出し側が行う/);
 });
 
