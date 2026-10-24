@@ -109,8 +109,10 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
     },
 
     // 承認依頼のスレッド（map があれば map のスレッド）に判断依頼を送る。新しいスレッドは作らず、リアクションも付けない（回答は GitHub のラベルかコメントで書き戻す）。
+    // 仮決めに埋もれないよう、判断依頼だけは本人をメンションして通知する。許可するのは本人だけで、題名などの @everyone は飛ばさない。
     async sendDecisionRequest({ threadId, spec, map, issue, title, url, reason, reports, step, tab, tail, question, pr, subIssue, verdict, undecidable }) {
-      const head = `判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
+      const mentions = { parse: [], users: [userId] };
+      const head = `<@${userId}> 判断依頼: ${map === undefined ? `仕様 #${spec}` : `map #${map}`} の #${issue} ${title ?? ""} が止まった\n${url}\n${tab === undefined ? "" : `工程: ${step} / タブ: ${tab}\n`}`;
       const reportLine = reports === undefined ? "" : `\ntakt のレポート: ${reports}`;
       // takt のレビュー失敗・修正のセッションの停止（pr がある）: PR・sub-issue・判定は必ず残し、切るのは理由・判定できなかった理由・画面だけにする。
       if (pr !== undefined) {
@@ -129,7 +131,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         const screen = hasScreen && screenRoom > 0 ? `\n画面の最後の行:\n${fence}\n${cut(tail.join("\n").replaceAll(fence, "ˋˋˋ"), screenRoom)}\n${fence}` : "";
         const posted = await call("POST", `/channels/${threadId}/messages`, {
           content: `${head}${facts}理由: ${shownCause}${shownUndecidable}${screen}${reportLine}`,
-          allowed_mentions: { parse: [] },
+          allowed_mentions: mentions,
         });
         return { messageId: posted.id };
       }
@@ -152,7 +154,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       }
       const message = await call("POST", `/channels/${threadId}/messages`, {
         content: `${head}${question === undefined ? "" : `${questionLabel.slice(0, -1)}${shownQuestion}\n`}理由: ${shownReason}${screen}${reportLine}${replyGuide}`,
-        allowed_mentions: { parse: [] },
+        allowed_mentions: mentions,
       });
       return { messageId: message.id };
     },
