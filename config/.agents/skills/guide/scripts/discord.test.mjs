@@ -238,10 +238,11 @@ test("判断依頼: 新しいスレッドは作らず、承認依頼のスレッ
   assert.ok(content.length <= 2000);
 });
 
-test("判断依頼: 題名の @everyone でメンション通知が飛ばない", async () => {
+test("判断依頼: 先頭で本人だけをメンションし、題名の @everyone では通知が飛ばない", async () => {
   const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
   await discord.sendDecisionRequest({ threadId: "T1", spec: 12, issue: 21, title: "@everyone", url: "u", reason: "r", reports: "p" });
-  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+  assert.ok(calls[0].body.content.startsWith(`<@${OWNER}> 判断依頼: `));
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [], users: [OWNER] });
 });
 
 test("判断依頼: 送信が失敗したら例外にする", async () => {
@@ -274,7 +275,7 @@ test("判断依頼（セッションの停止）: 工程・タブの名前・画
   }
   assert.ok(!content.includes("takt のレポート"));
   assert.ok(!content.includes("undefined"));
-  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [], users: [OWNER] });
 });
 
 test("判断依頼（セッションの停止）: 画面と理由が長くても 2000 文字以内に収め、工程・仕様・タブ・URL は切り落とさない", async () => {
@@ -306,7 +307,7 @@ test("判断依頼（レビュー失敗）: 本文に PR・sub-issue・判定・
     assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
   }
   assert.ok(!content.includes("undefined"));
-  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [], users: [OWNER] });
 });
 
 test("判断依頼（レビュー失敗）: PR と sub-issue は別の番号として区別して書く（PR の行に PR の番号、sub-issue の行に sub-issue の番号）", async () => {
@@ -405,7 +406,7 @@ test("判断依頼（map の ticket のセッションの停止）: map のス�
   assert.ok(!content.includes("仕様 #"), content);
   assert.ok(!content.includes("takt のレポート"));
   assert.ok(!content.includes("undefined"));
-  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [], users: [OWNER] });
 });
 
 test("判断依頼（map の ticket のセッションの停止）: 画面と理由が長くても 2000 文字以内に収め、map・ticket・タブ・URL は切り落とさない", async () => {
@@ -444,7 +445,7 @@ test("判断依頼（grilling の問い）: ticket の題名・リンク・問�
   assert.ok(content.includes("返信"), `返信で答える案内が無い: ${content}`);
   assert.ok(content.includes("メンション"), `メンションの条件の案内が無い: ${content}`);
   assert.ok(!content.includes("undefined"));
-  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [] });
+  assert.deepEqual(calls[0].body.allowed_mentions, { parse: [], users: [OWNER] });
 });
 
 test("判断依頼（grilling の問い）: 問い・理由・画面が長くても 2000 文字以内に収め、題名・リンク・タブは切り落とさず、問いの先頭は残す", async () => {
