@@ -182,8 +182,8 @@ test("sessions: ticket の観測が失敗したら例外にする。見つから
   await assert.rejects(failing.read(), /orca down/);
 });
 
-test("sessions: 閉じた ticket・判断依頼の印が map にある ticket・起動前の印だけの ticket・閉じた map の子は観測しない（orca を呼ばない）", async () => {
-  const closed = ticketIssue(21, { state: "CLOSED" });
+test("sessions: タブを閉じた ticket・判断依頼の印が map にある ticket・起動前の印だけの ticket・閉じた map の子は観測しない（orca を呼ばない）", async () => {
+  const closed = ticketIssue(21, { state: "CLOSED", comments: [launched("wayfinder", "term_t"), { author: VIEWER, body: closedTabMarker("wayfinder", "term_t") }] });
   const decided = ticketIssue(22);
   const prelaunch = ticketIssue(23, { comments: [{ author: VIEWER, body: "案内役: wayfinder を起動する" }] });
   const underClosed = ticketIssue(41);
@@ -196,6 +196,12 @@ test("sessions: 閉じた ticket・判断依頼の印が map にある ticket・
   const snap = await read();
   assert.deepEqual(observed, []);
   assert.deepEqual(snap.sessions, {});
+});
+
+test("sessions: 閉じた ticket の、閉じた印が無いタブは観測する（閉じるかどうかを見るため）", async () => {
+  const ticket = ticketIssue(21, { state: "CLOSED" });
+  const { read, observed } = buildObserved([mapIssue([ticket]), ticket]);
+  assert.deepEqual((await read(), observed), ["term_t"]);
 });
 
 test("sessions: 仕様の工程と wayfinder の ticket が同じ周にあれば、両方の handle を観測する", async () => {
@@ -226,9 +232,16 @@ test("sessions: to-spec の観測が失敗したら例外にする。見つか�
   await assert.rejects(failing.read(), /orca down/);
 });
 
-test("sessions: 起動前の印だけの map・結果の仕様ができた map・保留の map は to-spec を観測しない（orca を呼ばない）", async () => {
-  const prelaunch = clearMap([{ author: VIEWER, body: "案内役: to-spec を起動する" }]);
+test("sessions: 結果の仕様ができた map の、閉じた印が無い to-spec のタブは観測する（閉じるかどうかを見るため）", async () => {
   const done = clearMap([launched("to-spec", "term_s")], { number: 40 });
+  const result = issue(50, { labels: ["spec"], body: "概要\n元の map: #40" });
+  const { read, observed } = buildObserved([done, result, closedTicket]);
+  assert.deepEqual((await read(), observed), ["term_s"]);
+});
+
+test("sessions: 起動前の印だけの map・結果の仕様ができてタブを閉じた map・保留の map は to-spec を観測しない（orca を呼ばない）", async () => {
+  const prelaunch = clearMap([{ author: VIEWER, body: "案内役: to-spec を起動する" }]);
+  const done = clearMap([launched("to-spec", "term_s"), { author: VIEWER, body: closedTabMarker("to-spec", "term_s") }], { number: 40 });
   const result = issue(50, { labels: ["spec"], body: "概要\n元の map: #40" });
   const hold = clearMap([launched("to-spec", "term_h")], { number: 60, labels: ["wayfinder:map", "wayfinder:on-hold"] });
   const { read, observed } = buildObserved([prelaunch, done, result, hold, closedTicket]);

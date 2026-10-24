@@ -3508,3 +3508,88 @@ test("タブを閉じる: 閉じた印がある handle は、結果が消えて�
   assert.deepEqual(sequencesToObserve(reopened), []);
   assert.deepEqual(seqStalls(decide(reopened)), []);
 });
+
+// map #20 の子 #21（research、term_1 で起動済み）が閉じた世界
+const IDLE_1 = { term_1: obs({ idle: true }) };
+const wfDone = (ticketOver = {}, { mapComments = threaded(), map = {}, sessions = IDLE_1 } = {}) =>
+  mapWorld([launchedTicket(21, "research", { state: "CLOSED", ...ticketOver })], { mapComments, map, over: { sessions, now: at(1) } });
+
+test("タブを閉じる: wayfinder の ticket が閉じ、手が止まった（idle）タブは close-tab を出す。印は ticket に書く", () => {
+  assert.deepEqual(closes(decide(wfDone())), [closeTab(21, "wayfinder", "term_1")]);
+});
+
+test("タブを閉じる: wayfinder の ticket が open の間は、idle でも出さない", () => {
+  assert.deepEqual(closes(decide(wfDone({ state: "OPEN" }))), []);
+});
+
+test("タブを閉じる: wayfinder の ticket が閉じても、idle でない・入力待ちのタブは出さない", () => {
+  assert.deepEqual(closes(decide(wfDone({}, { sessions: { term_1: obs({ idle: false }) } }))), []);
+  assert.deepEqual(closes(decide(wfDone({}, { sessions: { term_1: obs({ idle: true, waiting: true }) } }))), []);
+});
+
+test("タブを閉じる: wayfinder の既に見つからないタブは close せず印だけ書く（gone: true）", () => {
+  assert.deepEqual(closes(decide(wfDone({}, { sessions: { term_1: obs({ found: false, tail: [] }) } }))), [closeTab(21, "wayfinder", "term_1", true)]);
+});
+
+test("タブを閉じる: wayfinder の閉じた印が ticket にあれば出さず、map に同じ ticket の停止の判断依頼の印があっても出さない（grilling も）", () => {
+  const closed = wfDone({ comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1")), byViewer(closedTabMarker("wayfinder", "term_1"))] });
+  assert.deepEqual(tabsToClose(closed), []);
+  assert.deepEqual(closes(decide(closed)), []);
+  assert.deepEqual(closes(decide(wfDone({}, { mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE("research")))) }))), []);
+  assert.deepEqual(closes(decide(wfDone({ labels: ["wayfinder:grilling"] }, { mapComments: threaded(byViewer(decisionMarker(21, WF_CAUSE("grilling")))) }))), []);
+  assert.deepEqual(closes(decide(wfDone({}, { mapComments: threaded(byViewer(decisionMarker(22, WF_CAUSE("research")))) }))), [closeTab(21, "wayfinder", "term_1")]);
+});
+
+test("タブを閉じる: 開き直した ticket は今の回の最後の起動の handle だけを閉じる。今の回に起動が無ければ出さない", () => {
+  const sessions = { term_old: obs({ idle: true }), term_new: obs({ idle: true }) };
+  const again = wfTicket(21, "grilling", { state: "CLOSED", comments: WF_REOPENED([byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_new"))]) });
+  assert.deepEqual(closes(decide(mapWorld([again], { mapComments: threaded(), over: { sessions, now: at(1) } }))), [closeTab(21, "wayfinder", "term_new")]);
+  const notYet = wfTicket(21, "grilling", { state: "CLOSED", comments: WF_REOPENED() });
+  assert.deepEqual(closes(decide(mapWorld([notYet], { mapComments: threaded(), over: { sessions, now: at(1) } }))), []);
+});
+
+test("タブを閉じる: 複数の map の子の ticket は 1 度だけ。保留の map の子は閉じない", () => {
+  const s = snapshot(
+    [
+      issue(20, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [{ number: 21, state: "CLOSED" }] }),
+      issue(30, { labels: ["wayfinder:map"], comments: threaded(), subIssues: [{ number: 21, state: "CLOSED" }] }),
+      launchedTicket(21, "research", { state: "CLOSED" }),
+    ],
+    { sessions: IDLE_1, now: at(1) },
+  );
+  assert.deepEqual(closes(decide(s)), [closeTab(21, "wayfinder", "term_1")]);
+  assert.deepEqual(closes(decide(wfDone({}, { map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
+});
+
+test("タブを閉じる: to-spec は map の仕様ができ、手が止まったタブに close-tab を出す。印は map に書く。仕様がまだ無ければ出さない", () => {
+  const idle = { sessions: { term_s: obs({ idle: true }) } };
+  assert.deepEqual(closes(decide(tsStall([specOf(30, "元の map: #20")], idle))), [closeTab(20, "to-spec", "term_s")]);
+  assert.deepEqual(closes(decide(tsStall([], idle))), []);
+});
+
+test("タブを閉じる: to-spec の閉じた印・停止の判断依頼の印が map にあれば出さない", () => {
+  const idle = { sessions: { term_s: obs({ idle: true }) } };
+  const closed = tsStall([specOf(30, "元の map: #20")], { ...idle, mapOver: { comments: threaded(byViewer(TS_LAUNCHED_AT()), byViewer(closedTabMarker("to-spec", "term_s"))) } });
+  assert.deepEqual(tabsToClose(closed), []);
+  const asked = tsStall([specOf(30, "元の map: #20")], { ...idle, mapOver: { comments: threaded(byViewer(TS_LAUNCHED_AT()), byViewer(decisionMarker(20, TS_CAUSE))) } });
+  assert.deepEqual(closes(decide(asked)), []);
+});
+
+test("タブを閉じる: 閉じた印がある handle は、ticket が開き直されても・仕様が消えても停止の観測に戻さない（wayfinder・to-spec）", () => {
+  const ticket = mapWorld(
+    [launchedTicket(21, "research", { comments: [byViewer(WF_LAUNCHING), byViewer(WF_LAUNCHED_AT("term_1")), byViewer(closedTabMarker("wayfinder", "term_1"))] })],
+    { mapComments: threaded(), over: { sessions: { term_1: obs({ found: false }) }, now: at(1) } },
+  );
+  assert.deepEqual(D.ticketSessionsToObserve(ticket), []);
+  assert.deepEqual(mapDecisions(decide(ticket)), []);
+  const map = tsStall([], { sessions: { term_s: obs({ found: false }) }, mapOver: { comments: threaded(byViewer(TS_LAUNCHED_AT()), byViewer(closedTabMarker("to-spec", "term_s"))) } });
+  assert.deepEqual(D.mapSessionsToObserve(map), []);
+});
+
+test("tabsToClose: 閉じた wayfinder の ticket・仕様ができた map の handle は、停止の観測と重ならない", () => {
+  assert.deepEqual(tabsToClose(wfDone()), [{ issue: 21, step: "wayfinder", handle: "term_1" }]);
+  assert.deepEqual(D.ticketSessionsToObserve(wfDone()), []);
+  const spec = tsStall([specOf(30, "元の map: #20")]);
+  assert.deepEqual(tabsToClose(spec), [{ issue: 20, step: "to-spec", handle: "term_s" }]);
+  assert.deepEqual(D.mapSessionsToObserve(spec), []);
+});
