@@ -472,6 +472,7 @@ test("knowledge: claude をメインの checkout で対話起動し、--allowedT
   assert.match(prompt, /学びの元の仕様: #12/);
   assert.match(prompt, /knowledge スキル/);
   assert.match(prompt, /1 本の PR/);
+  assert.match(prompt, /エントリがすでにあれば、新しく書かずにそれを素材にする/);
   assert.match(prompt, /自動マージの予約は呼び出し側が行う/);
 });
 
