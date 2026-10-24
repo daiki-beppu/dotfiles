@@ -469,7 +469,7 @@ const hasSpecOfMap = (snapshot, map) =>
   );
 
 // map で起動した to-spec の観測の対象。open な map に viewer の handle つきの起動の印（最後のもの）があり、結果の仕様がまだ無く、
-// map に停止の判断依頼の印が無いものだけ。仕様はまだ無く承認依頼のスレッドも無いので、sessionsToObserve（仕様の印を読む）とは分ける。
+// その handle の閉じた印も map に停止の判断依頼の印も無いものだけ。仕様はまだ無く承認依頼のスレッドも無いので、sessionsToObserve（仕様の印を読む）とは分ける。
 export function mapSessionsToObserve(snapshot) {
   const { viewer } = snapshot;
   const targets = [];
@@ -479,7 +479,7 @@ export function mapSessionsToObserve(snapshot) {
       .map((b) => LAUNCHED.exec(b))
       .filter((m) => m && m[1] === "to-spec")
       .at(-1);
-    if (launched === undefined || hasSpecOfMap(snapshot, map.number)) continue;
+    if (launched === undefined || hasSpecOfMap(snapshot, map.number) || own.includes(closedTabMarker("to-spec", launched[2]))) continue;
     if (own.includes(decisionMarker(map.number, stallCause("to-spec")))) continue;
     targets.push({ map: map.number, step: "to-spec", handle: launched[2], startedAt: launched[3] });
   }
@@ -571,7 +571,7 @@ function decideSequenceStalls(snapshot, dispatched) {
 }
 
 // wayfinder で起動した ticket の観測の対象。open な map の open な子で、種類のラベルを持ち、viewer の handle つきの起動の印
-// （最後のもの）があり、map に同じ ticket・原因の判断依頼の印が無いものだけ。起動した ticket はセッションが claim しているので、frontier は見ない。
+// （最後のもの）があり、その handle の閉じた印が ticket に無く、map に同じ ticket・原因の判断依頼の印が無いものだけ。起動した ticket はセッションが claim しているので、frontier は見ない。
 export function ticketSessionsToObserve(snapshot) {
   const { viewer, issues } = snapshot;
   const targets = [];
@@ -590,7 +590,8 @@ export function ticketSessionsToObserve(snapshot) {
         .filter((m) => m && m[1] === "wayfinder")
         .at(-1);
       // grilling だけは、過去の停止の印があっても観測に残す（後の hook の入力待ちに判断依頼を出すため）。
-      if (launched === undefined || (type !== "grilling" && ownMap.includes(decisionMarker(ticket.number, stallCause(type))))) continue;
+      if (launched === undefined || markers(ticket, viewer).includes(closedTabMarker("wayfinder", launched[2]))) continue;
+      if (type !== "grilling" && ownMap.includes(decisionMarker(ticket.number, stallCause(type)))) continue;
       targets.push({ map: map.number, ticket: ticket.number, type, handle: launched[2], startedAt: launched[3] });
     }
   }
@@ -1102,6 +1103,7 @@ function decideReviewFixStalls(snapshot, dispatched) {
 
 // 閉じる候補のタブ: 結果が GitHub に出て、判断依頼を送っておらず、閉じた印も無いもの。印を書く issue・工程・handle。
 // 工程は仕様の最後の起動の印、takt-sequence は親の最後の起動の印を見る。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
+// wayfinder は閉じた ticket の今の回の最後の起動の印、to-spec は仕様ができた map の最後の起動の印を見る。保留の map は見ない。
 export function tabsToClose(snapshot) {
   const { viewer, issues } = snapshot;
   const targets = [];
@@ -1127,6 +1129,24 @@ export function tabsToClose(snapshot) {
       if (ownSpec.includes(decisionMarker(parent.number, stallCause("takt-sequence")))) continue;
       add(parent.number, own, "takt-sequence", sequence.handle);
     }
+  }
+  const seen = new Set();
+  for (const map of openMaps(snapshot)) {
+    const ownMap = markers(map, viewer);
+    for (const child of map.subIssues ?? []) {
+      const ticket = issues.find((i) => i.number === child.number);
+      if (ticket === undefined || ticket.state !== "CLOSED" || seen.has(ticket.number)) continue;
+      const type = WAYFINDER_TYPES.find((t) => hasLabel(ticket, `wayfinder:${t}`));
+      if (type === undefined) continue;
+      seen.add(ticket.number);
+      const launch = latestLaunches(currentCycle(ticket, viewer).marks).get("wayfinder");
+      if (launch === undefined || ownMap.includes(decisionMarker(ticket.number, stallCause(type)))) continue;
+      add(ticket.number, markers(ticket, viewer), "wayfinder", launch.handle);
+    }
+    const toSpec = latestLaunches(ownMap).get("to-spec");
+    if (toSpec === undefined || !hasSpecOfMap(snapshot, map.number)) continue;
+    if (ownMap.includes(decisionMarker(map.number, stallCause("to-spec")))) continue;
+    add(map.number, ownMap, "to-spec", toSpec.handle);
   }
   return targets;
 }
