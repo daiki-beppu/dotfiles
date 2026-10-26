@@ -1,7 +1,7 @@
 // execute.mjs のテスト。コメント・起動は偽物を注入し、書かれたマーカーを次の起動のスナップショットに入れて再起動を再現する。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decide } from "./decide.mjs";
+import { decide, fogTicketMarker } from "./decide.mjs";
 import { createDiscord } from "./discord.mjs";
 import { createExecute } from "./execute.mjs";
 import { runRound } from "./loop.mjs";
@@ -782,6 +782,7 @@ test("to-spec: handle が取れない応答でも、起動前の印だけが残�
 test("to-spec: 霧が残る map・開いた子がある map では起動しない", async () => {
   const fog = clearMap();
   fog[0].body = "## Not yet specified\n- 認証方式\n";
+  fog[0].comments = [byViewer(fogTicketMarker(0)), byViewer("案内役: Discord に判断依頼を送る（#20 霧の残り）")];
   const open = clearMap();
   open[1].state = "OPEN";
   open[1].assignees = ["someone"];
@@ -804,7 +805,16 @@ const byViewer = (body) => ({ author: VIEWER, body });
 const mapNoticeWorld = (issues, { discordOver = {}, sessions, now = "2026-10-17T00:10:00.000Z" } = {}) => {
   const calls = [];
   const byNumber = (n) => issues.find((i) => i.number === n);
-  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); byNumber(n).comments.push(byViewer(body)); } };
+  const github = {
+    comment: (n, body) => { calls.push(`comment #${n} ${body}`); byNumber(n).comments.push(byViewer(body)); },
+    // 起こした ticket は open な子として次の読み出しに出る（起動前に claim 済みにして、wayfinder の起動は出さない）。
+    createSubIssue: (parent, req) => {
+      calls.push(`sub-issue #${parent} ${JSON.stringify(req)}`);
+      issues.push(wfTicket(99, "grilling", { title: req.title, assignees: [VIEWER] }));
+      byNumber(parent).subIssues.push({ number: 99, state: "OPEN" });
+      return 99;
+    },
+  };
   const discord = {
     ensureChannel: async (name) => { calls.push(`channel ${name}`); return "C1"; },
     createMapThread: async (req) => { calls.push(`thread ${JSON.stringify(req)}`); return { threadId: "T900" }; },
@@ -825,9 +835,12 @@ const mapNoticeWorld = (issues, { discordOver = {}, sessions, now = "2026-10-17T
   return { calls, round };
 };
 // 霧が残る map（子がすべて閉じても to-spec を起動しない）。ここで見たいのは map の通知なので、晴れた map にしない。
+// 霧の ticket は起こし済みで進まず、霧の残りの判断依頼も送り済みにしておく（その流れは別のテストで見る）。
 const FOGGY = "## Not yet specified\n- 残っている問い\n";
+const FOG_MARKER = "案内役: Discord に判断依頼を送る（#20 霧の残り）";
+const FOG_STUCK = (children) => [byViewer(fogTicketMarker(children - 1)), byViewer(FOG_MARKER)];
 const mapIssues = (children, mapComments = []) => [
-  issue(20, { title: "地図", labels: ["wayfinder:map"], body: FOGGY, comments: mapComments, subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
+  issue(20, { title: "地図", labels: ["wayfinder:map"], body: FOGGY, comments: [...FOG_STUCK(children.length), ...mapComments], subIssues: children.map((c) => ({ number: c.number, state: c.state })) }),
   ...children,
 ];
 const protoTicket = (over = {}) => wfTicket(21, "prototype", { title: "見た目の試作", ...over });
@@ -1139,6 +1152,37 @@ test("grilling の 3 段の流れ: 判断依頼 → 書き戻し → 流し込�
   assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 2);
 });
 
+test("霧の残り: 起こす印を map に書いてから、霧の行を本文に持つ grilling の ticket を map の sub-issue に起こす。新しい dispatched で回し直しても二度起こさない", async () => {
+  const issues = mapIssues([wfTicket(21, "research", { state: "CLOSED" })], [byViewer(MT_CREATED)]);
+  issues[0].comments = issues[0].comments.filter((c) => !FOG_STUCK(1).some((m) => m.body === c.body));
+  const { calls, round } = mapNoticeWorld(issues);
+  await round();
+  assert.equal(calls.length, 2, calls.join("\n"));
+  assert.equal(calls[0], `comment #20 ${fogTicketMarker(1)}`);
+  const [, parent, req] = /^sub-issue #(\d+) (.*)$/.exec(calls[1]);
+  assert.equal(parent, "20");
+  const { title, body, labels } = JSON.parse(req);
+  assert.equal(title, "残った霧を晴らす（地図）");
+  assert.deepEqual(labels, ["wayfinder:grilling"]);
+  assert.match(body, /霧:\n- 残っている問い$/);
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
+test("霧の残り: 霧の ticket だけが閉じて霧が残れば、判断依頼の印を map に書いてから、map のスレッドへ霧の行つきで送る。二度送らない", async () => {
+  const issues = mapIssues([wfTicket(21, "grilling", { state: "CLOSED" })], [byViewer(MT_CREATED)]);
+  issues[0].comments = issues[0].comments.filter((c) => c.body !== FOG_MARKER);
+  const { calls, round } = mapNoticeWorld(issues);
+  await round();
+  assert.equal(calls.length, 2, calls.join("\n"));
+  assert.equal(calls[0], `comment #20 ${FOG_MARKER}`);
+  const req = JSON.parse(calls[1].replace(/^decision /, ""));
+  assert.deepEqual({ ...req, reason: undefined }, { threadId: "T900", map: 20, issue: 20, title: "地図", url: `https://github.com/${REPO}/issues/20`, reason: undefined });
+  assert.match(req.reason, /霧:\n- 残っている問い$/);
+  await round(new Set());
+  assert.equal(calls.length, 2);
+});
+
 // ---- 仮決めの掲載: 送る前の印 → 送信 → スレッドとメッセージの ID つきの印（印は ticket に書く）----
 const PD_BODY = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: [ADR](docs/adr/1.md)\n";
 const PD_SENDING_MARKER = "案内役: Discord に仮決めを流す（#21 仮決め 1）";
@@ -1229,7 +1273,7 @@ const rejectWorld = ({ failOn, mapBody = FOGGY } = {}) => {
     title: "parser を選ぶ", state: "CLOSED", assignees: [VIEWER],
     comments: [byViewer(PD_BODY), byViewer(PD_SENDING_MARKER), RJ_SENT, byViewer("案内役: wayfinder を起動する"), byViewer(`案内役: wayfinder を起動した（ターミナル term_old / ${LAUNCHED_AT}）`)],
   });
-  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], body: mapBody, comments: [byViewer(MT_CREATED)], subIssues: [] }), ticket];
+  const issues = [issue(20, { title: "地図", labels: ["wayfinder:map"], body: mapBody, comments: [...FOG_STUCK(1), byViewer(MT_CREATED)], subIssues: [] }), ticket];
   const calls = [];
   const github = {
     comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push(byViewer(body)); },
