@@ -1232,7 +1232,9 @@ export function decide(snapshot) {
       });
     }
   }
+  // 閉じるのを先に出す。後ろの行動（仮決めの投稿など）が多い周でも、終わったタブが周の終わりまで残らないように。
   return [
+    ...decideCloseTabs(snapshot, dispatched),
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideToSpec(snapshot, dispatched),
@@ -1244,6 +1246,5 @@ export function decide(snapshot) {
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
     ...decideReviewFixStalls(snapshot, dispatched),
-    ...decideCloseTabs(snapshot, dispatched),
   ];
 }

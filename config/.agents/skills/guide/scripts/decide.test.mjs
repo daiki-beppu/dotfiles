@@ -3518,6 +3518,13 @@ test("タブを閉じる: wayfinder の ticket が閉じ、手が止まった（
   assert.deepEqual(closes(decide(wfDone())), [closeTab(21, "wayfinder", "term_1")]);
 });
 
+test("タブを閉じる: close-tab は同じ周の他の行動より先に出す", () => {
+  const s = mapWorld([launchedTicket(21, "research", { state: "CLOSED" }), wfTicket(22, "research")], { mapComments: threaded(), over: { sessions: IDLE_1, now: at(1) } });
+  const kinds = decide(s).map((a) => a.kind);
+  assert.ok(kinds.includes("wayfinder"));
+  assert.equal(kinds[0], "close-tab");
+});
+
 test("タブを閉じる: wayfinder の ticket が open の間は、idle でも出さない", () => {
   assert.deepEqual(closes(decide(wfDone({ state: "OPEN" }))), []);
 });
