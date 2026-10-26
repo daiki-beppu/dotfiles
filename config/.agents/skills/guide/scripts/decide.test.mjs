@@ -2654,35 +2654,64 @@ test("to-spec: 子が CLOSED でも、霧が残っていれば出さない（fro
   assert.deepEqual(toSpecs(decide(clearWorld({ body }))), []);
 });
 
-// 子がすべて閉じたのに霧が残る map は、黙って止まらず map のスレッドへ判断依頼を送る。
+// 子がすべて閉じたのに霧が残る map は、黙って止まらず、霧を晴らす grilling の ticket を起こす。
+// 霧の ticket だけが閉じて霧が残ったときに限り、map のスレッドへ判断依頼を送る。
 const FOG_BODY = "## Not yet specified\n\n<!-- 説明 -->\n- 認証方式をどうするか\n- map #30 ができたら課金を決める\n\n## Out of scope\n- 決済\n";
 const FOG_CAUSE = "霧の残り";
-const fogWorld = (opts = {}) => clearWorld({ body: FOG_BODY, ...opts, map: { comments: threaded(), ...opts.map } });
+const fogWorld = (opts = {}) => clearWorld({ body: FOG_BODY, ...opts, map: { comments: threaded(...(opts.mapComments ?? [])), ...opts.map } });
+const fogTickets = (actions) => actions.filter((a) => a.kind === "create-fog-ticket");
 
-test("霧の残り: 子がすべて CLOSED で霧が残る map は、map のスレッドへ霧の行つきの判断依頼を 1 件出す", () => {
-  const found = mapDecisions(decide(fogWorld()));
+test("霧の残り: 子がすべて CLOSED で霧が残る map に、霧の行を本文に持つ ticket を起こす行動を 1 件出す。判断依頼も to-spec も出さない", () => {
+  const actions = decide(fogWorld());
+  assert.deepEqual(fogTickets(actions).map(({ body, ...a }) => a), [
+    { kind: "create-fog-ticket", key: "create-fog-ticket:20:2", map: 20, children: 2, title: "残った霧を晴らす（地図）" },
+  ]);
+  const { body } = fogTickets(actions)[0];
+  assert.match(body, /^## Question\n/);
+  assert.match(body, /霧:\n- 認証方式をどうするか\n- map #30 ができたら課金を決める$/);
+  assert.doesNotMatch(body, /説明|決済/);
+  assert.deepEqual(mapDecisions(actions), []);
+  assert.deepEqual(toSpecs(actions), []);
+});
+
+test("霧の残り: 前の霧の ticket の後に別の ticket が増えていれば、霧が残っていても起こし直す（子の数がキー）", () => {
+  const actions = decide(fogWorld({ children: [closedChild(21), closedChild(22), closedChild(23)], mapComments: [byViewer(D.fogTicketMarker(1))] }));
+  assert.deepEqual(fogTickets(actions).map((a) => a.key), ["create-fog-ticket:20:3"]);
+  assert.deepEqual(mapDecisions(actions), []);
+});
+
+test("霧の残り: 霧の ticket だけが閉じて霧が残れば、起こし直さず、map のスレッドへ霧の行つきの判断依頼を 1 件出す", () => {
+  const actions = decide(fogWorld({ mapComments: [byViewer(D.fogTicketMarker(1))] }));
+  assert.deepEqual(fogTickets(actions), []);
+  const found = mapDecisions(actions);
   assert.equal(found.length, 1);
   const [a] = found;
   assert.deepEqual({ ...a, reason: undefined }, {
     kind: "request-map-decision", key: `request-map-decision:20:20:${FOG_CAUSE}`, map: 20, issue: 20, cause: FOG_CAUSE, title: "地図", threadId: "900", reason: undefined,
   });
   assert.match(a.reason, /霧:\n- 認証方式をどうするか\n- map #30 ができたら課金を決める$/);
-  assert.doesNotMatch(a.reason, /説明|決済/);
+  // 起こす印はあるのに ticket が子に無い（作成が失敗した）ときも、起こし直さず判断依頼に回す。
+  const failed = decide(fogWorld({ mapComments: [byViewer(D.fogTicketMarker(2))] }));
+  assert.deepEqual(fogTickets(failed), []);
+  assert.equal(mapDecisions(failed).length, 1);
 });
 
-test("霧の残り: 判断依頼の印か dispatched があれば出さない。open の子・霧なし・子が 0 件・保留の map にも出さない", () => {
-  assert.deepEqual(mapDecisions(decide(fogWorld({ map: { comments: threaded(byViewer(decisionMarker(20, FOG_CAUSE))) } }))), []);
-  assert.deepEqual(mapDecisions(decide(fogWorld({ over: { dispatched: [`request-map-decision:20:20:${FOG_CAUSE}`] } }))), []);
-  assert.deepEqual(mapDecisions(decide(fogWorld({ children: [closedChild(21), wfTicket(22, "task", { assignees: ["daiki-beppu"] })] }))), []);
-  assert.deepEqual(mapDecisions(decide(clearWorld({ map: { comments: threaded() } }))), []);
-  assert.deepEqual(mapDecisions(decide(fogWorld({ children: [] }))), []);
-  assert.deepEqual(mapDecisions(decide(fogWorld({ map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
+test("霧の残り: dispatched があれば起こさない。open の子・霧なし・子が 0 件・保留の map にも起こさない", () => {
+  assert.deepEqual(fogTickets(decide(fogWorld({ over: { dispatched: ["create-fog-ticket:20:2"] } }))), []);
+  assert.deepEqual(fogTickets(decide(fogWorld({ children: [closedChild(21), wfTicket(22, "task", { assignees: ["daiki-beppu"] })] }))), []);
+  assert.deepEqual(fogTickets(decide(clearWorld({ map: { comments: threaded() } }))), []);
+  assert.deepEqual(fogTickets(decide(fogWorld({ children: [] }))), []);
+  assert.deepEqual(fogTickets(decide(fogWorld({ map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
 });
 
-test("霧の残り: map のスレッドが無ければ、先にスレッドを立てる", () => {
-  const kinds = decide(clearWorld({ body: FOG_BODY })).map((a) => a.kind);
-  assert.ok(kinds.includes("create-map-thread"));
-  assert.ok(!kinds.includes("request-map-decision"));
+test("霧の残り: 判断依頼の印か dispatched があれば判断依頼を再送しない。スレッドが無ければ先に立てる。霧の ticket はスレッドが無くても起こす", () => {
+  const stuck = [byViewer(D.fogTicketMarker(1))];
+  assert.deepEqual(mapDecisions(decide(fogWorld({ mapComments: [...stuck, byViewer(decisionMarker(20, FOG_CAUSE))] }))), []);
+  assert.deepEqual(mapDecisions(decide(fogWorld({ mapComments: stuck, over: { dispatched: [`request-map-decision:20:20:${FOG_CAUSE}`] } }))), []);
+  const noThread = decide(clearWorld({ body: FOG_BODY, map: { comments: stuck } })).map((a) => a.kind);
+  assert.ok(noThread.includes("create-map-thread"));
+  assert.ok(!noThread.includes("request-map-decision"));
+  assert.equal(fogTickets(decide(clearWorld({ body: FOG_BODY }))).length, 1);
 });
 
 test("to-spec: 霧が無くても、claim 済み・ブロック中の ticket が開いていれば出さない（frontier が空でも）", () => {

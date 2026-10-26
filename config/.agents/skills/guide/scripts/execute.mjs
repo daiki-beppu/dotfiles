@@ -14,6 +14,7 @@ import {
   MARKER_TO_TICKETS_LAUNCHING,
   closedTabMarker,
   decisionMarker,
+  fogTicketMarker,
   grillingInjectMarker,
   grillingSendingMarker,
   grillingSentMarker,
@@ -57,6 +58,10 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchToSpec({ cwd, map: action.map });
       github.comment(action.map, launchedMarker("to-spec", handle, launchedAt));
+    } else if (action.kind === "create-fog-ticket") {
+      // 印は起こす前に書く（作成の成否が不明でも二重に起こさない。起こせていなければ、次の周から霧の残りの判断依頼になる）。
+      github.comment(action.map, fogTicketMarker(action.children));
+      github.createSubIssue(action.map, { title: action.title, body: action.body, labels: ["wayfinder:grilling"] });
     } else if (action.kind === "knowledge") {
       // to-tickets と同じ 2 段の印。PR は待たない（できたかどうかは次の周以降に merge-auto の遷移が判定する）。
       const runDirs = taktRunDirs(cwd, [...action.subIssues]);

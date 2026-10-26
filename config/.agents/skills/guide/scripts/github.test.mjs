@@ -207,3 +207,13 @@ test("readPullRequests: head の sha と head ブランチを head・headBranch 
   assert.equal(pr.headBranch, "feat/1");
   assert.equal(calls.length, 1);
 });
+
+test("createSubIssue: issue を起こしてから、応答の id で parent の sub-issue に紐付け、番号を返す", () => {
+  const { calls, execFile } = fakeGh((args) => (args[1] === "repos/o/r/issues" ? JSON.stringify({ id: 777, number: 31 }) : "{}"));
+  const number = createGithub({ repo: "o/r", cwd: "/x", execFile }).createSubIssue(20, { title: "題", body: "本文", labels: ["wayfinder:grilling"] });
+  assert.equal(number, 31);
+  assert.deepEqual(calls.map((c) => c.args), [
+    ["api", "repos/o/r/issues", "-f", "title=題", "-f", "body=本文", "-f", "labels[]=wayfinder:grilling"],
+    ["api", "repos/o/r/issues/20/sub_issues", "-F", "sub_issue_id=777"],
+  ]);
+});

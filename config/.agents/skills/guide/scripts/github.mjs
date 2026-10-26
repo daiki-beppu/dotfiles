@@ -93,6 +93,13 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
       gh(["api", "-X", "DELETE", `repos/${repo}/issues/${number}/assignees`, ...logins.flatMap((l) => ["-f", `assignees[]=${l}`])]);
     },
 
+    // issue を起こして parent の sub-issue にする。紐付けには番号ではなく issue の id を渡す。
+    createSubIssue(parent, { title, body, labels }) {
+      const created = JSON.parse(gh(["api", `repos/${repo}/issues`, "-f", `title=${title}`, "-f", `body=${body}`, ...labels.flatMap((l) => ["-f", `labels[]=${l}`])]));
+      gh(["api", `repos/${repo}/issues/${parent}/sub_issues`, "-F", `sub_issue_id=${created.id}`]);
+      return created.number;
+    },
+
     // REST で付ける。repo にまだ無いラベルは GitHub が作るので、spec-approved を前もって用意しなくてよい（gh issue edit は無いラベルで失敗する）。
     addLabel(number, label) {
       gh(["api", `repos/${repo}/issues/${number}/labels`, "-f", `labels[]=${label}`]);

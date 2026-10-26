@@ -24,8 +24,10 @@
 //     | { kind: "notify-human-ticket", key, map, ticket, title, threadId }   （frontier の prototype ticket を map のスレッドへ知らせる。印は map に書く）
 //     | { kind: "request-map-decision", key, map, issue, cause, title, threadId, reason, step, tab, tail }
 //       （wayfinder で起動した ticket のセッションが止まった。map のスレッドへ判断依頼を送る。印は map に書く）
+//     | { kind: "create-fog-ticket", key, map, children, title, body }
+//       （子がすべて閉じたのに霧が残る map に、霧を晴らす grilling の ticket を起こして子にする。印は map に書く）
 //     | { kind: "request-map-decision", key, map, issue: map, cause: "霧の残り", title, threadId, reason }
-//       （子がすべて閉じたのに霧が残る map。起動するものが無いので、map のスレッドへ判断依頼を送る。タブと画面は無い）
+//       （霧の ticket を起こしても新しい ticket が増えずに霧が残った map。map のスレッドへ判断依頼を送る。タブと画面は無い）
 //     | { kind: "request-grilling-decision", key, map, ticket, since, title, threadId, tab, tail, question }
 //       （grilling のセッションが hook の入力待ち（AskUserQuestion）。map のスレッドへ問いつきの判断依頼を送る。印は ticket に書く）
 //     | { kind: "post-provisional-decision", key, map, ticket, n, title, threadId, question, answer, reason, evidence }
@@ -394,6 +396,52 @@ export function fogLines(body) {
 
 // map の本文に霧が残っているか。
 export const hasFog = (body) => fogLines(body).length > 0;
+
+// 霧の ticket を起こす前に map に書く印。N は起こす時点の子の数。
+export const fogTicketMarker = (children) => `案内役: 霧の ticket を起こす（子 ${children} 件）`;
+const FOG_TICKET_MARK = /^案内役: 霧の ticket を起こす（子 (\d+) 件）$/;
+export const fogTicketTitle = (mapTitle) => `残った霧を晴らす（${mapTitle}）`;
+export const fogTicketBody = (fog) =>
+  [
+    "## Question",
+    "",
+    "map の子 ticket はすべて閉じたが、Not yet specified に次の霧が残っている。霧ごとに、この ticket の中で決めるか、ticket に起こすか（別の map を待つものは、その map に blocked by させる）、既に答えが出ていれば消す。最後に map の Not yet specified を空にする。",
+    "",
+    "霧:",
+    ...fog,
+  ].join("\n");
+
+// 子がすべて閉じたのに霧が残る map。起動する ticket も to-spec も無く、放っておくと止まる。
+// 同じ周の差し戻しで開き直す子がある map は、その子のセッションが霧を晴らすかもしれないので待つ（to-spec と同じ）。
+// lastFogTicket は最後の霧の ticket の印の子の数（無ければ undefined）。
+function foggyMaps(snapshot) {
+  const reopening = new Set(rejectedProvisionals(snapshot).map(({ ticket }) => ticket.number));
+  const found = [];
+  for (const map of openMaps(snapshot)) {
+    const children = map.subIssues ?? [];
+    const fog = fogLines(map.body);
+    if (children.length === 0 || fog.length === 0 || children.some((c) => c.state !== "CLOSED" || reopening.has(c.number))) continue;
+    const last = markers(map, snapshot.viewer).map((b) => FOG_TICKET_MARK.exec(b)).filter(Boolean).at(-1);
+    found.push({ map, fog, children: children.length, lastFogTicket: last === undefined ? undefined : Number(last[1]) });
+  }
+  return found;
+}
+
+// 霧が晴れたと言えるのは、前の霧の ticket の後に別の ticket が増えたとき（霧が ticket に起きて進んだ）。
+// 霧の ticket だけが増えて閉じ、霧が残ったままなら、起こし直しても同じことを繰り返すので起こさない（判断依頼に回す）。
+const fogTicketMadeProgress = ({ children, lastFogTicket }) => lastFogTicket === undefined || lastFogTicket + 1 < children;
+
+// 霧の残る map に、霧を晴らす grilling の ticket を起こして子にする。次の周から frontier の wayfinder の起動が拾う。
+function decideFogTickets(snapshot, dispatched) {
+  const actions = [];
+  for (const found of foggyMaps(snapshot)) {
+    if (!fogTicketMadeProgress(found)) continue;
+    const key = `create-fog-ticket:${found.map.number}:${found.children}`;
+    if (dispatched.has(key)) continue;
+    actions.push({ kind: "create-fog-ticket", key, map: found.map.number, children: found.children, title: fogTicketTitle(found.map.title), body: fogTicketBody(found.fog) });
+  }
+  return actions;
+}
 
 // 晴れた map ごとの to-spec の起動。子が 1 件以上あり、すべて閉じていて、霧が無く、viewer の起動の印（1 段目か 2 段目）が無い map だけ。
 // 子が 0 件の map は、起票の途中の map かもしれず、コメントも読まれないので印も見えないため出さない。frontier ではなく子の状態を直接見る
@@ -885,18 +933,15 @@ function decideMapNotices(snapshot, dispatched) {
     if (dispatched.has(key) || markers(map, viewer).includes(humanTicketMarker(ticket.number))) continue;
     noticesOf(map).push({ kind: "notify-human-ticket", key, map: map.number, ticket: ticket.number, title: ticket.title });
   }
-  // 霧の残り: 子がすべて閉じたのに霧が残る map には、起動する ticket も to-spec も無く、黙って止まる。map のスレッドへ判断依頼を 1 度だけ送る。
-  // 同じ周の差し戻しで開き直す子がある map は、その子のセッションが霧を晴らすかもしれないので待つ（to-spec と同じ）。
-  const reopening = new Set(rejectedProvisionals(snapshot).map(({ ticket }) => ticket.number));
-  for (const map of openMaps(snapshot)) {
-    const children = map.subIssues ?? [];
-    const fog = fogLines(map.body);
-    if (children.length === 0 || fog.length === 0 || children.some((c) => c.state !== "CLOSED" || reopening.has(c.number))) continue;
+  // 霧の残り: 霧の ticket を起こしても進まなかった map（霧の ticket だけが閉じて霧が残った、または起こせなかった）は、map のスレッドへ判断依頼を 1 度だけ送る。
+  for (const found of foggyMaps(snapshot)) {
+    if (fogTicketMadeProgress(found)) continue;
+    const { map, fog } = found;
     const key = `request-map-decision:${map.number}:${map.number}:${FOG_CAUSE}`;
     if (dispatched.has(key) || markers(map, viewer).includes(decisionMarker(map.number, FOG_CAUSE))) continue;
     noticesOf(map).push({
       kind: "request-map-decision", key, map: map.number, issue: map.number, cause: FOG_CAUSE, title: map.title,
-      reason: `子 ticket はすべて閉じたが、Not yet specified に霧が残っていて、起動できる ticket も to-spec も無い。霧を ticket に起こす（別の map を待つものは、その map に blocked by させる）か、Out of scope へ移すか消せば、次の周から動く。\n霧:\n${fog.join("\n")}`,
+      reason: `霧を晴らす ticket を起こしたが、新しい ticket が増えないまま閉じ、Not yet specified に霧が残っている。霧を ticket に起こす（別の map を待つものは、その map に blocked by させる）か、Out of scope へ移すか消せば、次の周から動く。\n霧:\n${fog.join("\n")}`,
     });
   }
   // 仮決め: map の子 ticket（状態は問わない。resolution を書いた直後に閉じるため）の仮決めを、まだ流していなければ 1 件ずつ。
@@ -1257,6 +1302,7 @@ export function decide(snapshot) {
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideToSpec(snapshot, dispatched),
+    ...decideFogTickets(snapshot, dispatched),
     ...decideMapNotices(snapshot, dispatched),
     ...decideProvisionalRejections(snapshot, dispatched),
     ...decideGrillingAnswers(snapshot, dispatched),
