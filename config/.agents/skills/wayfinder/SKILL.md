@@ -147,5 +147,6 @@ The section runs from the `## 仮決め` line to the next `## ` heading or the e
 ```
 
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals that a ticket (this one or another) sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
+6. If no open ticket remains on the map, empty **Not yet specified** before you stop. No later session will open this map to graduate what is left, so the map would stall with nothing to work. Turn each remaining patch into a ticket, even if you can only phrase it loosely. When a patch waits on another map, block its ticket on that map's issue; if that map is already closed, the ticket is unblocked. Otherwise rule the patch out of scope, or delete it if it is already answered.
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently.

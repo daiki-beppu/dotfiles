@@ -2654,6 +2654,37 @@ test("to-spec: 子が CLOSED でも、霧が残っていれば出さない（fro
   assert.deepEqual(toSpecs(decide(clearWorld({ body }))), []);
 });
 
+// 子がすべて閉じたのに霧が残る map は、黙って止まらず map のスレッドへ判断依頼を送る。
+const FOG_BODY = "## Not yet specified\n\n<!-- 説明 -->\n- 認証方式をどうするか\n- map #30 ができたら課金を決める\n\n## Out of scope\n- 決済\n";
+const FOG_CAUSE = "霧の残り";
+const fogWorld = (opts = {}) => clearWorld({ body: FOG_BODY, ...opts, map: { comments: threaded(), ...opts.map } });
+
+test("霧の残り: 子がすべて CLOSED で霧が残る map は、map のスレッドへ霧の行つきの判断依頼を 1 件出す", () => {
+  const found = mapDecisions(decide(fogWorld()));
+  assert.equal(found.length, 1);
+  const [a] = found;
+  assert.deepEqual({ ...a, reason: undefined }, {
+    kind: "request-map-decision", key: `request-map-decision:20:20:${FOG_CAUSE}`, map: 20, issue: 20, cause: FOG_CAUSE, title: "地図", threadId: "900", reason: undefined,
+  });
+  assert.match(a.reason, /霧:\n- 認証方式をどうするか\n- map #30 ができたら課金を決める$/);
+  assert.doesNotMatch(a.reason, /説明|決済/);
+});
+
+test("霧の残り: 判断依頼の印か dispatched があれば出さない。open の子・霧なし・子が 0 件・保留の map にも出さない", () => {
+  assert.deepEqual(mapDecisions(decide(fogWorld({ map: { comments: threaded(byViewer(decisionMarker(20, FOG_CAUSE))) } }))), []);
+  assert.deepEqual(mapDecisions(decide(fogWorld({ over: { dispatched: [`request-map-decision:20:20:${FOG_CAUSE}`] } }))), []);
+  assert.deepEqual(mapDecisions(decide(fogWorld({ children: [closedChild(21), wfTicket(22, "task", { assignees: ["daiki-beppu"] })] }))), []);
+  assert.deepEqual(mapDecisions(decide(clearWorld({ map: { comments: threaded() } }))), []);
+  assert.deepEqual(mapDecisions(decide(fogWorld({ children: [] }))), []);
+  assert.deepEqual(mapDecisions(decide(fogWorld({ map: { labels: ["wayfinder:map", "wayfinder:on-hold"] } }))), []);
+});
+
+test("霧の残り: map のスレッドが無ければ、先にスレッドを立てる", () => {
+  const kinds = decide(clearWorld({ body: FOG_BODY })).map((a) => a.kind);
+  assert.ok(kinds.includes("create-map-thread"));
+  assert.ok(!kinds.includes("request-map-decision"));
+});
+
 test("to-spec: 霧が無くても、claim 済み・ブロック中の ticket が開いていれば出さない（frontier が空でも）", () => {
   const claimed = clearWorld({ children: [closedChild(21), wfTicket(22, "task", { assignees: ["daiki-beppu"] })] });
   assert.deepEqual(wfActions(decide(claimed)), []);
