@@ -53,6 +53,19 @@ test("startTaktSequence: terminal が無ければ、今のとおり Orca の新�
   assert.equal(opts.cwd, "/w");
 });
 
+test("startTaktSequence: 動いている takt-sequence に足せたら、orca を呼ばずにその handle を返す。足すのは issue の番号だけ", () => {
+  const appended = [];
+  const append = (cwd, issues) => (appended.push({ cwd, issues }), { handle: "term_running" });
+  const run = () => assert.fail("orca は呼ばない");
+  assert.deepEqual(startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21, "#22", "--workflow", "x"], terminal: "term_guide" }, run, append), { handle: "term_running", appended: true });
+  assert.deepEqual(appended, [{ cwd: "/w", issues: ["21", "22"] }]);
+});
+
+test("startTaktSequence: 足せなければ（append が null）、今のとおり起動する", () => {
+  const run = () => JSON.stringify({ ok: true, result: { terminal: { handle: "term_seq" } } });
+  assert.deepEqual(startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, run, () => null), { handle: "term_seq" });
+});
+
 test("startTaktSequence: 応答から handle が取れなければ、応答の頭を入れて例外にする", () => {
   assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => "not json"), /handle が取れない.*not json/);
   assert.throws(() => startTaktSequence({ cwd: "/w", repo: "o/r", issues: [21] }, () => JSON.stringify({ ok: true, result: {} })), /result\.terminal\.handle/);
