@@ -38,6 +38,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # runner の apt は既定で Azure のミラーを先に使う。そこが遅いと ffmpeg の取得だけで timeout-minutes を使い切る
+      - name: Skip the Azure apt mirror
+        run: sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
       - name: Bootstrap recording environment
         env:
           GH_TOKEN: ${{ github.token }}
