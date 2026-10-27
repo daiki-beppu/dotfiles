@@ -568,3 +568,19 @@ test("今の段階: 読み取り → 判断 → 行動ごとの実行 → 次の
     "判断中…",
   ]);
 });
+
+test("dry-run: 判断依頼に本人が答えたら、答えたと記録する行を仕様と map のそれぞれで出す", async () => {
+  const logs = [];
+  const by = (...bodies) => bodies.map((body) => ({ author: VIEWER, body }));
+  const snap = {
+    repo: REPO, viewer: VIEWER, discordUserId: "U1", taktIssues: [],
+    issues: [
+      issue(12, { labels: ["spec"], comments: by("案内役: Discord に判断依頼を送る（#12 formal-spec の検証失敗）", "案内役: Discord に判断依頼を送った（#12 formal-spec の検証失敗 / スレッド 555 / メッセージ M1）") }),
+      issue(30, { labels: ["wayfinder:map"], comments: by("案内役: Discord に判断依頼を送る（#30 霧の残り）", "案内役: Discord に判断依頼を送った（#30 霧の残り / スレッド 900 / メッセージ M2）") }),
+    ],
+    decisionAnswers: { M1: { replies: [{ userId: "U1", content: "直す" }], reactions: [] }, M2: { replies: [], reactions: [{ emoji: "✅", userId: "U1" }] } },
+  };
+  await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.ok(logs.includes("行動: 仕様 #12 の #12（formal-spec の検証失敗）の判断依頼に本人が答えたと記録する"), logs.join("\n"));
+  assert.ok(logs.includes("行動: map #30 の #30（霧の残り）の判断依頼に本人が答えたと記録する"), logs.join("\n"));
+});

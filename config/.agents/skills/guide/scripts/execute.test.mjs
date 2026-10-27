@@ -535,7 +535,7 @@ test("knowledge: 学びの PR が既にあれば、起動も予約もしない",
 const DECISION_MARKER = "案内役: Discord に判断依頼を送る（#21 takt の ABORT）";
 const ABORT_TASK = { issue: 21, kind: "failed", createdAt: "2026-10-16T10:00:00Z", step: "implement", error: "blocked", worktreePath: "/w/21" };
 
-const decisionWorld = (sendOver) => {
+const decisionWorld = (sendOver, decisionAnswers = {}) => {
   const calls = [];
   const issues = [
     issue(12, { title: "仕様A", labels: ["spec", "spec-approved"], comments: [...SENT_COMMENTS, { author: VIEWER, body: "案内役: to-tickets を起動した" }, { author: VIEWER, body: "案内役: to-tickets が終わった（exit 0）" }] }),
@@ -544,7 +544,7 @@ const decisionWorld = (sendOver) => {
   ];
   const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); issues.find((i) => i.number === n).comments.push({ author: VIEWER, body }); } };
   const discord = {
-    sendDecisionRequest: sendOver ?? (async (req) => { calls.push(`decision ${JSON.stringify(req)}`); }),
+    sendDecisionRequest: sendOver ?? (async (req) => { calls.push(`decision ${JSON.stringify(req)}`); return { messageId: "M1" }; }),
     ensureChannel: async () => assert.fail("新しいチャンネルは確保しない"),
     sendApprovalRequest: async () => assert.fail("承認依頼は送らない"),
   };
@@ -555,15 +555,16 @@ const decisionWorld = (sendOver) => {
     startTaktSequence: () => assert.fail("takt-sequence は起動しない"),
   };
   const round = (dispatched = new Set()) =>
-    runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, discordUserId: "U", issues, taktIssues: [21], taktTasks: [ABORT_TASK] }), execute: createExecute(deps), log: () => {} }, dispatched);
+    runRound({ readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, discordUserId: "U", issues, taktIssues: [21], taktTasks: [ABORT_TASK], decisionAnswers }), execute: createExecute(deps), log: () => {} }, dispatched);
   return { calls, round };
 };
 
-test("判断依頼: 仕様に送信マーカーを書いてから、既存スレッドに止まった issue・理由・レポートの場所つきで送る", async () => {
+test("判断依頼: 仕様に送信マーカーを書いてから、既存スレッドに止まった issue・理由・レポートの場所つきで送り、送った後にスレッドとメッセージの ID つきの印を仕様に書く", async () => {
   const { calls, round } = decisionWorld();
   await round();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0], `comment #12 ${DECISION_MARKER}`);
+  assert.equal(calls[2], "comment #12 案内役: Discord に判断依頼を送った（#21 takt の ABORT / スレッド 555 / メッセージ M1）");
   const req = JSON.parse(calls[1].replace(/^decision /, ""));
   assert.equal(req.threadId, "555");
   assert.equal(req.spec, 12);
@@ -580,7 +581,7 @@ test("判断依頼: 新しい dispatched で回し直しても（再起動して
   await round();
   await round(new Set());
   await round(new Set());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test("判断依頼: 送信が失敗してもマーカーは残り、再起動で二重に送らない（成否不明のまま再送しない）", async () => {
@@ -622,8 +623,9 @@ const stallWorld = (fetchOver) => {
 test("セッション停止: 仕様に判断依頼のマーカーを書いてから、承認依頼のスレッドへ送る。本文に工程・仕様・タブの名前・画面の数行・理由が入る", async () => {
   const { calls, round } = stallWorld();
   await round();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0], `comment #12 ${STALL_MARKER}`);
+  assert.equal(calls[2], "comment #12 案内役: Discord に判断依頼を送った（#12 to-tickets のセッションの停止 / スレッド 555 / メッセージ M）");
   assert.ok(calls[1].startsWith("discord POST /api/v10/channels/555/messages "), calls[1]);
   const content = calls[1].replace(/^discord POST \S+ /, "");
   for (const part of ["to-tickets", "#12", "to-tickets #12", ...SCREEN, "入力待ち"]) assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
@@ -635,7 +637,7 @@ test("セッション停止: 新しい dispatched で回し直しても（再起
   await round();
   await round(new Set());
   await round(new Set());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test("セッション停止: 送信が失敗してもマーカーは残り、再起動で再送しない", async () => {
@@ -819,7 +821,7 @@ const mapNoticeWorld = (issues, { discordOver = {}, sessions, now = "2026-10-17T
     ensureChannel: async (name) => { calls.push(`channel ${name}`); return "C1"; },
     createMapThread: async (req) => { calls.push(`thread ${JSON.stringify(req)}`); return { threadId: "T900" }; },
     sendHumanTicket: async (req) => { calls.push(`human ${JSON.stringify(req)}`); },
-    sendDecisionRequest: async (req) => { calls.push(`decision ${JSON.stringify(req)}`); },
+    sendDecisionRequest: async (req) => { calls.push(`decision ${JSON.stringify(req)}`); return { messageId: "M1" }; },
     ...discordOver,
   };
   const deps = {
@@ -922,8 +924,9 @@ test("人が見る ticket: 印は ticket ではなく map に書く", async () =
 test("ticket の停止: 判断依頼の印を map に書いてから、map のスレッドへ ticket・タブ・画面・理由つきで送る。印は map に書き、ticket には書かない", async () => {
   const { calls, round } = mapNoticeWorld(mapIssues([stalledTicket()], [byViewer(MT_CREATED)]), { sessions: gone });
   await round();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0], `comment #20 ${TICKET_STALL_MARKER}`);
+  assert.equal(calls[2], "comment #20 案内役: Discord に判断依頼を送った（#21 research のセッションの停止 / スレッド T900 / メッセージ M1）");
   const req = JSON.parse(calls[1].replace(/^decision /, ""));
   assert.equal(req.threadId, "T900");
   assert.equal(req.map, 20);
@@ -942,7 +945,7 @@ test("ticket の停止: 新しい dispatched で回し直しても（再起動�
   await round();
   await round(new Set());
   await round(new Set());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 test("ticket の停止: 送信が失敗しても印は残り、再起動で再送しない", async () => {
@@ -960,7 +963,7 @@ test("ticket の停止: スレッドが無い map では、まずスレッドを
   await round();
   assert.deepEqual(calls.map((c) => c.split(" ")[0]), ["channel", "comment", "thread", "comment"]);
   await round(new Set());
-  assert.equal(JSON.parse(calls.at(-1).replace(/^decision /, "")).threadId, "T900");
+  assert.equal(JSON.parse(calls.at(-2).replace(/^decision /, "")).threadId, "T900");
 });
 
 test("ticket の停止（Discord アダプタ経由）: 入力待ちの画面の最後の 10 行・理由・ticket・タブの名前が map のスレッドのメッセージに入る", async () => {
@@ -1174,13 +1177,14 @@ test("霧の残り: 霧の ticket だけが閉じて霧が残れば、判断依�
   issues[0].comments = issues[0].comments.filter((c) => c.body !== FOG_MARKER);
   const { calls, round } = mapNoticeWorld(issues);
   await round();
-  assert.equal(calls.length, 2, calls.join("\n"));
+  assert.equal(calls.length, 3, calls.join("\n"));
   assert.equal(calls[0], `comment #20 ${FOG_MARKER}`);
+  assert.equal(calls[2], "comment #20 案内役: Discord に判断依頼を送った（#20 霧の残り / スレッド T900 / メッセージ M1）");
   const req = JSON.parse(calls[1].replace(/^decision /, ""));
   assert.deepEqual({ ...req, reason: undefined }, { threadId: "T900", map: 20, issue: 20, title: "地図", url: `https://github.com/${REPO}/issues/20`, reason: undefined });
   assert.match(req.reason, /霧:\n- 残っている問い$/);
   await round(new Set());
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
 });
 
 // ---- 仮決めの掲載: 送る前の印 → 送信 → スレッドとメッセージの ID つきの印（印は ticket に書く）----
@@ -1511,7 +1515,7 @@ for (const path of ["limit", "redo", "crash"]) {
     const runDir = rdRunDir(BLOCKED_REPORT);
     const { calls, posts, round } = rdWorld({ path, runDir });
     await round();
-    assert.deepEqual(calls, [`comment #12 ${RD_MARKER}`, "post /api/v10/channels/555/messages"]);
+    assert.deepEqual(calls, [`comment #12 ${RD_MARKER}`, "post /api/v10/channels/555/messages", "comment #12 案内役: Discord に判断依頼を送った（#70 takt のレビュー失敗 / スレッド 555 / メッセージ M）"]);
     assert.equal(posts.length, 1);
     for (const part of ["#12", "#70", "#21", "実装A", "判定: BLOCKED", "実機の結果が無い", "https://github.com/o/r/pull/70", runDir]) {
       assert.ok(posts[0].includes(part), `本文に ${part} が無い: ${posts[0]}`);
@@ -1563,8 +1567,8 @@ test("レビュー失敗の判断依頼: 印は仕様に書く（PR・sub-issue�
   const { calls, round } = rdWorld({ path: "limit", runDir: rdRunDir(BLOCKED_REPORT) });
   await round();
   const comments = calls.filter((c) => c.startsWith("comment "));
-  assert.equal(comments.length, 1);
-  assert.ok(comments[0].startsWith("comment #12 "), comments[0]);
+  assert.equal(comments.length, 2);
+  assert.ok(comments.every((c) => c.startsWith("comment #12 ")), comments.join("\n"));
 });
 
 // ---- 修正のセッションの停止の判断依頼: 同じ本文の項目（PR・sub-issue・判定・判定できなかった理由・レポートの場所）に、工程・タブ・画面の行が加わる ----
@@ -1575,7 +1579,7 @@ test("修正のセッションの停止の判断依頼: 仕様に印を書いて
   const runDir = rdRunDir(BLOCKED_REPORT);
   const { calls, posts, round } = rdWorld({ path: "stall", runDir, sessions: stallSessions(["許可を待っている", "y/n"]) });
   await round();
-  assert.deepEqual(calls, [`comment #12 ${RD_STALL_MARKER}`, "post /api/v10/channels/555/messages"]);
+  assert.deepEqual(calls, [`comment #12 ${RD_STALL_MARKER}`, "post /api/v10/channels/555/messages", "comment #12 案内役: Discord に判断依頼を送った（#70 review-fix のセッションの停止 / スレッド 555 / メッセージ M）"]);
   for (const part of ["PR: #70", "sub-issue: #21", "判定: BLOCKED", "実機の結果が無い", runDir, "review-fix #70", "工程: review-fix", "許可を待っている", "入力待ち"]) {
     assert.ok(posts[0].includes(part), `本文に ${part} が無い: ${posts[0]}`);
   }
@@ -1633,4 +1637,26 @@ test("close-tab: close が失敗したら印を書かずに例外にする（次
   });
   await assert.rejects(execute({ kind: "close-tab", key: "close-tab:term_1", issue: 12, step: "to-tickets", handle: "term_1", gone: false }), /orca down/);
   assert.deepEqual(calls, []);
+});
+
+test("record-decision-answer: 判断依頼の印と同じ issue（仕様か map）に答えた印だけを書き、Discord には送らない", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    discord: new Proxy({}, { get: () => () => assert.fail("Discord は呼ばない") }),
+    cwd: "/x", repo: REPO,
+  });
+  await execute({ kind: "record-decision-answer", key: "k1", spec: 12, issue: 21, cause: "takt の ABORT" });
+  await execute({ kind: "record-decision-answer", key: "k2", map: 30, issue: 30, cause: "霧の残り" });
+  assert.deepEqual(calls, ["comment #12 案内役: 判断依頼に答えた（#21 takt の ABORT）", "comment #30 案内役: 判断依頼に答えた（#30 霧の残り）"]);
+});
+
+test("判断依頼の答え（往復）: 送った後の印のメッセージに本人が返信すると、次の周で答えた印を仕様に書き、その後は何周しても書き直さない", async () => {
+  const { calls, round } = decisionWorld(undefined, { M1: { replies: [{ userId: "U", content: "直して流し直す" }], reactions: [] } });
+  await round();
+  await round(new Set());
+  await round(new Set());
+  assert.deepEqual(calls.filter((c) => c.startsWith("comment ")).slice(-1), ["comment #12 案内役: 判断依頼に答えた（#21 takt の ABORT）"]);
+  assert.equal(calls.filter((c) => c.includes("判断依頼に答えた")).length, 1);
+  assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 1);
 });
