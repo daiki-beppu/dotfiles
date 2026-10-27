@@ -15,6 +15,8 @@
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
 // - 状態はファイルに持たず、毎周 takt list と GitHub から読み直す。止めて流し直しても二重には積まない。
+// - repo の受け口（sequence-inbox.mjs）を開き、毎周そこに届いた issue を並びの後ろに足す（起動の入口が、動いている takt-sequence があれば新しいペインを開かずに足す）。
+//   終わる前に受け口を閉じ、閉じる前に届いていた issue があれば開き直して続ける。別の takt-sequence が受け口を持っていれば、受け口なしで流す。
 // 人・エージェントは start-sequence.mjs で起動する（repo root で。desk の案内役のペインの下に開く。引数は同じ）:
 //   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
 // このファイルを直に流すのは、start-sequence.mjs と guide の takt.mjs（startTaktSequence）だけ。印の環境変数 LAUNCHER_ENV が無ければ、
@@ -28,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
 import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
+import { closeInbox, inboxDirOf, openInbox, takeFromInbox } from "./sequence-inbox.mjs";
 
 const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
 if (!process.env[LAUNCHER_ENV]) {
@@ -194,27 +197,51 @@ async function enqueue(n) {
   event(n, `投入: ${label(n)}`);
 }
 
+// 並びに無い issue を後ろに足し、対象の 1 行を出す（起動時は「対象」、受け口から届いたものは「追加」）
+function addIssues(ns, tasks, word) {
+  for (const n of ns) {
+    if (issues.includes(n)) continue;
+    issues.push(n);
+    const issue = gh(["issue", "view", n, "--json", "title,state"]);
+    titles.set(n, issue.title);
+    const t = tasksFor(tasks, n)[0];
+    log(`${word}: ${label(n)}（${t ? t.kind : issue.state === "CLOSED" ? "issue クローズ済み" : "未投入"}）`);
+  }
+}
+
+const inbox = inboxDirOf(cwd);
+const self = { pid: process.pid, handle: process.env.ORCA_TERMINAL_HANDLE };
+let ownsInbox = inbox !== null && openInbox(inbox, self);
+const release = () => { if (ownsInbox) { ownsInbox = false; return closeInbox(inbox); } return []; };
+// Ctrl-C やタブを閉じたときも受け口を残さない（残っても owner の pid が死んでいれば、次の起動が開き直す）
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { release(); process.exit(130); });
+
 let code = 1;
 let errors = 0;
 try {
-  const startTasks = listTasks();
-  for (const n of issues) {
-    const issue = gh(["issue", "view", n, "--json", "title,state"]);
-    titles.set(n, issue.title);
-    const t = tasksFor(startTasks, n)[0];
-    log(`対象: ${label(n)}（${t ? t.kind : issue.state === "CLOSED" ? "issue クローズ済み" : "未投入"}）`);
-  }
+  const initial = issues.splice(0);
+  addIssues(initial, listTasks(), "対象");
   for (;;) {
     try {
       const tasks = listTasks();
+      if (ownsInbox) addIssues(takeFromInbox(inbox), tasks, "追加");
       const stages = new Map(issues.map((n) => [n, stage(n, tasks)]));
       const all = [...stages.values()];
-      if (all.every((s) => s === "done")) { log("全件マージ完了"); code = 0; break; }
-      if (!all.includes("waiting")) {
+      let end = null;
+      if (all.every((s) => s === "done")) end = { line: "全件マージ完了", code: 0 };
+      else if (!all.includes("waiting")) {
         const next = issues.find((n) => stages.get(n) === "new" && ready(n));
         if (next) await enqueue(next);
         else if (all.includes("manual") && !all.includes("stuck")) { /* 手で対応中の PR のマージを待つ */ }
-        else { log(all.includes("stuck") ? "停止: 人の手が要る issue がある" : "停止: 積める issue が無い（依存が未解除か help wanted）"); break; }
+        else end = { line: all.includes("stuck") ? "停止: 人の手が要る issue がある" : "停止: 積める issue が無い（依存が未解除か help wanted）", code: 1 };
+      }
+      if (end !== null) {
+        // 終わる前に受け口を閉じる。閉じる前に届いていた issue があれば、開き直して次の周で扱う
+        const left = release();
+        if (left.length === 0) { log(end.line); code = end.code; break; }
+        ownsInbox = openInbox(inbox, self);
+        addIssues(left, tasks, "追加");
+        continue;
       }
       errors = 0;
     } catch (e) {
@@ -225,6 +252,8 @@ try {
     await sleep(Number(opts.interval) * 1000);
   }
 } finally {
+  const left = release();
+  if (left.length > 0) log(`受け取ったが扱わずに終わった: ${left.map((n) => `#${n}`).join(" ")}`);
   await client.close();
 }
 process.exit(code);

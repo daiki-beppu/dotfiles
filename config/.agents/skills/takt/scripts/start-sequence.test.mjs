@@ -20,10 +20,10 @@ const fakeOrca = () => {
 const opt = (args, name) => args[args.indexOf(name) + 1];
 const guide = (over = {}) => ({ pid: "101", cwd: "/repo", command: "node /x/guide/scripts/guide.mjs o/r --terminal term_guide --from 5", ...over });
 const ARGS = ["701", "702", "--workflow", "takt-default", "--base", "develop", "--interval", "60", "--fix-wait", "15"];
-const start = (processes, args = ARGS, watch = undefined, align = undefined) => {
+const start = (processes, args = ARGS, watch = undefined, align = undefined, append = () => null) => {
   const { calls, run } = fakeOrca();
   const lines = [];
-  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, watch, align, run, log: (s) => lines.push(s) });
+  const handle = startSequence({ root: "/repo", repo: "o/r", args, processes, watch, align, run, append, log: (s) => lines.push(s) });
   return { handle, calls, lines };
 };
 
@@ -122,4 +122,13 @@ test("checkSequenceArgs: issue の並びと --workflow・--base・--interval・-
   assert.equal(checkSequenceArgs(["701", "--merge"]), null);
   assert.equal(checkSequenceArgs(["701", "--workflow"]), null);
   assert.equal(checkSequenceArgs(["701", "--fix-wait", "0"]), null);
+});
+
+test("repo に takt-sequence が動いていれば、ペインを開かずにそこへ issue を足し、足した先とオプションを使わないことを 1 行出す", () => {
+  const append = (cwd, issues) => (assert.equal(cwd, "/repo"), assert.deepEqual(issues, ["701", "702"]), { handle: "term_running" });
+  const { handle, calls, lines } = start([guide()], ARGS, undefined, undefined, append);
+  assert.equal(calls.length, 0);
+  assert.equal(handle, "term_running");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /動いている takt-sequence（term_running）に足した（オプションは動いている takt-sequence のものを使う）/);
 });

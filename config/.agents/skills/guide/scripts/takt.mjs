@@ -1,8 +1,10 @@
 // takt アダプタ。タスクの一覧を読み、takt-sequence を Orca の新しいターミナルタブ（案内役のペインがあればその下のペイン）で起動する（終わりは待たず、handle を返す）。
+// repo に takt-sequence が動いていれば、新しく起動せずにその受け口へ issue を足し、そのペインの handle を返す。
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { appendToInbox, inboxDirOf } from "../../takt/scripts/sequence-inbox.mjs";
 import { listTasks } from "../../takt/scripts/takt-list.mjs";
 import { SEQUENCE_DONE, sequenceTabTitle } from "./decide.mjs";
 import { handleOf, runOrca } from "./orca-agent.mjs";
@@ -50,7 +52,11 @@ export const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
 
 // takt-sequence の後に SEQUENCE_DONE の行を出す。タブは閉じずにシェルへ戻るので、終わったことはこの行で見分ける。
 // terminal（案内役の自分のペインの handle。desk.mjs が --terminal で渡す）があれば、新しいタブではなくそのペインを direction（既定は下）へ分割して起動する。
-export function startTaktSequence({ cwd, repo, issues, terminal, direction = SPLIT_DOWN }, run = runOrca) {
+// 先に append（既定は repo の受け口へ足す）を試し、動いている takt-sequence に足せたら起動せずに { handle, appended: true } を返す。
+// 足すのは issue の番号だけ（--workflow などのオプションは、動いている takt-sequence のものを使う）。
+export function startTaktSequence({ cwd, repo, issues, terminal, direction = SPLIT_DOWN }, run = runOrca, append = appendToRunning) {
+  const running = append(cwd, issueNumbers(issues));
+  if (running !== null) return { handle: running.handle, appended: true };
   const sequence = `${LAUNCHER_ENV}=1 ` + [`${TAKT_SCRIPTS}takt-node.sh`, `${TAKT_SCRIPTS}takt-sequence.mjs`, ...issues.map(String)].map(q).join(" ");
   const command = `${sequence}; echo "${SEQUENCE_DONE}（exit $?）"`;
   if (terminal !== undefined) {
@@ -59,6 +65,14 @@ export function startTaktSequence({ cwd, repo, issues, terminal, direction = SPL
   }
   const reply = run(["terminal", "create", "--worktree", `path:${cwd}`, "--title", sequenceTabTitle(repo), "--json", "--command", command], { cwd });
   return { handle: handleOf(reply, "orca terminal create", "result.terminal.handle") };
+}
+
+// takt-sequence の引数から issue の番号だけを取り出す（`--interval 60` などのオプションの値は数えない）
+const issueNumbers = (args) => args.map(String).filter((a, i, all) => /^#?\d+$/.test(a) && !all[i - 1]?.startsWith("--")).map((a) => a.replace(/^#/, ""));
+
+function appendToRunning(cwd, issues) {
+  const dir = inboxDirOf(cwd);
+  return dir === null ? null : appendToInbox(dir, issues);
 }
 
 // 対象 issue の takt タスクの worktree にある `.takt/runs`（実在するものだけ）。knowledge に素材として渡す。
