@@ -584,3 +584,17 @@ test("dry-run: 判断依頼に本人が答えたら、答えたと記録する�
   assert.ok(logs.includes("行動: 仕様 #12 の #12（formal-spec の検証失敗）の判断依頼に本人が答えたと記録する"), logs.join("\n"));
   assert.ok(logs.includes("行動: map #30 の #30（霧の残り）の判断依頼に本人が答えたと記録する"), logs.join("\n"));
 });
+
+test("dry-run: 閉じた仕様と閉じた map のスレッドのアーカイブを、それぞれの行で出す", async () => {
+  const logs = [];
+  const by = (...bodies) => bodies.map((body) => ({ author: VIEWER, body }));
+  const snap = {
+    repo: REPO, viewer: VIEWER, taktIssues: [],
+    issues: [
+      issue(12, { state: "CLOSED", labels: ["spec"], comments: by("案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）") }),
+      issue(30, { state: "CLOSED", labels: ["wayfinder:map"], comments: by("案内役: Discord に map のスレッドを立てた（スレッド 900）") }),
+    ],
+  };
+  await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.deepEqual(logs, ["行動: 閉じた仕様 #12 の Discord スレッドをアーカイブする", "行動: 閉じた map #30 の Discord スレッドをアーカイブする"]);
+});

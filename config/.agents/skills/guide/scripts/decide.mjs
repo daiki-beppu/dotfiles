@@ -42,6 +42,8 @@
 //       （修正のセッション（review-fix）の停止。PR・sub-issue・head を扱った最新の merge タスクの reports を持つ）
 //     | { kind: "record-decision-answer", key, spec | map, issue, cause }
 //       （送った判断依頼（2 段目の印つき）のメッセージに本人の返信か ✅ がある。答えた印を判断依頼と同じ issue に書く。snapshot.decisionAnswers: { [messageId]: { replies, reactions } }）
+//     | { kind: "archive-thread", key, issue, threadId, subject: "仕様" | "map" }
+//       （閉じた仕様の承認依頼のスレッド・閉じた map のスレッドに、アーカイブした印が無い。印はその issue に書く）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -197,10 +199,9 @@ const isSpec = (issue) => hasLabel(issue, "spec");
 
 // 扱う仕様: OPEN で spec、fromSpec の指定があれば番号がそれ以上。番号の昇順。
 // 範囲の外の仕様は、承認依頼・to-tickets・takt-sequence・学び・判断依頼のどれにも出さない。
+const inSpecRange = (snapshot, i) => isSpec(i) && (snapshot.fromSpec === undefined || i.number >= snapshot.fromSpec);
 export const openSpecs = (snapshot) =>
-  snapshot.issues
-    .filter((i) => i.state === "OPEN" && isSpec(i) && (snapshot.fromSpec === undefined || i.number >= snapshot.fromSpec))
-    .sort((a, b) => a.number - b.number);
+  snapshot.issues.filter((i) => i.state === "OPEN" && inSpecRange(snapshot, i)).sort((a, b) => a.number - b.number);
 
 // 送り済みの承認依頼（viewer の「送った」マーカー）のスレッドとメッセージの ID。無ければ null。
 export function sentApprovalRequest(issue, viewer) {
@@ -1303,6 +1304,33 @@ function decideCloseTabs(snapshot, dispatched) {
   return actions;
 }
 
+// 閉じた仕様・map の Discord スレッドをアーカイブした印。閉じ括弧まで含めて照合する。スレッドの持ち主の issue に書く。
+export const archivedThreadMarker = (threadId) => `案内役: Discord のスレッドを閉じた（スレッド ${threadId}）`;
+
+// 閉じた仕様（fromSpec の範囲内）と閉じた map の、承認依頼・map のスレッドをアーカイブする。チャンネルの一覧から片付けるため。
+// 印は後に書く（アーカイブし直しは害が無い）。人がアーカイブを戻しても、印があるので繰り返さない。
+function decideArchiveThreads(snapshot, dispatched) {
+  const { viewer } = snapshot;
+  const actions = [];
+  for (const issue of snapshot.issues) {
+    if (issue.state !== "CLOSED") continue;
+    let threadId = null;
+    let subject;
+    if (inSpecRange(snapshot, issue)) {
+      threadId = sentApprovalRequest(issue, viewer)?.threadId ?? null;
+      subject = "仕様";
+    } else if (hasLabel(issue, "wayfinder:map")) {
+      threadId = mapThread(issue, viewer);
+      subject = "map";
+    }
+    if (threadId === null || markers(issue, viewer).includes(archivedThreadMarker(threadId))) continue;
+    const key = `archive-thread:${threadId}`;
+    if (dispatched.has(key)) continue;
+    actions.push({ kind: "archive-thread", key, issue: issue.number, threadId, subject });
+  }
+  return actions.sort((a, b) => a.issue - b.issue);
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -1366,9 +1394,10 @@ export function decide(snapshot) {
       });
     }
   }
-  // 閉じるのを先に出す。後ろの行動（仮決めの投稿など）が多い周でも、終わったタブが周の終わりまで残らないように。
+  // 閉じるのを先に出す。後ろの行動（仮決めの投稿など）が多い周でも、終わったタブ・スレッドが周の終わりまで残らないように。
   return [
     ...decideCloseTabs(snapshot, dispatched),
+    ...decideArchiveThreads(snapshot, dispatched),
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideToSpec(snapshot, dispatched),
