@@ -5,6 +5,8 @@ const TEXT_CHANNEL = 0;
 const PUBLIC_THREAD = 11;
 const MAX_CONTENT = 2000;
 const EMOJIS = ["✅", "❌"];
+// 問いの無い判断依頼の末尾に添える案内。返信か ✅ で、案内役が答えた印を書き、状況の一覧の判断待ちから外す。
+const ANSWER_GUIDE = "\n答えたら、このメッセージに返信する（返信のメンション（@）はオンのまま）か ✅ を押してください。状況の一覧の判断待ちから外れます。";
 
 // 429（レート制限）は、応答の retry_after（秒。無ければ Retry-After ヘッダ）だけ待ってやり直す。続けば RATE_LIMIT_RETRIES 回で諦める。
 const RATE_LIMIT_RETRIES = 3;
@@ -122,7 +124,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         const hasScreen = tail !== undefined && tail.length > 0;
         const fence = "```";
         const screenFrame = hasScreen ? `\n画面の最後の行:\n${fence}\n\n${fence}` : "";
-        const space = Math.max(0, MAX_CONTENT - head.length - facts.length - reportLine.length - undecidableLabel.length - screenFrame.length - "理由: ".length);
+        const space = Math.max(0, MAX_CONTENT - head.length - facts.length - reportLine.length - ANSWER_GUIDE.length - undecidableLabel.length - screenFrame.length - "理由: ".length);
         const parts = 1 + (undecidable === undefined ? 0 : 1) + (hasScreen ? 1 : 0);
         const shownCause = cut(reason, Math.floor(space / parts));
         const shownUndecidable = undecidable === undefined ? "" : `${undecidableLabel}${cut(undecidable, Math.floor((space - shownCause.length) / (parts - 1)))}`;
@@ -130,13 +132,13 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         // 画面の中に ``` が出てもコードブロックが崩れないよう、画面の中の ``` は ˋˋˋ に置き換える。
         const screen = hasScreen && screenRoom > 0 ? `\n画面の最後の行:\n${fence}\n${cut(tail.join("\n").replaceAll(fence, "ˋˋˋ"), screenRoom)}\n${fence}` : "";
         const posted = await call("POST", `/channels/${threadId}/messages`, {
-          content: `${head}${facts}理由: ${shownCause}${shownUndecidable}${screen}${reportLine}`,
+          content: `${head}${facts}理由: ${shownCause}${shownUndecidable}${screen}${reportLine}${ANSWER_GUIDE}`,
           allowed_mentions: mentions,
         });
         return { messageId: posted.id };
       }
-      // 問い（grilling の判断依頼）があれば、本人が返信で答えられるよう案内を添える。特権インテントを使わない Bot は、メンションの無い返信の本文を受け取れないので、条件も伝える。
-      const replyGuide = question === undefined ? "" : "\nこのメッセージに返信で答えてください（本人の返信を ticket に書き戻して、止まったタブへ流し込みます）。返信のメンション（@）をオンのまま返信するか、Bot をメンションしてください。メンションの無い返信は読めません。";
+      // 問い（grilling の判断依頼）があれば、本人が返信で答えられるよう案内を添える（無ければ答えた印のための案内）。特権インテントを使わない Bot は、メンションの無い返信の本文を受け取れないので、条件も伝える。
+      const replyGuide = question === undefined ? ANSWER_GUIDE : "\nこのメッセージに返信で答えてください（本人の返信を ticket に書き戻して、止まったタブへ流し込みます）。返信のメンション（@）をオンのまま返信するか、Bot をメンションしてください。メンションの無い返信は読めません。";
       const questionLabel = question === undefined ? "" : "問い:\n\n"; // 問いの後ろの改行を含める
       // 2000 文字の上限で切れるのは問い・理由・画面だけにする（工程・仕様・タブ・URL・レポートの場所を必ず残す）。
       const room = Math.max(0, MAX_CONTENT - head.length - reportLine.length - replyGuide.length - questionLabel.length - "理由: ".length);

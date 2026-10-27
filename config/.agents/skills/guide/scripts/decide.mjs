@@ -40,6 +40,8 @@
 //       （Orca で起動した工程のセッションが、結果を GitHub に出さないまま止まった。タブの名前と画面の最後の行を持つ。reports は無い）
 //     | { kind: "request-decision", key, spec, issue: pr, cause, title, threadId, reason, step, tab, tail, pr, subIssue, reports }
 //       （修正のセッション（review-fix）の停止。PR・sub-issue・head を扱った最新の merge タスクの reports を持つ）
+//     | { kind: "record-decision-answer", key, spec | map, issue, cause }
+//       （送った判断依頼（2 段目の印つき）のメッセージに本人の返信か ✅ がある。答えた印を判断依頼と同じ issue に書く。snapshot.decisionAnswers: { [messageId]: { replies, reactions } }）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -101,14 +103,41 @@ export const stallCause = (step) => `${step} のセッションの停止`;
 // 子がすべて閉じたのに霧が残った map の判断依頼の原因。
 export const FOG_CAUSE = "霧の残り";
 export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
-// decisionMarker の読み戻し（番号と原因）。状況の表示が、送った判断依頼を数えるのに使う。
-export const DECISION_MARK = /^案内役: Discord に判断依頼を送る（#(\d+) (.+)）$/;
+// decisionMarker の読み戻し（番号と原因）。
+const DECISION_MARK = /^案内役: Discord に判断依頼を送る（#(\d+) (.+)）$/;
+// 送った後の印（2 段目。メッセージの ID は本人の返信・✅ を読むのに使う）と、答えた印。どちらも送る前の印と同じ issue に書く。
+// 答えた印は本人が GitHub に手で書いてもよい（gh の認証ユーザーが本人なので、viewer の印として数える）。
+export const decisionSentMarker = (issue, cause, threadId, messageId) =>
+  `案内役: Discord に判断依頼を送った（#${issue} ${cause} / スレッド ${threadId} / メッセージ ${messageId}）`;
+export const decisionAnsweredMarker = (issue, cause) => `案内役: 判断依頼に答えた（#${issue} ${cause}）`;
+const DECISION_SENT = /^案内役: Discord に判断依頼を送った（#(\d+) (.+?) \/ スレッド ([^\s/）]+) \/ メッセージ ([^\s/）]+)）$/;
+// 手で書いた印の末尾の空白・改行は許す。
+const DECISION_ANSWERED = /^案内役: 判断依頼に答えた（#(\d+) (.+)）\s*$/;
+const GRILLING_CAUSE = /^grilling の問い /;
+
+// subject（仕様・map）に送った判断依頼を、(N, 原因) ごとに { issue, cause, sent, answered } で返す。sent は 2 段目の印のスレッドとメッセージ（無ければ null）。
+// 最後の送る前の印より後の印だけを数える（印を消して送り直した回を、前の回の答えで外さない）。grilling の問いは ticket の別の 3 段で扱うので数えない。
+export function decisionRequests(subject, viewer) {
+  const byKey = new Map();
+  for (const body of markers(subject, viewer)) {
+    let m;
+    if ((m = DECISION_SENT.exec(body))) {
+      const d = byKey.get(`${m[1]} ${m[2]}`);
+      if (d !== undefined) d.sent = { threadId: m[3], messageId: m[4] };
+    } else if ((m = DECISION_ANSWERED.exec(body))) {
+      const d = byKey.get(`${m[1]} ${m[2]}`);
+      if (d !== undefined) d.answered = true;
+    } else if ((m = DECISION_MARK.exec(body)) && !GRILLING_CAUSE.test(m[2])) {
+      byKey.set(`${m[1]} ${m[2]}`, { issue: Number(m[1]), cause: m[2], sent: null, answered: false });
+    }
+  }
+  return [...byKey.values()];
+}
 
 // grilling の不可逆な判断（AskUserQuestion の hook の入力待ち）の 3 段。印はすべて ticket に書く。S は停止の識別子（agentWait.since）、t は ticket の番号。
 // 送る前 → 送った後（スレッドとメッセージの ID）→ 書き戻し（回答の本文つき）→ 流し込む前。閉じ括弧まで含めて照合する。
 export const grillingSendingMarker = (ticket, since) => decisionMarker(ticket, `grilling の問い ${since}`);
-export const grillingSentMarker = (ticket, since, threadId, messageId) =>
-  `案内役: Discord に判断依頼を送った（#${ticket} grilling の問い ${since} / スレッド ${threadId} / メッセージ ${messageId}）`;
+export const grillingSentMarker = (ticket, since, threadId, messageId) => decisionSentMarker(ticket, `grilling の問い ${since}`, threadId, messageId);
 export const grillingWrittenMarker = (ticket, since, answer) => `案内役: Discord の回答を書き戻した（#${ticket} grilling の問い ${since}）\n\n${answer}`;
 export const grillingInjectMarker = (ticket, since) => `案内役: 回答をタブに流し込む（#${ticket} grilling の問い ${since}）`;
 const GRILLING_SENDING = /^案内役: Discord に判断依頼を送る（#(\d+) grilling の問い (\d+)）$/;
@@ -855,6 +884,39 @@ function decideGrillingAnswers(snapshot, dispatched) {
   return actions;
 }
 
+// 答えを待つ判断依頼。扱う仕様と map（保留を除く）に送った、2 段目の印（メッセージ）があり、答えた印が無いもの。
+// 2 段目の印が無い判断依頼（送信の途中で止まった、この印より前の版で送った）は読まない。本人が答えた印を手で書けば外れる。
+function pendingDecisionAnswers(snapshot) {
+  const pending = [];
+  for (const [subjects, field] of [[openSpecs(snapshot), "spec"], [openMaps(snapshot), "map"]]) {
+    for (const subject of subjects) {
+      for (const { issue, cause, sent, answered } of decisionRequests(subject, snapshot.viewer)) {
+        if (sent !== null && !answered) pending.push({ [field]: subject.number, issue, cause, ...sent });
+      }
+    }
+  }
+  return pending;
+}
+
+// 本人の返信と ✅ を読むべき判断依頼のスレッドとメッセージ。
+export const decisionAnswersToRead = (snapshot) => pendingDecisionAnswers(snapshot).map(({ threadId, messageId }) => ({ threadId, messageId }));
+
+// 判断依頼のメッセージに本人の返信（本文が空でないもの）か ✅ があれば、答えた印を書く。状況の一覧の判断待ちから外すためで、他の行動は変えない。
+function decideDecisionAnswers(snapshot, dispatched) {
+  const { discordUserId } = snapshot;
+  if (discordUserId == null) return [];
+  const actions = [];
+  for (const { threadId, messageId, ...target } of pendingDecisionAnswers(snapshot)) {
+    const key = `record-decision-answer:${target.spec ?? target.map}:${target.issue}:${target.cause}`;
+    if (dispatched.has(key)) continue;
+    const { replies = [], reactions = [] } = snapshot.decisionAnswers?.[messageId] ?? {};
+    const replied = replies.some((r) => r.userId === discordUserId && typeof r.content === "string" && r.content.trim() !== "");
+    const approved = reactions.some((r) => r.userId === discordUserId && r.emoji === APPROVE_EMOJI);
+    if (replied || approved) actions.push({ kind: "record-decision-answer", key, ...target });
+  }
+  return actions;
+}
+
 // 差し戻しを読むべき仮決め。open で保留でない map の子のうち、閉じた ticket の、流した印があり、まだ書き戻していない仮決め。
 // open の間は何も出さない（閉じてから開き直す）ので読まない。同じ ticket が複数の map の子なら最初の map だけ。
 function pendingRejections(snapshot) {
@@ -1314,6 +1376,7 @@ export function decide(snapshot) {
     ...decideMapNotices(snapshot, dispatched),
     ...decideProvisionalRejections(snapshot, dispatched),
     ...decideGrillingAnswers(snapshot, dispatched),
+    ...decideDecisionAnswers(snapshot, dispatched),
     ...decideDecisionRequests(snapshot, dispatched),
     ...decideSessionStalls(snapshot, dispatched),
     ...decideSequenceStalls(snapshot, dispatched),

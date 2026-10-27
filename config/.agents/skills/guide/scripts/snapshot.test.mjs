@@ -581,3 +581,37 @@ test("修正のセッション: 観測の結果から decide が、原因 review
   assert.equal(stalls[0].issue, 70);
   assert.equal(stalls[0].threadId, "555");
 });
+
+// ---- 判断依頼の答えの読み取り ----
+
+test("decisionAnswers: 送った印があり答えた印の無い判断依頼だけ、本人の返信とリアクションを読み、メッセージの ID をキーに入れる", async () => {
+  const c = (body) => ({ author: VIEWER, body });
+  const spec = issue(12, {
+    comments: [
+      c("案内役: Discord に判断依頼を送る（#21 takt の ABORT）"), c("案内役: Discord に判断依頼を送った（#21 takt の ABORT / スレッド 555 / メッセージ M1）"),
+      c("案内役: Discord に判断依頼を送る（#22 takt の ABORT）"), c("案内役: Discord に判断依頼を送った（#22 takt の ABORT / スレッド 555 / メッセージ M2）"), c("案内役: 判断依頼に答えた（#22 takt の ABORT）"),
+      c("案内役: Discord に判断依頼を送る（#12 formal-spec の検証失敗）"),
+    ],
+  });
+  const closed = issue(13, { state: "CLOSED", comments: [c("案内役: Discord に判断依頼を送る（#23 takt の ABORT）"), c("案内役: Discord に判断依頼を送った（#23 takt の ABORT / スレッド 555 / メッセージ M3）")] });
+  const replyReads = [];
+  const reactionReads = [];
+  const replies = [{ userId: "U1", content: "流し直す" }];
+  const reactions = [{ emoji: "✅", userId: "U1" }];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readIssues: () => [spec, closed], readPullRequests: () => [], readComments: () => [] },
+    discord: {
+      readReactions: async (ref) => { reactionReads.push(ref); return reactions; },
+      readReplies: async (ref) => { replyReads.push(ref); return replies; },
+    },
+    taktTasks: () => [],
+    now: () => NOW,
+    observeSession: () => assert.fail("観測しない"),
+  });
+  const snap = await read();
+  assert.deepEqual(replyReads, [{ threadId: "555", messageId: "M1" }]);
+  assert.deepEqual(reactionReads, [{ threadId: "555", messageId: "M1" }]);
+  assert.deepEqual(snap.decisionAnswers, { M1: { replies, reactions } });
+  assert.deepEqual(decide(snap).filter((a) => a.kind === "record-decision-answer").map((a) => a.issue), [21]);
+});

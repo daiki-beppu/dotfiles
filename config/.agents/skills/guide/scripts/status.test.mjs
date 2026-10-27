@@ -86,6 +86,32 @@ test("仕様: 判断依頼の対象が片付いた（sub-issue が閉じた・�
   assert.equal(row(snapshot([refixed])).phase, "承認待ち");
 });
 
+const ABORT_SENDING = "案内役: Discord に判断依頼を送る（#22 takt の ABORT）";
+const ABORT_SENT = "案内役: Discord に判断依頼を送った（#22 takt の ABORT / スレッド 555 / メッセージ M1）";
+const ABORT_ANSWERED = "案内役: 判断依頼に答えた（#22 takt の ABORT）";
+const abortIssues = (decisionComments) => [
+  approvedSpec([TT_LAUNCHED, ...decisionComments]),
+  parent([{ number: 21, state: "CLOSED" }, { number: 22, state: "OPEN" }]),
+  issue(21, { state: "CLOSED" }),
+  issue(22),
+];
+
+test("仕様: 判断依頼に答えた印があれば、対象が止まったままでも判断待ちから外し、元の段階に戻す", () => {
+  const r = row(snapshot(abortIssues([ABORT_SENDING, ABORT_SENT, ABORT_ANSWERED])));
+  assert.equal(r.phase, "実装中");
+  assert.equal(r.detail, "親 #20 1/2 閉");
+});
+
+test("仕様: 本人が手で書いた答えた印（送った後の印の無い古い判断依頼）でも判断待ちから外す。答えた印が無ければ判断待ちのまま", () => {
+  assert.equal(row(snapshot(abortIssues([ABORT_SENDING, ABORT_ANSWERED]))).phase, "実装中");
+  assert.equal(row(snapshot(abortIssues([ABORT_SENDING, `${ABORT_ANSWERED}\r\n`]))).phase, "実装中");
+  assert.equal(row(snapshot(abortIssues([ABORT_SENDING, ABORT_SENT]))).phase, "判断待ち");
+});
+
+test("仕様: 答えた後に印を消して送り直した判断依頼は、前の答えでは外さない", () => {
+  assert.equal(row(snapshot(abortIssues([ABORT_ANSWERED, ABORT_SENDING]))).phase, "判断待ち");
+});
+
 test("仕様: fromSpec より前の仕様と、閉じた仕様は出さない", () => {
   const rows = boardOf(snapshot([issue(5, { labels: ["spec"] }), issue(12, { labels: ["spec"] }), issue(13, { labels: ["spec"], state: "CLOSED" })], { fromSpec: 10 }));
   assert.deepEqual(rows.map((r) => r.subject), ["仕様 #12"]);
@@ -119,6 +145,13 @@ test("map: grilling の問いを送って回答が書き戻されていなけれ
   const r = row(snapshot([map([{ number: 31, state: "OPEN" }]), ticket]), "map #30");
   assert.equal(r.phase, "判断待ち");
   assert.match(r.detail, /#31 grilling の問い/);
+});
+
+test("map: 判断依頼に答えた印があれば、霧が残っていても判断待ちから外す", () => {
+  const children = [{ number: 31, state: "CLOSED" }];
+  const foggy = (extra) => map(children, { body: "## Not yet specified\n- まだ\n", comments: by(MAP_THREAD, "案内役: Discord に判断依頼を送る（#30 霧の残り）", ...extra) });
+  assert.equal(row(snapshot([foggy([]), issue(31, { state: "CLOSED" })]), "map #30").phase, "判断待ち");
+  assert.equal(row(snapshot([foggy(["案内役: 判断依頼に答えた（#30 霧の残り）"]), issue(31, { state: "CLOSED" })]), "map #30").phase, "霧の残り");
 });
 
 test("map: 保留の map は出さない", () => {

@@ -23,6 +23,7 @@ const DESCRIBE = {
   "create-map-thread": (a) => `map #${a.map} の Discord スレッドを立てる`,
   "notify-human-ticket": (a) => `map #${a.map} のスレッドに人が見る ticket #${a.ticket} を知らせる`,
   "request-map-decision": (a) => `map #${a.map} のスレッドに ticket #${a.issue}（${a.cause}）の判断依頼を送る`,
+  "record-decision-answer": (a) => `${a.spec === undefined ? `map #${a.map}` : `仕様 #${a.spec}`} の #${a.issue}（${a.cause}）の判断依頼に本人が答えたと記録する`,
   "request-grilling-decision": (a) => `map #${a.map} のスレッドに ticket #${a.ticket} の grilling の問い（判断依頼）を送る`,
   "post-provisional-decision": (a) => `map #${a.map} のスレッドに ticket #${a.ticket} の仮決め ${a.n} を流す`,
   "reject-provisional-decision": (a) => `ticket #${a.ticket} の仮決め ${a.provisionals.map((p) => p.n).join(",")} の差し戻しを書き戻し、ticket を開き直して claim を外す`,

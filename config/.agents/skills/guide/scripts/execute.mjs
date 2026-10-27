@@ -13,7 +13,9 @@ import {
   MARKER_TO_SPEC_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
   closedTabMarker,
+  decisionAnsweredMarker,
   decisionMarker,
+  decisionSentMarker,
   fogTicketMarker,
   grillingInjectMarker,
   grillingSendingMarker,
@@ -88,7 +90,7 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const report = action.pr === undefined ? {} : readReviewReport(action.reports);
       // マーカーは送信より先に書く（送信の成否が不明なまま流し直しても二度送らないため）。
       github.comment(action.spec, decisionMarker(action.issue, action.cause));
-      await discord.sendDecisionRequest({
+      const { messageId } = await discord.sendDecisionRequest({
         threadId: action.threadId,
         spec: action.spec,
         issue: action.issue,
@@ -104,11 +106,13 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         verdict: report.verdict,
         undecidable: report.undecidable,
       });
+      // 送った後の印（2 段目）。メッセージへの本人の返信・✅ を、次の周から答えとして読む。
+      github.comment(action.spec, decisionSentMarker(action.issue, action.cause, action.threadId, messageId));
     } else if (action.kind === "request-review-decision") {
       // レポートの読み取りは副作用が無いので印より先に読む。印は PR の番号で仕様に書き、送信より先（成否が不明なまま流し直しても二度送らない）。
       const { verdict, undecidable } = readReviewReport(action.reports);
       github.comment(action.spec, decisionMarker(action.pr, action.cause));
-      await discord.sendDecisionRequest({
+      const { messageId } = await discord.sendDecisionRequest({
         threadId: action.threadId,
         spec: action.spec,
         issue: action.pr,
@@ -121,6 +125,7 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         verdict,
         undecidable,
       });
+      github.comment(action.spec, decisionSentMarker(action.pr, action.cause, action.threadId, messageId));
     } else if (action.kind === "create-map-thread") {
       // 承認依頼と同じ 2 段の印を map に書く。スレッドの ID は作成の応答からしか取れない。
       const channelId = await discord.ensureChannel(repo.split("/")[1].toLowerCase());
@@ -160,7 +165,7 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
     } else if (action.kind === "request-map-decision") {
       // 仕様の判断依頼と同じ印の形を、map に書く。
       github.comment(action.map, decisionMarker(action.issue, action.cause));
-      await discord.sendDecisionRequest({
+      const { messageId } = await discord.sendDecisionRequest({
         threadId: action.threadId,
         map: action.map,
         issue: action.issue,
@@ -171,6 +176,10 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         tab: action.tab,
         tail: action.tail,
       });
+      github.comment(action.map, decisionSentMarker(action.issue, action.cause, action.threadId, messageId));
+    } else if (action.kind === "record-decision-answer") {
+      // 判断依頼の印と同じ issue（仕様か map）に書く。Discord には何も送らない。
+      github.comment(action.spec ?? action.map, decisionAnsweredMarker(action.issue, action.cause));
     } else if (action.kind === "request-grilling-decision") {
       // 送る前の印 → 問いつきで送信 → スレッドとメッセージの ID つきの印。印は送信より先（再起動しても再送しない）。
       github.comment(action.ticket, grillingSendingMarker(action.ticket, action.since));

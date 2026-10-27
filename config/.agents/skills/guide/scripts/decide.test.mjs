@@ -3660,3 +3660,73 @@ test("tabsToClose: 閉じた wayfinder の ticket・仕様ができた map の h
   assert.deepEqual(tabsToClose(spec), [{ issue: 20, step: "to-spec", handle: "term_s" }]);
   assert.deepEqual(D.mapSessionsToObserve(spec), []);
 });
+
+// ---- 判断依頼の答え: 送った印（メッセージ M）への本人の返信か ✅ で、答えた印を書く ----
+const DA_SENT = (n, cause, message = "M5") => `案内役: Discord に判断依頼を送った（#${n} ${cause} / スレッド 555 / メッセージ ${message}）`;
+const DA_ANSWERED = (n, cause) => `案内役: 判断依頼に答えた（#${n} ${cause}）`;
+const daSpec = (comments) => issue(12, { labels: ["spec"], comments: [byViewer(SENDING), byViewer(SENT()), ...comments.map(byViewer)] });
+const daMap = (comments) => issue(30, { labels: ["wayfinder:map"], comments: [byViewer(MT_CREATED()), ...comments.map(byViewer)] });
+const daAbort = [decisionMarker(21, "takt の ABORT"), DA_SENT(21, "takt の ABORT")];
+const answers = (actions) => actions.filter((a) => a.kind === "record-decision-answer");
+const daWorld = (issues, decisionAnswers) => snapshot(issues, { discordUserId: OWNER, ...(decisionAnswers === undefined ? {} : { decisionAnswers }) });
+
+test("decisionAnswersToRead: 送った印があり答えた印の無い、仕様と map の判断依頼だけのスレッドとメッセージを返す", () => {
+  const s = daWorld([
+    daSpec([...daAbort, decisionMarker(12, "formal-spec の検証失敗")]),
+    daMap([decisionMarker(31, "research のセッションの停止"), DA_SENT(31, "research のセッションの停止", "M6"), decisionMarker(30, "霧の残り"), DA_SENT(30, "霧の残り", "M7"), DA_ANSWERED(30, "霧の残り")]),
+  ]);
+  assert.deepEqual(D.decisionAnswersToRead(s), [{ threadId: "555", messageId: "M5" }, { threadId: "555", messageId: "M6" }]);
+});
+
+test("decisionAnswersToRead: 閉じた仕様・保留の map・fromSpec より前の仕様・送る前の印だけの判断依頼は読まない", () => {
+  const closed = daWorld([{ ...daSpec(daAbort), state: "CLOSED" }]);
+  const onHold = daWorld([{ ...daMap([decisionMarker(30, "霧の残り"), DA_SENT(30, "霧の残り")]), labels: ["wayfinder:map", "wayfinder:on-hold"] }]);
+  const before = { ...daWorld([daSpec(daAbort)]), fromSpec: 13 };
+  const unsent = daWorld([daSpec([decisionMarker(21, "takt の ABORT")])]);
+  for (const s of [closed, onHold, before, unsent]) assert.deepEqual(D.decisionAnswersToRead(s), []);
+});
+
+test("decisionAnswersToRead: grilling の問いの判断依頼は ticket の 3 段で扱うので読まない", () => {
+  const ticket = issue(31, { labels: ["wayfinder:grilling"], comments: [byViewer(decisionMarker(31, "grilling の問い 17")), byViewer(DA_SENT(31, "grilling の問い 17"))] });
+  const map = daMap([decisionMarker(31, "grilling の問い 17"), DA_SENT(31, "grilling の問い 17")]);
+  assert.deepEqual(D.decisionAnswersToRead(daWorld([{ ...map, subIssues: [{ number: 31, state: "OPEN" }] }, ticket])), []);
+  assert.deepEqual(answers(decide(daWorld([map, ticket], { M5: { replies: [{ userId: OWNER, content: "A" }], reactions: [] } }))), []);
+});
+
+test("判断依頼の答え: 本人の返信があれば、判断依頼の印と同じ仕様に答えた印を書く行動を出す", () => {
+  const s = daWorld([daSpec(daAbort)], { M5: { replies: [{ userId: OWNER, content: "直して流し直す" }], reactions: [] } });
+  assert.deepEqual(answers(decide(s)), [{ kind: "record-decision-answer", key: "record-decision-answer:12:21:takt の ABORT", spec: 12, issue: 21, cause: "takt の ABORT" }]);
+});
+
+test("判断依頼の答え: 本人の ✅ でも出す。map の判断依頼は map に書く", () => {
+  const s = daWorld([daMap([decisionMarker(30, "霧の残り"), DA_SENT(30, "霧の残り")])], { M5: { replies: [], reactions: [{ emoji: "✅", userId: OWNER }] } });
+  assert.deepEqual(answers(decide(s)), [{ kind: "record-decision-answer", key: "record-decision-answer:30:30:霧の残り", map: 30, issue: 30, cause: "霧の残り" }]);
+});
+
+test("判断依頼の答え: 本人以外の返信・本文が空の返信・本人の ❌・他人の ✅・読み出しなしでは出さない", () => {
+  for (const read of [
+    { replies: [{ userId: "U-other", content: "他人の答え" }], reactions: [] },
+    { replies: [{ userId: OWNER, content: "   " }], reactions: [] },
+    { replies: [], reactions: [{ emoji: "❌", userId: OWNER }] },
+    { replies: [], reactions: [{ emoji: "✅", userId: "U-other" }] },
+  ]) {
+    assert.deepEqual(answers(decide(daWorld([daSpec(daAbort)], { M5: read }))), [], JSON.stringify(read));
+  }
+  assert.deepEqual(answers(decide(daWorld([daSpec(daAbort)]))), []);
+  const noOwner = { ...daWorld([daSpec(daAbort)], { M5: { replies: [{ userId: OWNER, content: "A" }], reactions: [] } }), discordUserId: undefined };
+  assert.deepEqual(answers(decide(noOwner)), []);
+});
+
+test("判断依頼の答え: 答えた印（手で書いたものを含む）があれば読みも出しもしない。dispatched でも止める", () => {
+  const read = { M5: { replies: [{ userId: OWNER, content: "A" }], reactions: [] } };
+  const answered = daWorld([daSpec([...daAbort, DA_ANSWERED(21, "takt の ABORT")])], read);
+  assert.deepEqual(D.decisionAnswersToRead(answered), []);
+  assert.deepEqual(answers(decide(answered)), []);
+  const dispatched = { ...daWorld([daSpec(daAbort)], read), dispatched: ["record-decision-answer:12:21:takt の ABORT"] };
+  assert.deepEqual(answers(decide(dispatched)), []);
+});
+
+test("判断依頼の答え: 印を消して送り直した回は、前の回の答えた印では外れない", () => {
+  const resent = daSpec([...daAbort, DA_ANSWERED(21, "takt の ABORT"), decisionMarker(21, "takt の ABORT"), DA_SENT(21, "takt の ABORT", "M9")]);
+  assert.deepEqual(D.decisionAnswersToRead(daWorld([resent])), [{ threadId: "555", messageId: "M9" }]);
+});

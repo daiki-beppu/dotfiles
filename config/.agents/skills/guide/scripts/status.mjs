@@ -1,22 +1,19 @@
 // 案内役のペインに出す状況の一覧。スナップショットから、仕様と map ごとに「今どこにいるか」を 1 行ずつ作る純粋関数。
 // 判定の規則は decide.mjs の印の読み方を借りる（同じ印を別の正規表現で読み直さない）。表示だけで、行動は決めない。
 import {
-  CAUSE_FORMAL_SPEC, DECISION_MARK, FOG_CAUSE, MARKER_FORMAL_SPEC_LAUNCHING, MARKER_HANDED_PREFIX, MARKER_KNOWLEDGE_LAUNCHING, MARKER_KNOWLEDGE_STARTED,
-  closedTabMarker, hasFog, hasSpecOfMap, hasStepResult, isParentOf, knowledgePrOf, lastFormalSpec, latestLaunches, markers,
+  CAUSE_FORMAL_SPEC, FOG_CAUSE, MARKER_FORMAL_SPEC_LAUNCHING, MARKER_HANDED_PREFIX, MARKER_KNOWLEDGE_LAUNCHING, MARKER_KNOWLEDGE_STARTED,
+  closedTabMarker, decisionRequests, hasFog, hasSpecOfMap, hasStepResult, isParentOf, knowledgePrOf, lastFormalSpec, latestLaunches, markers,
   openMaps, openSpecs, pendingGrillingReplies, sentApprovalRequest, specOfMap, stallCause, ticketSessionsToObserve, ticketsStarted,
 } from "./decide.mjs";
 
 const STALL_SUFFIX = stallCause("");
 
-// 送った判断依頼のうち、まだ止まったままに見えるもの。印には「答えた」が無いので、対象の状態から判断する。
+// 送った判断依頼のうち、答えた印が無く、対象もまだ止まったままに見えるもの。
 // 対象が自分（仕様・map）なら原因ごとの resolved、PR なら OPEN の間、親なら sub-issue が残る間、他の issue なら OPEN の間。
 function pendingDecisions(subject, snapshot, resolvedSelf) {
   const pending = [];
-  for (const body of markers(subject, snapshot.viewer)) {
-    const m = DECISION_MARK.exec(body);
-    if (!m) continue;
-    const target = Number(m[1]);
-    const cause = m[2];
+  for (const { issue: target, cause, answered } of decisionRequests(subject, snapshot.viewer)) {
+    if (answered) continue;
     const pr = (snapshot.pullRequests ?? []).find((p) => p.number === target);
     const issue = snapshot.issues.find((i) => i.number === target);
     let open = true;
@@ -25,7 +22,7 @@ function pendingDecisions(subject, snapshot, resolvedSelf) {
     else if (issue !== undefined) open = (issue.subIssues ?? []).length > 0 ? issue.subIssues.some((s) => s.state === "OPEN") : issue.state === "OPEN";
     if (open) pending.push(`#${target} ${cause}`);
   }
-  return [...new Set(pending)];
+  return pending;
 }
 
 const parentsOf = (snapshot, spec) =>

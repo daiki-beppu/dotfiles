@@ -259,7 +259,8 @@ test("判断依頼: 理由が長くても 2000 文字以内に収め、止まっ
   const content = calls[0].body.content;
   assert.ok(content.length <= 2000);
   assert.ok(content.includes("#21") && content.includes("実装A") && content.includes("https://github.com/o/r/issues/21"));
-  assert.ok(content.endsWith("takt のレポート: /w/21/.takt/runs"));
+  assert.ok(content.includes("\ntakt のレポート: /w/21/.takt/runs\n"), content.slice(-200));
+  assert.ok(content.endsWith("状況の一覧の判断待ちから外れます。"));
   assert.ok(content.includes("ABORT"));
 });
 
@@ -324,7 +325,8 @@ test("判断依頼（レビュー失敗）: 判定できなかった理由と理
   const content = calls[0].body.content;
   assert.ok(content.length <= 2000, String(content.length));
   for (const part of ["#12", "#70", "#21", "実装A", "判定: BLOCKED", "https://github.com/o/r/pull/70"]) assert.ok(content.includes(part), `本文に ${part} が無い`);
-  assert.ok(content.endsWith("takt のレポート: /repo/.takt/runs/run-1"), content.slice(-80));
+  assert.ok(content.includes("\ntakt のレポート: /repo/.takt/runs/run-1\n"), content.slice(-200));
+  assert.ok(content.endsWith("状況の一覧の判断待ちから外れます。"));
   assert.ok(content.includes("r") && content.includes("u"), "理由と判定できなかった理由は切り詰めても残す");
 });
 
@@ -335,7 +337,7 @@ test("判断依頼（修正のセッションの停止）: tab と tail があ�
   const c = sent[0];
   assert.ok(c.length <= 2000, String(c.length));
   for (const part of ["PR: #70", "sub-issue: #21", "判定: BLOCKED", "review-fix #70", "画面の最後の行", "takt のレポート: /repo/.takt/runs/run-1"]) assert.ok(c.includes(part), part);
-  assert.ok(c.endsWith("/repo/.takt/runs/run-1"));
+  assert.ok(c.endsWith("状況の一覧の判断待ちから外れます。"));
 });
 
 test("判断依頼（レビュー失敗）: 判定できなかった理由が無い（undecidable を渡さない）とき、その行を作らない", async () => {
@@ -460,11 +462,19 @@ test("判断依頼（grilling の問い）: 問い・理由・画面が長くて
   for (const part of ["#21", "公開 API の名前", "https://github.com/o/r/issues/21", "wayfinder #21", "先頭の問い"]) assert.ok(content.includes(part), part);
 });
 
-test("判断依頼（grilling の問い）: 問いが無い既存の呼び出し（question なし）は本文に「問い」の欄も返信の案内も足さない", async () => {
+test("判断依頼（grilling の問い）: 問いが無い呼び出し（question なし）は「問い」の欄も書き戻しの案内も足さず、返信か ✅ で判断待ちから外れる案内を末尾に足す", async () => {
   const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
   await discord.sendDecisionRequest({ threadId: "T1", map: 20, issue: 21, title: "t", url: "u", reason: "入力待ち", step: "wayfinder", tab: "wayfinder #21", tail: ["x"] });
-  assert.ok(!calls[0].body.content.includes("問い:"), calls[0].body.content);
-  assert.ok(!calls[0].body.content.includes("返信"), calls[0].body.content);
+  const content = calls[0].body.content;
+  assert.ok(!content.includes("問い:"), content);
+  assert.ok(!content.includes("書き戻"), content);
+  assert.ok(content.endsWith("\n答えたら、このメッセージに返信する（返信のメンション（@）はオンのまま）か ✅ を押してください。状況の一覧の判断待ちから外れます。"), content);
+});
+
+test("判断依頼（レビュー失敗）: 返信か ✅ で判断待ちから外れる案内を末尾に足す", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M2" }) });
+  await discord.sendDecisionRequest(reviewRequest());
+  assert.ok(calls[0].body.content.endsWith("か ✅ を押してください。状況の一覧の判断待ちから外れます。"), calls[0].body.content);
 });
 
 test("readReplies: 判断依頼のメッセージへの返信（message_reference が一致）だけを、ID の昇順で { userId, content } にして返す", async () => {
