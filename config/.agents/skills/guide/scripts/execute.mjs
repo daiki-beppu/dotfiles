@@ -1,5 +1,6 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
 // 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・タブを閉じる）は注入する。
+// 行動は失敗すれば例外で止まる。やり直してよい失敗だけは { retry: 理由 } を返し、ループはその行動を済んだ扱いにしない。
 import {
   MARKER_APPROVAL_SENDING,
   MARKER_FORMAL_SPEC_LAUNCHING,
@@ -204,8 +205,15 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       github.comment(action.ticket, grillingInjectMarker(action.ticket, action.since));
       await sendToSession({ handle: action.handle, text: action.answer.replace(/\s*\r?\n\s*/g, " ").trim() });
     } else if (action.kind === "close-tab") {
-      // 閉じ直しは害が無い（閉じ済みのタブも ok で返る）ので、起動と逆に印は後に書く。close が失敗すれば印を書かずに止まる。
-      if (!action.gone) await closeTab({ cwd, handle: action.handle });
+      // 閉じ直しは害が無い（閉じ済みのタブも ok で返る）ので、起動と逆に印は後に書く。
+      // close の失敗は一時的なことが多いので止まらず、印を書かずに retry を返す（ループが次の周で閉じ直す）。
+      if (!action.gone) {
+        try {
+          await closeTab({ cwd, handle: action.handle });
+        } catch (e) {
+          return { retry: String(e.message).split("\n")[0] };
+        }
+      }
       github.comment(action.issue, closedTabMarker(action.step, action.handle));
     } else if (action.kind === "archive-thread") {
       // close-tab と同じく印は後に書く（アーカイブし直しは害が無い）。失敗すれば印を書かずに止まり、次に流したときにやり直す。

@@ -52,7 +52,11 @@ export async function runRound({ readSnapshot, execute, log, board = noop, statu
   for (const a of actions) {
     status(`実行中: ${describe(a)}`);
     log(`実行: ${describe(a)}`);
-    await execute(a);
+    const result = await execute(a);
+    if (result?.retry) {
+      log(`やり直し待ち: ${describe(a)}（${result.retry}）`);
+      continue;
+    }
     dispatched.add(a.key);
   }
   return actions;

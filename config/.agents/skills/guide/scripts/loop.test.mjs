@@ -50,6 +50,22 @@ const fakes = (over = {}) => {
   };
 };
 
+test("やり直し: execute が retry を返した行動は済んだ扱いにせず、ログに出して次の周でもう一度実行する", async () => {
+  let failures = 1;
+  const { calls, deps } = fakes({
+    execute: async (action) => {
+      calls.executed.push(action.key);
+      if (action.key === "to-tickets:12" && failures-- > 0) return { retry: "orca down" };
+    },
+  });
+  const dispatched = new Set();
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  await runRound(deps, dispatched);
+  assert.deepEqual(calls.executed, ["to-tickets:12", "to-tickets:30", "to-tickets:12"]);
+  assert.ok(calls.logs.some((l) => l.startsWith("やり直し待ち: ") && l.endsWith("（orca down）")));
+});
+
 test("二重にしない: 同じスナップショットで 2 周しても、行動ごとに execute は 1 回だけ", async () => {
   const { calls, deps } = fakes();
   const dispatched = new Set();
