@@ -609,3 +609,21 @@ test("429: やり直しても続けば、上限の回数で諦めて例外にす
   await assert.rejects(discord.ensureChannel("live-mindmap"), /Discord GET \/guilds\/G1\/channels が 429/);
   assert.equal(api.calls.length, 4);
 });
+
+// ---- 閉じた仕様・map のスレッドのアーカイブ ----
+
+test("アーカイブ: スレッドに PATCH /channels/<T> で { archived: true } を送る", async () => {
+  const { calls, discord } = adapter({ "PATCH /api/v10/channels/T1": json({ id: "T1", thread_metadata: { archived: true } }) });
+  await discord.archiveThread({ threadId: "T1" });
+  assert.deepEqual(calls.map((c) => [c.method, c.path, c.body]), [["PATCH", "/api/v10/channels/T1", { archived: true }]]);
+});
+
+test("アーカイブ: 人が消したスレッド（404）は済んだものとして例外にしない", async () => {
+  const { discord } = adapter({ "PATCH /api/v10/channels/T1": json({ message: "Unknown Channel" }, 404) });
+  await discord.archiveThread({ threadId: "T1" });
+});
+
+test("アーカイブ: 404 以外の失敗（権限不足など）は例外にする", async () => {
+  const { discord } = adapter({ "PATCH /api/v10/channels/T1": json({ message: "Missing Permissions" }, 403) });
+  await assert.rejects(discord.archiveThread({ threadId: "T1" }), /PATCH \/channels\/T1 が 403/);
+});

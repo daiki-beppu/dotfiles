@@ -30,6 +30,7 @@ const DESCRIBE = {
   "write-back-answer": (a) => `本人の返信を ticket #${a.ticket} のコメントに書き戻す`,
   "inject-answer": (a) => `ticket #${a.ticket} の回答をタブ ${shortHandle(a.handle)} に orca terminal send で流し込む`,
   "review-fix": (a) => `PR #${a.pr}（sub-issue #${a.issue}）の takt のレビューの失敗を直す review-fix を、head ブランチの worktree の Orca のタブで起動する`,
+  "archive-thread": (a) => `閉じた${a.subject === "map" ? " map" : "仕様"} #${a.issue} の Discord スレッドをアーカイブする`,
   "close-tab": (a) => `終わった ${a.step} のタブ（#${a.issue}）を${a.gone ? "閉じた記録だけ残す（既に無い）" : "閉じる"}`,
   knowledge: (a) => `仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,
 };

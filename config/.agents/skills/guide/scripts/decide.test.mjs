@@ -3730,3 +3730,45 @@ test("判断依頼の答え: 印を消して送り直した回は、前の回の
   const resent = daSpec([...daAbort, DA_ANSWERED(21, "takt の ABORT"), decisionMarker(21, "takt の ABORT"), DA_SENT(21, "takt の ABORT", "M9")]);
   assert.deepEqual(D.decisionAnswersToRead(daWorld([resent])), [{ threadId: "555", messageId: "M9" }]);
 });
+
+// ---- 閉じた仕様・map のスレッドのアーカイブ ----
+
+const archives = (actions) => actions.filter((a) => a.kind === "archive-thread");
+const APPROVAL_SENT_555 = byViewer("案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）");
+const MAP_THREAD_900 = byViewer("案内役: Discord に map のスレッドを立てた（スレッド 900）");
+const archive = (issue, threadId, subject) => ({ kind: "archive-thread", key: `archive-thread:${threadId}`, issue, threadId, subject });
+
+test("アーカイブ: 閉じた仕様の承認依頼のスレッドと、閉じた map のスレッドに archive-thread を出す。open なものには出さない", () => {
+  const s = snapshot([
+    spec(12, { state: "CLOSED", comments: [APPROVAL_SENT_555] }),
+    spec(13, { comments: [byViewer("案内役: Discord に承認依頼を送った（スレッド 556 / メッセージ 778）")] }),
+    issue(30, { state: "CLOSED", labels: ["wayfinder:map"], comments: [MAP_THREAD_900] }),
+    issue(31, { labels: ["wayfinder:map"], comments: [byViewer("案内役: Discord に map のスレッドを立てた（スレッド 901）")] }),
+  ]);
+  assert.deepEqual(archives(decide(s)), [archive(12, "555", "仕様"), archive(30, "900", "map")]);
+});
+
+test("アーカイブ: アーカイブした印がある・dispatched 済み・スレッドの印が無い・viewer 以外の印なら出さない", () => {
+  const closedSpec = (comments) => spec(12, { state: "CLOSED", comments });
+  const none = (issues, over) => assert.deepEqual(archives(decide(snapshot(issues, over))), []);
+  none([closedSpec([APPROVAL_SENT_555, byViewer(D.archivedThreadMarker("555"))])]);
+  none([closedSpec([APPROVAL_SENT_555])], { dispatched: ["archive-thread:555"] });
+  none([closedSpec([])]);
+  none([closedSpec([{ author: "someone", body: APPROVAL_SENT_555.body }])]);
+  none([issue(30, { state: "CLOSED", labels: ["wayfinder:map"], comments: [MAP_THREAD_900, byViewer(D.archivedThreadMarker("900"))] })]);
+});
+
+test("アーカイブ: fromSpec の範囲の外の閉じた仕様には出さない", () => {
+  const s = snapshot(
+    [spec(12, { state: "CLOSED", comments: [APPROVAL_SENT_555] }), spec(14, { state: "CLOSED", comments: [byViewer("案内役: Discord に承認依頼を送った（スレッド 557 / メッセージ 779）")] })],
+    { fromSpec: 13 },
+  );
+  assert.deepEqual(archives(decide(s)), [archive(14, "557", "仕様")]);
+});
+
+test("アーカイブ: close-tab の次、他の行動より先に出す", () => {
+  const s = snapshot([specBare(40), spec(12, { state: "CLOSED", comments: [APPROVAL_SENT_555] })]);
+  const kinds = decide(s).map((a) => a.kind);
+  assert.equal(kinds[0], "archive-thread");
+  assert.ok(kinds.includes("request-approval"));
+});

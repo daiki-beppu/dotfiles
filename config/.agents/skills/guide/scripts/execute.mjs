@@ -12,6 +12,7 @@ import {
   MARKER_WAYFINDER_LAUNCHING,
   MARKER_TO_SPEC_LAUNCHING,
   MARKER_TO_TICKETS_LAUNCHING,
+  archivedThreadMarker,
   closedTabMarker,
   decisionAnsweredMarker,
   decisionMarker,
@@ -206,6 +207,10 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       // 閉じ直しは害が無い（閉じ済みのタブも ok で返る）ので、起動と逆に印は後に書く。close が失敗すれば印を書かずに止まる。
       if (!action.gone) await closeTab({ cwd, handle: action.handle });
       github.comment(action.issue, closedTabMarker(action.step, action.handle));
+    } else if (action.kind === "archive-thread") {
+      // close-tab と同じく印は後に書く（アーカイブし直しは害が無い）。失敗すれば印を書かずに止まり、次に流したときにやり直す。
+      await discord.archiveThread({ threadId: action.threadId });
+      github.comment(action.issue, archivedThreadMarker(action.threadId));
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

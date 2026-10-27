@@ -30,7 +30,7 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         await sleep(await retryAfterMs(res));
         continue;
       }
-      if (!res.ok) throw new Error(`Discord ${method} ${path.split("?")[0]} が ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(`Discord ${method} ${path.split("?")[0]} が ${res.status}`), { status: res.status });
       return res.status === 204 ? undefined : res.json();
     }
   }
@@ -159,6 +159,13 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
         allowed_mentions: mentions,
       });
       return { messageId: message.id };
+    },
+
+    // スレッドをアーカイブする（チャンネルの一覧から消える。人が戻せる）。人が消したスレッド（404）は済んだものとして扱う。
+    async archiveThread({ threadId }) {
+      await call("PATCH", `/channels/${threadId}`, { archived: true }).catch((e) => {
+        if (e.status !== 404) throw e;
+      });
     },
 
     // 判断依頼のメッセージへの返信（message_reference が一致するもの）を、ID の昇順で { userId, content } にして返す。誰の返信かは呼び出し側が判定する。

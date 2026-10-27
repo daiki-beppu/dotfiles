@@ -1660,3 +1660,25 @@ test("判断依頼の答え（往復）: 送った後の印のメッセージに
   assert.equal(calls.filter((c) => c.includes("判断依頼に答えた")).length, 1);
   assert.equal(calls.filter((c) => c.startsWith("decision ")).length, 1);
 });
+
+test("archive-thread: スレッドをアーカイブしてから、アーカイブした印をその issue に書く", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    discord: { archiveThread: async ({ threadId }) => calls.push(`archive ${threadId}`) },
+    cwd: "/x", repo: REPO,
+  });
+  await execute({ kind: "archive-thread", key: "archive-thread:555", issue: 12, threadId: "555", subject: "仕様" });
+  assert.deepEqual(calls, ["archive 555", "comment #12 案内役: Discord のスレッドをアーカイブした（スレッド 555）"]);
+});
+
+test("archive-thread: アーカイブが失敗したら印を書かずに例外にする（次に流し直したときにやり直す）", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    discord: { archiveThread: async () => { throw new Error("Discord PATCH /channels/555 が 403"); } },
+    cwd: "/x", repo: REPO,
+  });
+  await assert.rejects(execute({ kind: "archive-thread", key: "archive-thread:555", issue: 12, threadId: "555", subject: "仕様" }), /403/);
+  assert.deepEqual(calls, []);
+});
