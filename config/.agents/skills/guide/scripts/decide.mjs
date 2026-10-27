@@ -97,10 +97,12 @@ export const MARKER_DECISION_PREFIX = "案内役: Discord に判断依頼を送�
 export const CAUSE_ABORT = "takt の ABORT";
 export const CAUSE_FORMAL_SPEC = "formal-spec の検証失敗";
 export const CAUSE_REVIEW_FAILED = "takt のレビュー失敗";
-const stallCause = (step) => `${step} のセッションの停止`;
+export const stallCause = (step) => `${step} のセッションの停止`;
 // 子がすべて閉じたのに霧が残った map の判断依頼の原因。
-const FOG_CAUSE = "霧の残り";
+export const FOG_CAUSE = "霧の残り";
 export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
+// decisionMarker の読み戻し（番号と原因）。状況の表示が、送った判断依頼を数えるのに使う。
+export const DECISION_MARK = /^案内役: Discord に判断依頼を送る（#(\d+) (.+)）$/;
 
 // grilling の不可逆な判断（AskUserQuestion の hook の入力待ち）の 3 段。印はすべて ticket に書く。S は停止の識別子（agentWait.since）、t は ticket の番号。
 // 送る前 → 送った後（スレッドとメッセージの ID）→ 書き戻し（回答の本文つき）→ 流し込む前。閉じ括弧まで含めて照合する。
@@ -140,7 +142,7 @@ export const KNOWLEDGE_SPEC_PREFIX = "学びの元の仕様: #";
 // 親 issue の本文に書く記録の行の接頭辞。`仕様: #n` だけの行を、仕様 n の親の印として数える。
 export const PARENT_SPEC_PREFIX = "仕様: #";
 
-const isParentOf = (issue, n) =>
+export const isParentOf = (issue, n) =>
   (issue.subIssues ?? []).length > 0 &&
   typeof issue.body === "string" &&
   issue.body.split(/\r?\n/).some((line) => line.trim() === `${PARENT_SPEC_PREFIX}${n}`);
@@ -158,7 +160,7 @@ export function knowledgePrOf(pullRequests, viewer, spec) {
 }
 
 // viewer が書き、本文が接頭辞で始まるコメントだけをマーカーとして数える
-const markers = (issue, viewer) =>
+export const markers = (issue, viewer) =>
   (issue.comments ?? []).filter((c) => c.author === viewer && typeof c.body === "string").map((c) => c.body);
 
 const hasLabel = (issue, name) => (issue.labels ?? []).includes(name);
@@ -166,7 +168,7 @@ const isSpec = (issue) => hasLabel(issue, "spec");
 
 // 扱う仕様: OPEN で spec、fromSpec の指定があれば番号がそれ以上。番号の昇順。
 // 範囲の外の仕様は、承認依頼・to-tickets・takt-sequence・学び・判断依頼のどれにも出さない。
-const openSpecs = (snapshot) =>
+export const openSpecs = (snapshot) =>
   snapshot.issues
     .filter((i) => i.state === "OPEN" && isSpec(i) && (snapshot.fromSpec === undefined || i.number >= snapshot.fromSpec))
     .sort((a, b) => a.number - b.number);
@@ -224,7 +226,7 @@ function decideApproval(snapshot, dispatched) {
 
 // viewer の最後の Formal Spec コメント（1 行目が見出しで始まるもの）を 1 度だけ分類する。
 // { status: "passed" | "not-applicable" | "failed" | "other", body }。コメントが無ければ null。
-function lastFormalSpec(spec, viewer) {
+export function lastFormalSpec(spec, viewer) {
   const body = markers(spec, viewer)
     .filter((b) => b.split(/\r?\n/)[0].startsWith(FORMAL_SPEC_HEADING))
     .at(-1);
@@ -245,7 +247,7 @@ function formalSpecFailure(spec, viewer) {
 }
 
 // to-tickets を起動済み（起動前の印・起動後の印・古い版の印・終了の印のどれか）か。
-const ticketsStarted = (own) =>
+export const ticketsStarted = (own) =>
   own.some((b) => b.startsWith(MARKER_TO_TICKETS_LAUNCHING) || b.startsWith(MARKER_STARTED) || FINISHED.test(b));
 
 // 承認依頼を送り済みの仕様ごとの formal-spec の起動。承認は待たない。
@@ -311,7 +313,7 @@ function decideDecisionRequests(snapshot, dispatched) {
 }
 
 // 案内役が扱う map。open で、保留（wayfinder:on-hold）でないもの。保留の map は、起動・通知・観測・判断依頼のどれもしない。
-const openMaps = (snapshot) =>
+export const openMaps = (snapshot) =>
   snapshot.issues
     .filter((i) => i.state === "OPEN" && hasLabel(i, "wayfinder:map") && !hasLabel(i, "wayfinder:on-hold"))
     .sort((a, b) => a.number - b.number);
@@ -466,7 +468,7 @@ function decideToSpec(snapshot, dispatched) {
 export const closedTabMarker = (step, handle) => `案内役: ${step} のタブを閉じた（ターミナル ${handle}）`;
 
 // 印の列から、工程ごとの最後の起動の印（handle と起動時刻）。印を消して流し直した後は新しい handle を見る。
-function latestLaunches(own) {
+export function latestLaunches(own) {
   const latest = new Map();
   for (const body of own) {
     const m = LAUNCHED.exec(body);
@@ -495,6 +497,9 @@ const RESULT_OF = {
     markers(spec, snapshot.viewer).some((b) => b.split(/\r?\n/)[0].startsWith(FORMAL_SPEC_HEADING)),
 };
 
+// 工程の結果が GitHub に出ているか。表に無い工程は false。
+export const hasStepResult = (snapshot, spec, step) => RESULT_OF[step]?.(snapshot, spec) ?? false;
+
 const DEFAULT_STALL_MINUTES = 60;
 
 // 起動の印に handle があり、結果がまだ無く、判断依頼を送っていない工程。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
@@ -514,14 +519,15 @@ export function sessionsToObserve(snapshot) {
   return targets;
 }
 
-// to-spec の結果。spec ラベルがあり、本文に `元の map: #m` だけの行がある issue（状態は問わない）。
-const hasSpecOfMap = (snapshot, map) =>
-  snapshot.issues.some(
+// to-spec の結果（その仕様の issue）。spec ラベルがあり、本文に `元の map: #m` だけの行がある issue（状態は問わない）。
+export const specOfMap = (snapshot, map) =>
+  snapshot.issues.find(
     (i) =>
       isSpec(i) &&
       typeof i.body === "string" &&
       i.body.split(/\r?\n/).some((line) => line.trim() === `${MAP_SPEC_PREFIX}${map}`),
   );
+export const hasSpecOfMap = (snapshot, map) => specOfMap(snapshot, map) !== undefined;
 
 // map で起動した to-spec の観測の対象。open な map に viewer の handle つきの起動の印（最後のもの）があり、結果の仕様がまだ無く、
 // その handle の閉じた印も map に停止の判断依頼の印も無いものだけ。仕様はまだ無く承認依頼のスレッドも無いので、sessionsToObserve（仕様の印を読む）とは分ける。
@@ -804,7 +810,7 @@ export function grillingQuestionsToRefresh(snapshot) {
 }
 
 // 判断依頼を送り済みで、回答がまだ書き戻されていない grilling の ticket の、送った判断依頼（停止の識別子・スレッド・メッセージ）。
-function pendingGrillingReplies(snapshot) {
+export function pendingGrillingReplies(snapshot) {
   const pending = [];
   for (const { ticket, type } of ticketSessionsToObserve(snapshot)) {
     if (type !== "grilling") continue;

@@ -10,6 +10,7 @@ import { createGithub } from "./github.mjs";
 import { readDiscordSecrets } from "./keychain.mjs";
 import { runLoop, runRound } from "./loop.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
+import { clockOf, truncate } from "./status.mjs";
 import { mergeTasks, readReviewReport, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mjs";
 import { launchKnowledge } from "./knowledge.mjs";
 import { closeTab, observeSession, sendToSession } from "./orca-agent.mjs";
@@ -29,7 +30,24 @@ if (parsed === null) usage();
 const { repo, interval, dryRun, fromSpec, stallMinutes, terminal } = parsed;
 
 const cwd = process.cwd();
-const log = (s) => console.log(new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }), s);
+// TTY では最下行を「今何をしているか」の 1 行にして上書きする。履歴と状況の一覧は、その行を消してから上に出し、出した後に描き直す。
+// TTY でなければ status は何もしない（ファイルやパイプに途中経過を積まない）。
+const tty = Boolean(process.stdout.isTTY);
+let statusLine = "";
+const above = (text) => {
+  if (tty && statusLine) process.stdout.write("\r\x1b[K");
+  console.log(text);
+  if (tty && statusLine) process.stdout.write(statusLine);
+};
+const log = (s) => above(`${clockOf(new Date())} ${s}`);
+const board = (text) => above(text);
+// 折り返すと \r で消せないので、端末の幅に収める。
+const status = tty
+  ? (line) => {
+      statusLine = truncate(line, Math.max(10, (process.stdout.columns ?? 80) - 1));
+      process.stdout.write(`\r\x1b[K${statusLine}`);
+    }
+  : () => {};
 const github = createGithub({ repo, cwd });
 
 const actual = github.repoName();
@@ -65,7 +83,7 @@ const readSnapshot = createReadSnapshot({
 
 const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence: (args) => startTaktSequence({ ...args, terminal }), launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
 
-const deps = { readSnapshot, execute, log };
+const deps = { readSnapshot, execute, log, board };
 try {
   if (dryRun) {
     const snapshot = await readSnapshot();
@@ -77,9 +95,11 @@ try {
     await runRound({ ...deps, readSnapshot: async () => snapshot, dryRun: true }, new Set());
   } else {
     log(`案内役を開始: ${repo}（${interval} 秒ごと${fromSpec !== undefined ? `、仕様 #${fromSpec} 以降` : ""}）`);
-    await runLoop({ ...deps, sleep }, { intervalSec: interval });
+    await runLoop({ ...deps, sleep, status }, { intervalSec: interval });
   }
 } catch (e) {
+  statusLine = "";
+  if (tty) process.stdout.write("\r\x1b[K");
   log(`停止: ${String(e.message).split("\n")[0]}`);
   process.exit(1);
 }

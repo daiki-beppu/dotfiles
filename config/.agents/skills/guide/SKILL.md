@@ -53,7 +53,8 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - `--stall-minutes <n>`: 起動したセッションが結果を出さないまま、起動からこの分数が経ったら止まったとみなす（既定 60。正の数）。入力待ちと、セッションが見つからないときは時間によらず止まったとみなす。
 - `--from <n>`: 番号が n 以上の仕様だけを扱い、それより前の仕様には承認依頼も後続の行動も出さない。手で起票し終えた仕様が残っている repo に向けるとき、新しい仕様だけを流すのに使う（指定しなければ open な仕様をすべて扱う）。
 
-- `--dry-run`: 1 周だけ読み、観測した要約と行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
+- `--dry-run`: 1 周だけ読み、観測した要約・状況の一覧・行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
+- ペインの表示: 行動は `実行: <内容>` の 1 行ずつ。状況の一覧（仕様と map ごとに 1 行、`仕様 #n <段階> <詳細> <題名>`）は、行が前と変わった周だけ出し直す。TTY なら最下行に今の段階（読み取り中・判断中・実行中・次の周の時刻つきの待機中）を上書きで出す。段階の判定は `scripts/status.mjs` の表にある。
 - 前提: `gh` が認証済み。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
 
