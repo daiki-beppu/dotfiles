@@ -58,7 +58,7 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 - `--dry-run`: 1 周だけ読み、観測した要約・状況の一覧・行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
 - ペインの表示: 行動は `実行: <内容>` の 1 行ずつ。状況の一覧（仕様と map ごとに 1 行、`仕様 #n <段階> <詳細> <題名>`）は、行が前と変わった周だけ出し直す。TTY なら最下行に今の段階（読み取り中・判断中・実行中・次の周の時刻つきの待機中）を上書きで出す。段階の判定は `scripts/status.mjs` の表にある。
 - 前提: `gh` が認証済み。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
-- cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。
+- cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。ただし `orca terminal close` の失敗は止まらず、`やり直し待ち:` の行を出して閉じた印を書かずに次の周で閉じ直す。
 
 takt watch・align-behind と一緒に立てるときは、`guide.mjs` の代わりに `desk.mjs` を同じ場所で流す。Orca の新しいタブに、左に takt watch、右に案内役、案内役の下に align-behind のペインを作る。案内役の引数はそのまま案内役に渡す。`--no-guide` を付けると案内役を立てず、watch の右に align-behind を置く（takt スキルが案内役なしで runner を立てるとき）。
 
@@ -92,7 +92,7 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: 判断依頼に答えた（#N 原因）` | 送る前の印と同じ issue | 本人の返信か ✅ を受けて書く。最後の送る前の印より後にあれば、状況の一覧はその判断依頼を判断待ちに数えない（答えた印が無くても、対象が片付けば数えない）。本人が GitHub に手で書いてもよい（メッセージの ID が無い古い判断依頼もこれで外せる） |
 | `## Formal Spec（takt <版> の検証器で failed）` で始まる 1 行目のコメント | 仕様 | formal-spec が失敗で止まるときに書く。viewer の最後の Formal Spec コメントが failed なら検証失敗とみなす。`検証器の作業ディレクトリ: <path>` の行をレポートの場所に使う |
 | `案内役: takt-sequence に渡した #a #b` | 親 | 起動する前に書く（1 段目）。これがある親は渡さない。#a #b が停止の観測で「渡した sub-issue」になる |
-| `案内役: <工程> のタブを閉じた（ターミナル H）` | 起動の印と同じ issue（工程は仕様、takt-sequence は親、wayfinder は ticket、to-spec は map） | 閉じた後に書く（閉じ直しは害が無いので、起動と逆に後に書く）。これがある handle は観測も close もしない |
+| `案内役: <工程> のタブを閉じた（ターミナル H）` | 起動の印と同じ issue（工程は仕様、takt-sequence は親、wayfinder は ticket、to-spec は map） | 閉じた後に書く（閉じ直しは害が無いので、起動と逆に後に書く）。close が失敗したら書かず、次の周で閉じ直す。これがある handle は観測も close もしない |
 | `案内役: takt-sequence を起動した（ターミナル H / T）` | 親 | 起動した後に書く（2 段目）。H は `orca terminal create --json` の応答の `result.terminal.handle`、T は起動時刻。これがある親だけ takt-sequence の停止を観測する。最後の印の handle を見る |
 | `案内役: <工程> を起動した（ターミナル H / T）` | 仕様 | to-tickets 以外の工程でも、Orca のタブで起動して handle を印に書けば、同じ形で停止の観測の対象になる（H は handle、T は起動時刻。起動時刻はこの印から読む） |
 | `案内役: 霧の ticket を起こす（子 N 件）` | wayfinder の map | 霧の ticket を起こす前に書く。N は起こす時点の子の数。最後のこの印の N + 1 が今の子の数以上なら（霧の ticket の後に ticket が増えていない）、起こし直さず霧の残りの判断依頼に回す |

@@ -1628,14 +1628,15 @@ test("close-tab: タブを閉じてから、閉じた印を工程の印と同じ
   ]);
 });
 
-test("close-tab: close が失敗したら印を書かずに例外にする（次に流し直したときに閉じ直す）", async () => {
+test("close-tab: close が失敗したら止まらず、印を書かずに retry を返す（次の周で閉じ直す）", async () => {
   const calls = [];
   const execute = createExecute({
     github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
     cwd: "/x", repo: REPO,
-    closeTab: () => { throw new Error("orca down"); },
+    closeTab: () => { throw new Error("orca terminal close が失敗した（ターミナル term_1）: Command failed\nstderr"); },
   });
-  await assert.rejects(execute({ kind: "close-tab", key: "close-tab:term_1", issue: 12, step: "to-tickets", handle: "term_1", gone: false }), /orca down/);
+  const result = await execute({ kind: "close-tab", key: "close-tab:term_1", issue: 12, step: "to-tickets", handle: "term_1", gone: false });
+  assert.deepEqual(result, { retry: "orca terminal close が失敗した（ターミナル term_1）: Command failed" });
   assert.deepEqual(calls, []);
 });
 
