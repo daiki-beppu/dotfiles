@@ -113,8 +113,8 @@ test("dry-run: execute を呼ばず、dispatched も更新せず、出た行動�
   assert.deepEqual(calls.executed, []);
   assert.equal(dispatched.size, 0);
   const out = calls.logs.join("\n");
-  assert.match(out, /to-tickets:12/);
-  assert.match(out, /to-tickets:30/);
+  assert.match(out, /仕様 #12 を to-tickets/);
+  assert.match(out, /仕様 #30 を to-tickets/);
 });
 
 test("ループ: maxRounds 周だけ回り、周の間に interval 秒ぶん sleep する", async () => {
@@ -184,16 +184,16 @@ const approvalSnapshot = async () => ({
   ],
 });
 
-test("dry-run: 承認の 3 種類の行動も execute を呼ばず、key を含めて log に表示する（例外にしない）", async () => {
+test("dry-run: 承認の 3 種類の行動も execute を呼ばず、内容を log に表示する（例外にしない）", async () => {
   const { calls, deps } = fakes({ readSnapshot: approvalSnapshot });
   const dispatched = new Set();
   await runRound({ ...deps, dryRun: true }, dispatched);
   assert.deepEqual(calls.executed, []);
   assert.equal(dispatched.size, 0);
   const out = calls.logs.join("\n");
-  assert.match(out, /request-approval:12/);
-  assert.match(out, /approve-spec:13/);
-  assert.match(out, /reject-spec:14/);
+  assert.match(out, /仕様 #12 の承認依頼/);
+  assert.match(out, /仕様 #13 に spec-approved/);
+  assert.match(out, /仕様 #14 に差し戻し/);
 });
 
 test("承認の行動も同じスナップショットで 2 周しても、行動ごとに execute は 1 回だけ", async () => {
@@ -204,7 +204,7 @@ test("承認の行動も同じスナップショットで 2 周しても、行�
   assert.deepEqual(calls.executed, ["request-approval:12", "approve-spec:13", "reject-spec:14"]);
 });
 
-test("dry-run: knowledge の行動も例外にせず、key を含めて log に表示する", async () => {
+test("dry-run: knowledge の行動も例外にせず、内容を log に表示する", async () => {
   const closed = (number) => issue(number, { state: "CLOSED" });
   const deps = {
     readSnapshot: async () => ({
@@ -223,10 +223,10 @@ test("dry-run: knowledge の行動も例外にせず、key を含めて log に�
   };
   const logs = [];
   await runRound({ ...deps, dryRun: true }, new Set());
-  assert.match(logs.join("\n"), /knowledge:12/);
+  assert.match(logs.join("\n"), /仕様 #12 の学びをまとめる knowledge/);
 });
 
-test("dry-run: merge-auto の行動も例外にせず、key を含めて log に表示する", async () => {
+test("dry-run: merge-auto の行動も例外にせず、内容を log に表示する", async () => {
   const logs = [];
   await runRound(
     {
@@ -247,7 +247,7 @@ test("dry-run: merge-auto の行動も例外にせず、key を含めて log に
     },
     new Set(),
   );
-  assert.match(logs.join("\n"), /merge-auto:50/);
+  assert.match(logs.join("\n"), /学びの PR #50 に自動マージ/);
 });
 
 test("dry-run: 判断依頼の行動を説明つきで表示し、例外にならない", async () => {
@@ -265,17 +265,17 @@ test("formal-spec: 承認依頼を送った仕様では execute に formal-spec 
   await runRound(deps, dispatched);
   await runRound(deps, dispatched);
   assert.deepEqual(calls.executed, ["formal-spec:12"]);
-  assert.ok(calls.logs.some((l) => l.includes("formal-spec:12")));
+  assert.ok(calls.logs.some((l) => l.includes("仕様 #12 の形式検証 formal-spec")));
 
   const dry = fakes({ readSnapshot: async () => sentOnly() });
   await runRound({ ...dry.deps, dryRun: true }, new Set());
   assert.deepEqual(dry.calls.executed, []);
-  const line = dry.calls.logs.find((l) => l.includes("formal-spec:12"));
+  const line = dry.calls.logs.find((l) => l.includes("仕様 #12 の形式検証 formal-spec"));
   assert.ok(line, dry.calls.logs.join("\n"));
   assert.match(line, /#12/);
 });
 
-test("dry-run: wayfinder の行動も例外にせず、key・map・ticket・type を log に表示する", async () => {
+test("dry-run: wayfinder の行動も例外にせず、map・ticket・type を log に表示する", async () => {
   const { calls, deps } = fakes({
     readSnapshot: async () => ({
       repo: REPO,
@@ -290,12 +290,12 @@ test("dry-run: wayfinder の行動も例外にせず、key・map・ticket・type
   });
   await runRound({ ...deps, dryRun: true }, new Set());
   const out = calls.logs.join("\n");
-  assert.match(out, /wayfinder:23/);
+  assert.match(out, /ticket #23（task）を \/wayfinder/);
   assert.match(out, /#20/);
   assert.match(out, /task/);
 });
 
-test("dry-run: to-spec の行動も例外にせず、key と map の番号を log に表示する", async () => {
+test("dry-run: to-spec の行動も例外にせず、map の番号を log に表示する", async () => {
   const { calls, deps } = fakes({
     readSnapshot: async () => ({
       repo: REPO,
@@ -310,7 +310,7 @@ test("dry-run: to-spec の行動も例外にせず、key と map の番号を lo
   });
   const actions = await runRound({ ...deps, dryRun: true }, new Set());
   assert.deepEqual(actions.filter((a) => a.kind === "to-spec").map((a) => a.key), ["to-spec:20"]);
-  const line = calls.logs.find((l) => l.includes("to-spec:20"));
+  const line = calls.logs.find((l) => l.includes("map #20 から to-spec"));
   assert.ok(line, calls.logs.join("\n"));
   assert.match(line, /#20/);
   assert.match(line, /to-spec/);
@@ -347,20 +347,20 @@ const mapDry = async (issues, extra = {}) => {
 const mapOf = (comments, children) => issue(20, { title: "地図", labels: ["wayfinder:map"], comments, subIssues: children.map((n) => ({ number: n, state: "OPEN" })) });
 const proto = (n) => issue(n, { labels: ["wayfinder:prototype"], assignees: [], blockedBy: [] });
 
-test("dry-run: map のスレッドを立てる行動も例外にせず、key と map の番号を log に表示する", async () => {
+test("dry-run: map のスレッドを立てる行動も例外にせず、map の番号を log に表示する", async () => {
   const out = await mapDry([mapOf([], [21]), proto(21)]);
-  assert.match(out, /create-map-thread:20/);
+  assert.match(out, /map #20 の Discord スレッドを立てる/);
   assert.match(out, /#20/);
 });
 
-test("dry-run: 人が見る ticket の通知も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+test("dry-run: 人が見る ticket の通知も例外にせず、map・ticket の番号を log に表示する", async () => {
   const out = await mapDry([mapOf([{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }], [21]), proto(21)]);
-  assert.match(out, /notify-human-ticket:20:21/);
+  assert.match(out, /map #20 のスレッドに人が見る ticket #21/);
   assert.match(out, /#20/);
   assert.match(out, /#21/);
 });
 
-test("dry-run: ticket の停止の判断依頼も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+test("dry-run: ticket の停止の判断依頼も例外にせず、map・ticket の番号を log に表示する", async () => {
   const ticket = issue(21, {
     labels: ["wayfinder:research"], assignees: ["x"], blockedBy: [],
     comments: [{ author: VIEWER, body: "案内役: wayfinder を起動した（ターミナル term_1 / 2026-10-17T00:00:00.000Z）" }],
@@ -369,7 +369,7 @@ test("dry-run: ticket の停止の判断依頼も例外にせず、key・map・t
     [mapOf([{ author: VIEWER, body: "案内役: Discord に map のスレッドを立てた（スレッド 900）" }], [21]), ticket],
     { now: "2026-10-17T00:01:00.000Z", sessions: { term_1: { found: false, waiting: false, idle: false, tail: [] } } },
   );
-  assert.match(out, /request-map-decision:20:21:/);
+  assert.match(out, /map #20 のスレッドに ticket #21（research のセッションの停止）の判断依頼/);
   assert.match(out, /#20/);
   assert.match(out, /#21/);
 });
@@ -398,30 +398,30 @@ const gDry = (comments, extra = {}) =>
     ...extra,
   });
 
-test("dry-run: grilling の判断依頼も例外にせず、key・map・ticket の番号を log に表示する", async () => {
+test("dry-run: grilling の判断依頼も例外にせず、map・ticket の番号を log に表示する", async () => {
   const out = await gDry([]);
-  assert.match(out, /request-grilling-decision:20:21:/);
+  assert.match(out, /map #20 のスレッドに ticket #21 の grilling の問い/);
   assert.match(out, /#20/);
   assert.match(out, /#21/);
-  assert.doesNotMatch(out, /request-map-decision/);
+  assert.doesNotMatch(out, /セッションの停止/);
 });
 
-test("dry-run: 本人の回答の書き戻しも例外にせず、key と ticket の番号を log に表示する", async () => {
+test("dry-run: 本人の回答の書き戻しも例外にせず、ticket の番号を log に表示する", async () => {
   const sent = [`案内役: Discord に判断依頼を送る（#21 grilling の問い ${G_SINCE}）`, `案内役: Discord に判断依頼を送った（#21 grilling の問い ${G_SINCE} / スレッド 900 / メッセージ M1）`];
   const out = await gDry(sent, { decisionReplies: { M1: [{ userId: "U1", content: "B 案" }] } });
-  assert.match(out, /write-back-answer:21:/);
+  assert.match(out, /本人の返信を ticket #21 のコメントに書き戻す/);
   assert.match(out, /#21/);
 });
 
-test("dry-run: 回答の流し込みも例外にせず、key・ticket の番号・タブの handle を log に表示する", async () => {
+test("dry-run: 回答の流し込みも例外にせず、ticket の番号・タブの handle を log に表示する", async () => {
   const sent = [`案内役: Discord に判断依頼を送る（#21 grilling の問い ${G_SINCE}）`, `案内役: Discord に判断依頼を送った（#21 grilling の問い ${G_SINCE} / スレッド 900 / メッセージ M1）`, `案内役: Discord の回答を書き戻した（#21 grilling の問い ${G_SINCE}）\n\nB 案`];
   const out = await gDry(sent);
-  assert.match(out, /inject-answer:21:/);
+  assert.match(out, /ticket #21 の回答をタブ term_1 に/);
   assert.match(out, /#21/);
   assert.match(out, /term_1/);
 });
 
-test("dry-run: 仮決めの掲載の行動も例外にせず、execute を呼ばず、key を含めて log に表示する", async () => {
+test("dry-run: 仮決めの掲載の行動も例外にせず、execute を呼ばず、内容を log に表示する", async () => {
   const body = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: なし\n";
   const logs = [];
   const deps = {
@@ -437,10 +437,10 @@ test("dry-run: 仮決めの掲載の行動も例外にせず、execute を呼ば
     dryRun: true,
   };
   await runRound(deps, new Set());
-  assert.ok(logs.some((l) => l.includes("post-provisional-decision:20:21:1")), logs.join("\n"));
+  assert.ok(logs.some((l) => l.includes("ticket #21 の仮決め 1 を流す")), logs.join("\n"));
 });
 
-test("dry-run: 仮決めの差し戻しの行動も例外にせず、execute を呼ばず、key を含めて log に表示する", async () => {
+test("dry-run: 仮決めの差し戻しの行動も例外にせず、execute を呼ばず、内容を log に表示する", async () => {
   const logs = [];
   const sent = "案内役: Discord に仮決めを流した（#21 仮決め 1 / スレッド 900 / メッセージ M1）";
   const body = "## 仮決め\n\n### どの parser？\n- 答え: 既存\n- 振り分け: ⓪\n- 理由: 後で替えられる\n- 根拠: なし\n";
@@ -458,10 +458,10 @@ test("dry-run: 仮決めの差し戻しの行動も例外にせず、execute を
     dryRun: true,
   };
   await runRound(deps, new Set());
-  assert.ok(logs.some((l) => l.includes("reject-provisional-decision:20:21:1") && l.includes("#21")), logs.join("\n"));
+  assert.ok(logs.some((l) => l.includes("ticket #21 の仮決め 1 の差し戻し")), logs.join("\n"));
 });
 
-test("dry-run: review-fix の行動も例外にせず、key と PR・issue の番号を含めて log に表示する", async () => {
+test("dry-run: review-fix の行動も例外にせず、PR・issue の番号を含めて log に表示する", async () => {
   const head = "a".repeat(40);
   const logs = [];
   const snap = {
@@ -479,10 +479,10 @@ test("dry-run: review-fix の行動も例外にせず、key と PR・issue の�
   };
   const actions = await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
   assert.ok(actions.some((a) => a.kind === "review-fix"));
-  assert.ok(logs.some((l) => l.includes(`review-fix:70:${head}`) && l.includes("#70") && l.includes("#21")), logs.join("\n"));
+  assert.ok(logs.some((l) => l.includes("PR #70（sub-issue #21）の takt のレビューの失敗を直す review-fix")), logs.join("\n"));
 });
 
-test("dry-run: レビュー失敗の判断依頼の行動も例外にせず、key と PR・sub-issue の番号を含めて log に表示する（実行はしない）", async () => {
+test("dry-run: レビュー失敗の判断依頼の行動も例外にせず、PR・sub-issue の番号を含めて log に表示する（実行はしない）", async () => {
   const head = "a".repeat(40);
   const logs = [];
   const launching = (h) => ({ author: VIEWER, body: `案内役: review-fix を起動する（head ${h}）` });
@@ -501,5 +501,70 @@ test("dry-run: レビュー失敗の判断依頼の行動も例外にせず、ke
   };
   const actions = await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
   assert.ok(actions.some((a) => a.kind === "request-review-decision"));
-  assert.ok(logs.some((l) => l.includes("request-decision:12:70:") && l.includes("#70") && l.includes("#21")), logs.join("\n"));
+  assert.ok(logs.some((l) => l.includes("仕様 #12 のスレッドに PR #70（sub-issue #21）")), logs.join("\n"));
+});
+
+// ---- 表示: 行動の行・状況の一覧・今の段階 ----
+
+test("行動の行は内部の key を頭に付けず、内容から始まる", async () => {
+  const { calls, deps } = fakes();
+  await runRound(deps, new Set());
+  assert.deepEqual(calls.logs.filter((l) => l.startsWith("実行: ")), [
+    "実行: 仕様 #12 を to-tickets で親 issue と sub-issue にする",
+    "実行: 仕様 #30 を to-tickets で親 issue と sub-issue にする",
+  ]);
+});
+
+test("状況の一覧: 1 周目に出し、変わらない周では出し直さない", async () => {
+  const boards = [];
+  const { deps } = fakes({ board: (text) => boards.push(text) });
+  await runLoop({ ...deps, sleep: async () => {} }, { intervalSec: 1, maxRounds: 3 });
+  assert.equal(boards.length, 1);
+  assert.match(boards[0], /仕様 #12 +起票中/);
+  assert.match(boards[0], /仕様 #30 +起票中/);
+});
+
+test("状況の一覧: 仕様の段階が変わった周には出し直す", async () => {
+  const boards = [];
+  let reads = 0;
+  const handed = () => ({
+    ...fixed(),
+    issues: [
+      spec(12),
+      spec(30),
+      issue(40, { body: "仕様: #12", subIssues: [{ number: 41, state: "OPEN" }], comments: [{ author: VIEWER, body: "案内役: takt-sequence に渡した #41" }] }),
+      issue(41),
+    ],
+    taktIssues: [41],
+  });
+  const { deps } = fakes({
+    readSnapshot: async () => ((reads += 1) === 1 ? fixed() : handed()),
+    board: (text) => boards.push(text),
+  });
+  await runLoop({ ...deps, sleep: async () => {} }, { intervalSec: 1, maxRounds: 3 });
+  assert.equal(boards.length, 2);
+  assert.match(boards[1], /仕様 #12 +実装中 +親 #40 0\/1 閉/);
+});
+
+test("dry-run: 状況の一覧を 1 度出す", async () => {
+  const boards = [];
+  const { deps } = fakes({ board: (text) => boards.push(text) });
+  await runRound({ ...deps, dryRun: true }, new Set());
+  assert.equal(boards.length, 1);
+  assert.match(boards[0], /状況: 仕様 2 件・map 0 件/);
+});
+
+test("今の段階: 読み取り → 判断 → 行動ごとの実行 → 次の周の時刻つきの待機、の順に知らせる", async () => {
+  const statuses = [];
+  const { deps } = fakes({ status: (line) => statuses.push(line) });
+  await runLoop({ ...deps, sleep: async () => {}, now: () => new Date("2026-10-27T00:00:00Z") }, { intervalSec: 7, maxRounds: 2 });
+  assert.deepEqual(statuses, [
+    "読み取り中…",
+    "判断中…",
+    "実行中: 仕様 #12 を to-tickets で親 issue と sub-issue にする",
+    "実行中: 仕様 #30 を to-tickets で親 issue と sub-issue にする",
+    "待機中（次は 09:00:07。周 1、この周の行動 2 件）",
+    "読み取り中…",
+    "判断中…",
+  ]);
 });
