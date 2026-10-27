@@ -1669,7 +1669,7 @@ test("archive-thread: スレッドをアーカイブしてから、アーカイ�
     cwd: "/x", repo: REPO,
   });
   await execute({ kind: "archive-thread", key: "archive-thread:555", issue: 12, threadId: "555", subject: "仕様" });
-  assert.deepEqual(calls, ["archive 555", "comment #12 案内役: Discord のスレッドを閉じた（スレッド 555）"]);
+  assert.deepEqual(calls, ["archive 555", "comment #12 案内役: Discord のスレッドをアーカイブした（スレッド 555）"]);
 });
 
 test("archive-thread: アーカイブが失敗したら印を書かずに例外にする（次に流し直したときにやり直す）", async () => {

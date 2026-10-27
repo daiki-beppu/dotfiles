@@ -1305,7 +1305,7 @@ function decideCloseTabs(snapshot, dispatched) {
 }
 
 // 閉じた仕様・map の Discord スレッドをアーカイブした印。閉じ括弧まで含めて照合する。スレッドの持ち主の issue に書く。
-export const archivedThreadMarker = (threadId) => `案内役: Discord のスレッドを閉じた（スレッド ${threadId}）`;
+export const archivedThreadMarker = (threadId) => `案内役: Discord のスレッドをアーカイブした（スレッド ${threadId}）`;
 
 // 閉じた仕様（fromSpec の範囲内）と閉じた map の、承認依頼・map のスレッドをアーカイブする。チャンネルの一覧から片付けるため。
 // 印は後に書く（アーカイブし直しは害が無い）。人がアーカイブを戻しても、印があるので繰り返さない。
