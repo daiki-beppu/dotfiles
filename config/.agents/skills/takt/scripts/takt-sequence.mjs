@@ -1,8 +1,10 @@
-// 指定した issue を順に 1 件ずつ takt に積み、PR の自動マージ予約からマージ完了までを見届けて、次の issue を積む。
+// 指定した issue を並びの順に takt に積み、PR の自動マージ予約からマージ完了までを見届けて、次の issue を積む。
+// 同時に進める issue の数は --concurrency（省けば takt の設定の concurrency。TAKT_CONCURRENCY も効く）まで。watch の並列数に合わせる。
 // 出力は出来事が起きたときだけ「日時（JST） 出来事: #issue タイトル [PR の URL]」の 1 行。Orca のタブで流して人が追える形にする。
 // 起動直後に、対象の issue とタイトル・今の段階を 1 行ずつ出す（最初の出来事までタブが空にならないように）。
 // - 積むのは、対象のタスクが pending / running でなく、open で、blocked_by が全部閉じていて、
-//   help wanted の付いていない issue のうち、並びの先頭のもの。
+//   help wanted の付いていない issue を、並びの順に、進行中の issue が並列数に達するまで。判断は sequence-plan.mjs。
+//   1 件が止まっても、進行中の issue は見届ける。進行中も積める issue も無くなったら終わる。
 // - タスクが無いか終わっていない issue に、閉じる予定の open な PR（closingIssuesReferences）があれば、
 //   人が引き取って PR にしたとみなして積まない。その PR は自動マージを予約せず、マージで issue が閉じるのを待つ。
 // - タスクが PR を作ったら、`takt merge <PR>` を workflows/merge-review-automerge.yaml で流す（base との同期・AI の競合解消・
@@ -18,7 +20,7 @@
 // - repo の受け口（sequence-inbox.mjs）を開き、毎周そこに届いた issue を並びの後ろに足す（起動の入口が、動いている takt-sequence があれば新しいペインを開かずに足す）。
 //   終わる前に受け口を閉じ、閉じる前に届いていた issue があれば開き直して続ける。別の takt-sequence が受け口を持っていれば、受け口なしで流す。
 // 人・エージェントは start-sequence.mjs で起動する（repo root で。desk の案内役のペインの下に開く。引数は同じ）:
-//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
+//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]
 // このファイルを直に流すのは、start-sequence.mjs と guide の takt.mjs（startTaktSequence）だけ。印の環境変数 LAUNCHER_ENV が無ければ、
 // start-sequence.mjs を案内する 1 行を出して止める。
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
@@ -31,6 +33,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
 import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
 import { closeInbox, inboxDirOf, openInbox, takeFromInbox } from "./sequence-inbox.mjs";
+import { planRound } from "./sequence-plan.mjs";
 
 const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
 if (!process.env[LAUNCHER_ENV]) {
@@ -38,7 +41,7 @@ if (!process.env[LAUNCHER_ENV]) {
   process.exit(2);
 }
 
-const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES) };
+const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES), concurrency: "" };
 const issues = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
@@ -48,8 +51,8 @@ for (let i = 0; i < argv.length; i++) {
   else { console.error(`不明な引数: ${a}`); process.exit(2); }
 }
 const fixWait = Number(opts["fix-wait"]);
-if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0) {
-  console.error("usage: start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
+if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0 || (opts.concurrency !== "" && !(Number.isInteger(Number(opts.concurrency)) && Number(opts.concurrency) > 0))) {
+  console.error("usage: start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]（--fix-wait は正の数、--concurrency は正の整数）");
   process.exit(2);
 }
 
@@ -74,6 +77,7 @@ sh("takt", ["workflow", "doctor", REVIEW_WORKFLOW]);
 // それがこの workflow を指していなければ止める（builtin のままだと、takt が CI を待ってそのままマージする）
 {
   const { resolveConfigValue } = await import(join(process.env.TAKT_ROOT, "dist/infra/config/index.js"));
+  if (opts.concurrency === "") opts.concurrency = String(resolveConfigValue(cwd, "concurrency") ?? 1);
   const wf = resolveConfigValue(cwd, "merge")?.workflow ?? "";
   const real = (p) => { try { return realpathSync(p); } catch { return p; } };
   const configured = wf.startsWith("~") ? resolve(homedir(), wf.slice(1).replace(/^\//, "")) : resolve(cwd, wf);
@@ -225,16 +229,9 @@ try {
     try {
       const tasks = listTasks();
       if (ownsInbox) addIssues(takeFromInbox(inbox), tasks, "追加");
-      const stages = new Map(issues.map((n) => [n, stage(n, tasks)]));
-      const all = [...stages.values()];
-      let end = null;
-      if (all.every((s) => s === "done")) end = { line: "全件マージ完了", code: 0 };
-      else if (!all.includes("waiting")) {
-        const next = issues.find((n) => stages.get(n) === "new" && ready(n));
-        if (next) await enqueue(next);
-        else if (all.includes("manual") && !all.includes("stuck")) { /* 手で対応中の PR のマージを待つ */ }
-        else end = { line: all.includes("stuck") ? "停止: 人の手が要る issue がある" : "停止: 積める issue が無い（依存が未解除か help wanted）", code: 1 };
-      }
+      const plan = planRound({ stages: issues.map((n) => [n, stage(n, tasks)]), ready, concurrency: Number(opts.concurrency) });
+      for (const n of plan.enqueue) await enqueue(n);
+      const { end } = plan;
       if (end !== null) {
         // 終わる前に受け口を閉じる。閉じる前に届いていた issue があれば、開き直して次の周で扱う
         const left = release();
