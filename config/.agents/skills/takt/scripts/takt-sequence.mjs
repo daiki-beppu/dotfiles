@@ -12,6 +12,8 @@
 //   現在の head に対して「TAKT evaluation failed for head <sha>」とコメントしたら、案内役が修正を起動する（PR に印を書く）のを待つ（--fix-wait 分まで。印は読むだけ）。
 //   印があれば修正中として待ち、push で head が変われば新しい head をレビューする。やり直しの印があれば失敗を数え直してレビューし直す（head ごとに 1 回）。
 //   やり直しの後の失敗・現在の head で 2 回落ちた・起動の印が上限・待ち時間切れは止める。判定は review-stage.mjs。
+//   ただし現在の head で落ちたチェックがすべて、base の最新の commit で落ちている必須チェック（main-state.mjs）なら、main の壊れとみなし、
+//   PR に修復待ちの印を書いて「main の修復待ち」で待つ（修正の起動も待ち時間も数えない）。main が緑に戻ったらレビューし直す。
 //   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
 // - issue が終わったら（マージ済みか issue が閉じた）、その issue のタスクを片付ける（task-cleanup.mjs。run の報告書を main checkout の
 //   .takt/runs へ写してから、クローン・worktree-session・タスクの記録を消す）。開発ログは写した run を素材にする。
@@ -33,7 +35,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
-import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
+import { DEFAULT_FIX_WAIT_MINUTES, REVIEW_FAILED, mainWaitMarker, reviewStage as decideReview } from "./review-stage.mjs";
+import { mainState, requiredChecks } from "./main-state.mjs";
 import { closeInbox, inboxDirOf, openInbox, takeFromInbox } from "./sequence-inbox.mjs";
 import { planRound } from "./sequence-plan.mjs";
 import { cleanupTask } from "./task-cleanup.mjs";
@@ -68,6 +71,7 @@ const last = new Map();
 const titles = new Map();
 const label = (n) => `#${n} ${titles.get(n) ?? ""}`.trim();
 const event = (n, s) => { if (last.get(n) !== s) log(s); last.set(n, s); };
+const ghPaged = (path) => gh(["api", path, "--paginate", "--slurp"]).flat();
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
 const SKIP_LABELS = ["help wanted"];
@@ -102,6 +106,18 @@ const listTasks = () => new TaskRunner(cwd).listAllTaskItems();
 const taskOps = { runner: new TaskRunner(cwd, {}), deleteBranch };
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
+
+// base の最新の commit の状態（main-state.mjs の mainState）。周ごとに 1 回、要るときだけ読む（状態はファイルに持たない）
+let mainNow = null;
+function readMain() {
+  if (mainNow) return mainNow;
+  const sha = gh(["api", `repos/${repo}/commits/${opts.base}`]).sha;
+  const checks = ghPaged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
+    .flatMap((p) => p.check_runs)
+    .map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion }));
+  mainNow = mainState({ required: requiredChecks(ghPaged(`repos/${repo}/rules/branches/${opts.base}`)), checks });
+  return mainNow;
+}
 
 // 終わった issue。片付けでタスクの記録が消えた後に、出来事（マージ完了か issue クローズか）を読み違えないよう、この実行の間は読み直さない
 const finished = new Set();
@@ -169,10 +185,14 @@ const attempts = new Map();
 // reviewed: 済み / waiting: 実行中か修正待ちか今起動した / stuck: 失敗して人の手が要る
 function reviewStage(n, pr, url, tasks) {
   const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
-  const { stage, reason, redo } = decideReview({
+  const failedChecks = pr.statusCheckRollup.filter((c) => FAILED_CHECK.includes(c.conclusion ?? c.state)).map((c) => c.name ?? c.context);
+  // main を読むのは、現在の head の失敗のコメントがあり、CI が落ちているときだけ
+  const failedHere = failedChecks.length > 0 && pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`));
+  const { stage, reason, redo, mainWait } = decideReview({
     head: pr.headRefOid, viewer, comments: pr.comments, merges, attempts: attempts.get(pr.number) ?? [],
-    running: reviewing.has(pr.number), now: new Date(), waitMinutes: fixWait,
+    running: reviewing.has(pr.number), now: new Date(), waitMinutes: fixWait, main: failedHere ? readMain() : undefined, failedChecks,
   });
+  if (mainWait) gh(["api", `repos/${repo}/issues/${pr.number}/comments`, "-f", `body=${mainWaitMarker(pr.headRefOid, mainWait)}`]);
   if (stage === "reviewed") {
     // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので、予約の前に片付ける（報告書は repo の .takt/runs に残る）
     for (const m of merges) cleanupTask(cwd, m, taskOps);
@@ -180,7 +200,8 @@ function reviewStage(n, pr, url, tasks) {
   }
   if (stage === "stuck") { event(n, `レビュー失敗: ${label(n)} ${url} ${reason}`); return "stuck"; }
   if (stage === "waiting") {
-    if (reason) event(n, `レビュー修正待ち: ${label(n)} ${url} ${reason}`);
+    if (reason?.startsWith("main の修復待ち")) event(n, `main の修復待ち: ${label(n)} ${url} ${reason.replace(/^main の修復待ち: /, "")}`);
+    else if (reason) event(n, `レビュー修正待ち: ${label(n)} ${url} ${reason}`);
     return "waiting";
   }
   const logFile = join(tmpdir(), `takt-sequence-review-${pr.number}.log`);
@@ -249,6 +270,7 @@ try {
   addIssues(initial, listTasks(), "対象");
   for (;;) {
     try {
+      mainNow = null;
       const tasks = listTasks();
       if (ownsInbox) addIssues(takeFromInbox(inbox), tasks, "追加");
       const plan = planRound({ stages: issues.map((n) => [n, stage(n, tasks)]), ready, concurrency });

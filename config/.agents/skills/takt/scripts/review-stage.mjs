@@ -11,12 +11,15 @@ export const DEFAULT_FIX_WAIT_MINUTES = 10;
 export const fixLaunchingMarker = (head) => `案内役: review-fix を起動する（head ${head}）`;
 export const fixLaunchedMarker = (head, handle, launchedAt) => `案内役: review-fix を起動した（head ${head} / ターミナル ${handle} / ${launchedAt}）`;
 export const redoMarker = (head) => `案内役: レビューのやり直しを頼む for head ${head}`;
+// main の修復待ちの印（takt-sequence が書く）。この印より前の失敗は main の壊れとみなし、main が緑に戻ったらレビューし直す
+export const mainWaitMarker = (head, checks) => `takt-sequence: main の修復待ち for head ${head}（落ちたチェック: ${checks.join(", ")}）`;
 
 const HEAD = "([0-9a-f]{40})";
 const LAUNCHING = new RegExp(`^案内役: review-fix を起動する（head ${HEAD}）$`);
 const LAUNCHED = new RegExp(`^案内役: review-fix を起動した（head ${HEAD} / `);
 const LAUNCHED_FULL = new RegExp(`^案内役: review-fix を起動した（head ${HEAD} / ターミナル (\\S+) / ([^）]+)）`);
 const REDO = new RegExp(`^案内役: レビューのやり直しを頼む for head ${HEAD}$`);
+const MAIN_WAIT = new RegExp(`^takt-sequence: main の修復待ち for head ${HEAD}（`);
 
 const active = (t) => t.kind === "pending" || t.kind === "running";
 const time = (s) => new Date(s).getTime();
@@ -27,6 +30,7 @@ const markedHead = (re) => (body) => (firstLine(body).match(re) ?? [])[1];
 export const fixLaunchingHead = markedHead(LAUNCHING);
 export const fixLaunchedHead = markedHead(LAUNCHED);
 export const redoHead = markedHead(REDO);
+export const mainWaitHead = markedHead(MAIN_WAIT);
 
 // 2 段目の印の本文の 1 行目から { head, handle, launchedAt } を取り出す。一致しなければ undefined（案内役が修正のセッションの停止を観測するとき使う）
 export function fixLaunchedOf(body) {
@@ -34,30 +38,46 @@ export function fixLaunchedOf(body) {
   return m ? { head: m[1], handle: m[2], launchedAt: m[3] } : undefined;
 }
 
-// 戻り値: { stage, reason, redo }
-// stage: reviewed（済み）/ waiting（実行中・修正待ち）/ stuck（人の手が要る）/ review（レビューを起動する）
-// reason: waiting（修正待ち）と stuck の理由。それ以外は null
-// redo: 現在の head の有効なやり直しの印の createdAt（無ければ null）。呼び出し側が起動記録 { head, redo } に残す
+// 戻り値: { stage, reason, redo, mainWait }
+// stage: reviewed（済み）/ waiting（実行中・修正待ち・main の修復待ち）/ stuck（人の手が要る）/ review（レビューを起動する）
+// reason: waiting（修正待ち・main の修復待ち）と stuck の理由。それ以外は null
+// redo: 失敗を数え直す起点の createdAt（現在の head の有効なやり直しの印か、main が緑に戻った後の main の修復待ちの印の新しい方。無ければ null）。
+//   呼び出し側が起動記録 { head, redo } に残す
+// mainWait: main の修復待ちの印を書くときの、落ちたチェックの名前の配列（書かないときは null）。呼び出し側が mainWaitMarker で PR に書く
 // comments: [{ author: { login }, body, createdAt }] / merges: その PR の merge タスク / attempts: この実行の起動記録 [{ head, redo }]
+// main: main-state.mjs の mainState の戻り値（読めなければ undefined） / failedChecks: PR の現在の head で落ちたチェックの名前
 // now: Date・ISO 文字列・ミリ秒のどれでもよい
-export function reviewStage({ head, viewer, comments, merges, attempts, running, now, waitMinutes }) {
+export function reviewStage({ head, viewer, comments, merges, attempts, running, now, waitMinutes, main, failedChecks = [] }) {
   const mine = comments.filter((c) => c.author?.login === viewer);
 
   const redoComment = mine.find((c) => redoHead(c.body) === head);
-  const redo = redoComment?.createdAt ?? null;
-  const result = (stage, reason = null) => ({ stage, reason, redo });
+  const redoAt = redoComment?.createdAt ?? null;
+  // main の修復待ちの印は、main が緑に戻ったときだけ数え直しの起点にする（赤・未定の間は待ち続ける）
+  const waitMark = mine.filter((c) => mainWaitHead(c.body) === head).at(-1);
+  const recovered = waitMark && main?.state === "green" ? waitMark.createdAt : null;
+  const redo = [redoAt, recovered].filter((t) => t !== null).sort((a, b) => time(a) - time(b)).at(-1) ?? null;
+  const result = (stage, reason = null, mainWait = null) => ({ stage, reason, redo, mainWait });
   const busy = running || merges.some(active);
 
   if (mine.some((c) => c.body.startsWith(`${REVIEWED} for head ${head};`))) return result(busy ? "waiting" : "reviewed");
   if (busy) return result("waiting");
 
-  // やり直しの印より前の失敗は数えない
+  // 起点（やり直しの印・main が緑に戻った後の修復待ちの印）より前の失敗は数えない
   const afterRedo = (createdAt) => redo === null || time(createdAt) > time(redo);
   const failures = mine.filter((c) => c.body.startsWith(`${REVIEW_FAILED} for head ${head}:`) && afterRedo(c.createdAt));
   const failure = failures.at(-1);
   const reasonOf = failure ? firstLine(failure.body) : "";
 
-  if (redo !== null && failure) return result("stuck", `やり直しの後も失敗: ${reasonOf}`);
+  // 落ちたチェックがすべて main でも落ちている必須チェックなら、PR の失敗でなく main の壊れとみなし、修正の起動も待ち時間も数えない。
+  // 印を書いた後は、main が緑に戻るまで（未定の間も）待つ
+  if (failure) {
+    if (waitMark && time(waitMark.createdAt) > time(failure.createdAt)) return result("waiting", `main の修復待ち: ${reasonOf}`);
+    const broken = new Set(main?.state === "red" ? main.failed.map((c) => c.name) : []);
+    const names = [...new Set(failedChecks)];
+    if (names.length > 0 && names.every((name) => broken.has(name))) return result("waiting", `main の修復待ち: ${reasonOf}`, names);
+  }
+
+  if (redoAt !== null && failure) return result("stuck", `やり直しの後も失敗: ${reasonOf}`);
 
   const crashedMerges = merges.filter((m) => m.kind === "failed" && (m.data?.merge_initial_head_sha === head || m.data?.merge_pushed_head_sha === head) && afterRedo(m.createdAt)).length;
   const launched = attempts.filter((a) => a.head === head && a.redo === redo).length;
