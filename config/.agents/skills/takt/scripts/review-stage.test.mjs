@@ -20,9 +20,14 @@ const launching = (head, createdAt, login) => comment(fixLaunchingMarker(head), 
 const launched = (head, createdAt, login) => comment(fixLaunchedMarker(head, "h1", createdAt), createdAt, login);
 const redo = (head, createdAt, login) => comment(redoMarker(head), createdAt, login);
 const mainWait = (head, createdAt, login) => comment(mainWaitMarker(head, ["check"]), createdAt, login);
-const RED = { state: "red", failed: [{ name: "check", runId: 1 }, { name: "lint", runId: 1 }] };
-const GREEN = { state: "green", failed: [] };
-const UNDETERMINED = { state: "undetermined", failed: [] };
+// main は main の最新の commit の { required, checks }、PR の checks は現在の head の check-runs（どちらも main-state.mjs の判定の入力）
+let checkId = 0;
+const checkRun = (name, conclusion, status = "completed") => ({ id: ++checkId, name, status, conclusion });
+const REQUIRED = ["check", "lint", "build"];
+const RED = { required: REQUIRED, checks: [checkRun("check", "failure"), checkRun("lint", "failure"), checkRun("build", "success")] };
+const GREEN = { required: REQUIRED, checks: REQUIRED.map((n) => checkRun(n, "success")) };
+const UNDETERMINED = { required: REQUIRED, checks: [checkRun("check", null, "in_progress"), checkRun("lint", "success"), checkRun("build", "success")] };
+const failing = (...names) => names.map((n) => checkRun(n, "failure"));
 const merge = (kind, head, createdAt) => ({ kind, createdAt, data: { merge_task: true, pr_number: 7, merge_initial_head_sha: head } });
 const run = (over = {}) => reviewStage({ head: A, viewer: VIEWER, comments: [], merges: [], attempts: [], running: false, now: NOW, waitMinutes: 10, ...over });
 
@@ -82,25 +87,25 @@ const table = [
   }, "stuck"],
   ["他の head のやり直しの印ではリセットしない", { now: new Date(at("11:00")), comments: [failed(A, at("10:00")), redo(B, at("10:05"))] }, "stuck"],
   ["第三者のやり直しの印ではリセットしない", { now: new Date(at("11:00")), comments: [failed(A, at("10:00")), redo(A, at("10:05"), "other")] }, "stuck"],
-  // main の修復待ち（main: mainState の戻り値 / failedChecks: PR の現在の head で落ちたチェックの名前）
-  ["main と同じチェックで落ちた → waiting（main の修復待ち）", { main: RED, failedChecks: ["check"], comments: [failed(A, at("10:00"))] }, "waiting"],
-  ["main と同じチェックで落ちた → 待ち時間切れでも止めない", { now: new Date(at("11:00")), main: RED, failedChecks: ["check", "lint"], comments: [failed(A, at("10:00"))] }, "waiting"],
-  ["main と同じチェックで落ちた → 起動の印が上限でも止めない", { main: RED, failedChecks: ["check"], comments: [failed(A, at("10:08")), launching(B, at("09:00")), launching("c".repeat(40), at("09:30"))] }, "waiting"],
-  ["main と同じチェックで落ちた → やり直しの後の失敗でも止めない", { main: RED, failedChecks: ["check"], comments: [redo(A, at("10:05")), failed(A, at("10:06"))] }, "waiting"],
-  ["修復待ちの印の後、main が赤いまま → 待ち時間切れでも waiting", { now: new Date(at("11:00")), main: RED, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "waiting"],
-  ["修復待ちの印の後、main が未定（実行中）→ waiting", { now: new Date(at("11:00")), main: UNDETERMINED, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "waiting"],
-  ["修復待ちの印の後、main が緑に戻った → レビューし直す", { now: new Date(at("11:00")), main: GREEN, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "review"],
+  // main の修復待ち（main: main の最新の commit の { required, checks } / checks: PR の現在の head の check-runs）
+  ["main と同じチェックで落ちた → waiting（main の修復待ち）", { main: RED, checks: failing("check"), comments: [failed(A, at("10:00"))] }, "waiting"],
+  ["main と同じチェックで落ちた → 待ち時間切れでも止めない", { now: new Date(at("11:00")), main: RED, checks: failing("check", "lint"), comments: [failed(A, at("10:00"))] }, "waiting"],
+  ["main と同じチェックで落ちた → 起動の印が上限でも止めない", { main: RED, checks: failing("check"), comments: [failed(A, at("10:08")), launching(B, at("09:00")), launching("c".repeat(40), at("09:30"))] }, "waiting"],
+  ["main と同じチェックで落ちた → やり直しの後の失敗でも止めない", { main: RED, checks: failing("check"), comments: [redo(A, at("10:05")), failed(A, at("10:06"))] }, "waiting"],
+  ["修復待ちの印の後、main が赤いまま → 待ち時間切れでも waiting", { now: new Date(at("11:00")), main: RED, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "waiting"],
+  ["修復待ちの印の後、main が未定（実行中）→ waiting", { now: new Date(at("11:00")), main: UNDETERMINED, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "waiting"],
+  ["修復待ちの印の後、main が緑に戻った → レビューし直す", { now: new Date(at("11:00")), main: GREEN, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }, "review"],
   ["main が緑に戻った → 印の前の failed merge タスク 2 件は数えない", { main: GREEN, comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))], merges: [merge("failed", A, at("09:58")), merge("failed", A, at("09:59"))] }, "review"],
-  ["main が緑に戻った後にまた失敗 → 今までどおり（待ち時間内は waiting）", { main: GREEN, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01")), failed(A, at("10:08"))] }, "waiting"],
-  ["main が緑に戻った後にまた失敗 → 今までどおり（待ち時間切れは stuck）", { now: new Date(at("11:00")), main: GREEN, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01")), failed(A, at("10:08"))] }, "stuck"],
-  ["前の head の修復待ちの印では待たない", { now: new Date(at("11:00")), main: GREEN, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(B, at("10:01"))] }, "stuck"],
-  ["第三者の修復待ちの印は数えない", { now: new Date(at("11:00")), main: RED, failedChecks: ["other"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01"), "other")] }, "stuck"],
-  ["main と違うチェックで落ちた → 今までどおり（待ち時間切れは stuck）", { now: new Date(at("11:00")), main: RED, failedChecks: ["build"], comments: [failed(A, at("10:00"))] }, "stuck"],
-  ["main と同じチェックに加えて違うチェックでも落ちた → 今までどおり", { now: new Date(at("11:00")), main: RED, failedChecks: ["check", "build"], comments: [failed(A, at("10:00"))] }, "stuck"],
-  ["main が赤くても落ちたチェックが無い（CI 以外の失敗）→ 今までどおり", { now: new Date(at("11:00")), main: RED, failedChecks: [], comments: [failed(A, at("10:00"))] }, "stuck"],
-  ["main の状態が未定（実行中）→ 今までどおり", { now: new Date(at("11:00")), main: UNDETERMINED, failedChecks: ["check"], comments: [failed(A, at("10:00"))] }, "stuck"],
-  ["main が緑で同じ名前のチェックで落ちた → 今までどおり", { main: GREEN, failedChecks: ["check"], comments: [failed(A, at("10:00"))] }, "waiting"],
-  ["main の状態が読めない → 今までどおり", { now: new Date(at("11:00")), main: undefined, failedChecks: ["check"], comments: [failed(A, at("10:00"))] }, "stuck"],
+  ["main が緑に戻った後にまた失敗 → 今までどおり（待ち時間内は waiting）", { main: GREEN, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01")), failed(A, at("10:08"))] }, "waiting"],
+  ["main が緑に戻った後にまた失敗 → 今までどおり（待ち時間切れは stuck）", { now: new Date(at("11:00")), main: GREEN, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01")), failed(A, at("10:08"))] }, "stuck"],
+  ["前の head の修復待ちの印では待たない", { now: new Date(at("11:00")), main: GREEN, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(B, at("10:01"))] }, "stuck"],
+  ["第三者の修復待ちの印は数えない", { now: new Date(at("11:00")), main: RED, checks: failing("other"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01"), "other")] }, "stuck"],
+  ["main と違うチェックで落ちた → 今までどおり（待ち時間切れは stuck）", { now: new Date(at("11:00")), main: RED, checks: failing("build"), comments: [failed(A, at("10:00"))] }, "stuck"],
+  ["main と同じチェックに加えて違うチェックでも落ちた → 今までどおり", { now: new Date(at("11:00")), main: RED, checks: failing("check", "build"), comments: [failed(A, at("10:00"))] }, "stuck"],
+  ["main が赤くても落ちたチェックが無い（CI 以外の失敗）→ 今までどおり", { now: new Date(at("11:00")), main: RED, checks: failing(), comments: [failed(A, at("10:00"))] }, "stuck"],
+  ["main の状態が未定（実行中）→ 今までどおり", { now: new Date(at("11:00")), main: UNDETERMINED, checks: failing("check"), comments: [failed(A, at("10:00"))] }, "stuck"],
+  ["main が緑で同じ名前のチェックで落ちた → 今までどおり", { main: GREEN, checks: failing("check"), comments: [failed(A, at("10:00"))] }, "waiting"],
+  ["main の状態が読めない → 今までどおり", { now: new Date(at("11:00")), main: undefined, checks: failing("check"), comments: [failed(A, at("10:00"))] }, "stuck"],
 ];
 for (const [name, input, stage] of table) {
   test(name, () => assert.equal(run(input).stage, stage));
@@ -176,29 +181,29 @@ test("fixLaunchedOf: fixLaunchedHead と同じ印を同じ head で読む", () =
   assert.equal(RS.fixLaunchedOf(body).head, fixLaunchedHead(body));
 });
 
-test("main と同じチェックで落ちたら、修復待ちの印に書くチェックの名前を返す。印を書いた後と、違うチェックで落ちたときは返さない", () => {
-  const r = run({ main: RED, failedChecks: ["lint", "check", "lint"], comments: [failed(A, at("10:00"))] });
-  assert.deepEqual(r.mainWait, ["lint", "check"]);
+test("main と同じチェックで落ちたら、修復待ちの印に書く、main で落ちている必須チェックの名前を返す。印を書いた後と、違うチェックで落ちたときは返さない", () => {
+  const r = run({ main: RED, checks: failing("lint", "check"), comments: [failed(A, at("10:00"))] });
+  assert.deepEqual(r.mainWait, ["check", "lint"]);
   assert.match(r.reason, /^main の修復待ち: /);
-  assert.equal(run({ main: RED, failedChecks: ["check"], comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }).mainWait, null);
-  assert.equal(run({ main: RED, failedChecks: ["build"], comments: [failed(A, at("10:00"))] }).mainWait, null);
+  assert.equal(run({ main: RED, checks: failing("check"), comments: [failed(A, at("10:00")), mainWait(A, at("10:01"))] }).mainWait, null);
+  assert.equal(run({ main: RED, checks: failing("build"), comments: [failed(A, at("10:00"))] }).mainWait, null);
 });
 
 test("main が緑に戻ったら、修復待ちの印の時刻を redo として返す（起動記録の数え直しの起点）", () => {
   const comments = [failed(A, at("10:00")), mainWait(A, at("10:01"))];
   assert.equal(run({ main: GREEN, comments }).redo, at("10:01"));
-  assert.equal(run({ main: RED, failedChecks: ["check"], comments }).redo, null);
+  assert.equal(run({ main: RED, checks: failing("check"), comments }).redo, null);
   const r = run({ main: GREEN, comments, attempts: [{ head: A, redo: null }, { head: A, redo: null }] });
   assert.equal(r.stage, "review");
 });
 
 test("main が赤い → 書いた印 → main が緑に戻る → レビューし直す、を連続で回す", () => {
   const comments = [failed(A, at("10:00"))];
-  const r1 = run({ main: RED, failedChecks: ["check"], comments });
+  const r1 = run({ main: RED, checks: failing("check"), comments });
   assert.equal(r1.stage, "waiting");
   comments.push(comment(mainWaitMarker(A, r1.mainWait), at("10:01")));
-  assert.equal(run({ now: new Date(at("11:00")), main: RED, failedChecks: ["check"], comments }).stage, "waiting");
-  assert.equal(run({ now: new Date(at("11:00")), main: GREEN, failedChecks: ["check"], comments }).stage, "review");
+  assert.equal(run({ now: new Date(at("11:00")), main: RED, checks: failing("check"), comments }).stage, "waiting");
+  assert.equal(run({ now: new Date(at("11:00")), main: GREEN, checks: failing("check"), comments }).stage, "review");
 });
 
 test("mainWaitHead: 修復待ちの印の 1 行目から head を取り出す。ほかの印・2 行目以降は undefined", () => {
