@@ -3773,7 +3773,7 @@ test("アーカイブ: close-tab の次、他の行動より先に出す", () =>
   assert.ok(kinds.includes("request-approval"));
 });
 
-const MAIN_SHA = "e".repeat(40);
+const MAIN_SHA = "c".repeat(40);
 const NIX = "Nix flake evaluation";
 const SC = "ShellCheck (severity=error)";
 const check = (id, name, conclusion, status = "completed", runId = 700 + id) => ({ id, name, status, conclusion, runId });
@@ -3908,7 +3908,7 @@ test("main-fix: 印の文言（2 段の起動・直せなかった・タブの�
   assert.equal(D.mainFixLaunchingMarker(MAIN_SHA), `案内役: main-fix を起動する（commit ${MAIN_SHA}）`);
   assert.equal(D.mainFixLaunchedMarker(MAIN_SHA, "term_m", RERUN_AT), `案内役: main-fix を起動した（commit ${MAIN_SHA} / ターミナル term_m / ${RERUN_AT}）`);
   assert.equal(D.mainFixFailedMarker(MAIN_SHA), `案内役: main-fix が直せなかった（commit ${MAIN_SHA}）`);
-  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix eeeeeee");
+  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix ccccccc");
 });
 
 // main が緑に戻った後: 前の失敗した commit（MID_SHA）に起動した印がある。
@@ -4019,9 +4019,4 @@ test("main の判断依頼: 同じスナップショットで 2 周しても二�
 test("main の判断依頼: 印の文言", () => {
   assert.equal(D.mainDecisionMarker(MAIN_SHA, D.CAUSE_MAIN_REPAIR), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main の修復）`);
   assert.equal(D.mainDecisionMarker(MAIN_SHA, STALL), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main-fix のセッションの停止）`);
-});
-
-// #411 の検証の訓練。drill-main-fix-b と合わさると main で落ちる（ADR 0004）。
-test("drill #411: main-fix のタブの題名は MAIN_SHA の先頭 7 桁", () => {
-  assert.equal(D.mainFixTabTitle(MAIN_SHA), `main-fix ${MAIN_SHA.slice(0, 7)}`);
 });
