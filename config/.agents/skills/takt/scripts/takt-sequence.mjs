@@ -1,5 +1,5 @@
 // 指定した issue を並びの順に takt に積み、PR の自動マージ予約からマージ完了までを見届けて、次の issue を積む。
-// 同時に進める issue の数は --concurrency（省けば takt の設定の concurrency。TAKT_CONCURRENCY も効く）まで。watch の並列数に合わせる。
+// 同時に進める issue の数は、watch と同じ takt の設定の concurrency（repo の .takt/config.yaml、global の ~/.takt/config.yaml、TAKT_CONCURRENCY）まで。
 // 出力は出来事が起きたときだけ「日時（JST） 出来事: #issue タイトル [PR の URL]」の 1 行。Orca のタブで流して人が追える形にする。
 // 起動直後に、対象の issue とタイトル・今の段階を 1 行ずつ出す（最初の出来事までタブが空にならないように）。
 // - 積むのは、対象のタスクが pending / running でなく、open で、blocked_by が全部閉じていて、
@@ -20,7 +20,7 @@
 // - repo の受け口（sequence-inbox.mjs）を開き、毎周そこに届いた issue を並びの後ろに足す（起動の入口が、動いている takt-sequence があれば新しいペインを開かずに足す）。
 //   終わる前に受け口を閉じ、閉じる前に届いていた issue があれば開き直して続ける。別の takt-sequence が受け口を持っていれば、受け口なしで流す。
 // 人・エージェントは start-sequence.mjs で起動する（repo root で。desk の案内役のペインの下に開く。引数は同じ）:
-//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]
+//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
 // このファイルを直に流すのは、start-sequence.mjs と guide の takt.mjs（startTaktSequence）だけ。印の環境変数 LAUNCHER_ENV が無ければ、
 // start-sequence.mjs を案内する 1 行を出して止める。
 // 全件マージ済みなら 0、CI 失敗・競合・タスク失敗などで進めなくなったら 1 で終わる。
@@ -41,7 +41,7 @@ if (!process.env[LAUNCHER_ENV]) {
   process.exit(2);
 }
 
-const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES), concurrency: "" };
+const opts = { workflow: "default", base: "main", interval: "30", "fix-wait": String(DEFAULT_FIX_WAIT_MINUTES) };
 const issues = [];
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
@@ -51,8 +51,8 @@ for (let i = 0; i < argv.length; i++) {
   else { console.error(`不明な引数: ${a}`); process.exit(2); }
 }
 const fixWait = Number(opts["fix-wait"]);
-if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0 || (opts.concurrency !== "" && !(Number.isInteger(Number(opts.concurrency)) && Number(opts.concurrency) > 0))) {
-  console.error("usage: start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]（--fix-wait は正の数、--concurrency は正の整数）");
+if (issues.length === 0 || !process.env.TAKT_ROOT || !Number.isFinite(fixWait) || fixWait <= 0) {
+  console.error("usage: start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
   process.exit(2);
 }
 
@@ -73,11 +73,12 @@ const FAILED_CHECK = ["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "S
 
 sh("takt", ["workflow", "doctor", opts.workflow]);
 sh("takt", ["workflow", "doctor", REVIEW_WORKFLOW]);
+let concurrency;
 // `takt merge --workflow` はグローバルの -w/--workflow に吸われて届かない（0.71.0）。takt merge は config の merge.workflow を使うので、
 // それがこの workflow を指していなければ止める（builtin のままだと、takt が CI を待ってそのままマージする）
 {
   const { resolveConfigValue } = await import(join(process.env.TAKT_ROOT, "dist/infra/config/index.js"));
-  if (opts.concurrency === "") opts.concurrency = String(resolveConfigValue(cwd, "concurrency") ?? 1);
+  concurrency = resolveConfigValue(cwd, "concurrency") ?? 1;
   const wf = resolveConfigValue(cwd, "merge")?.workflow ?? "";
   const real = (p) => { try { return realpathSync(p); } catch { return p; } };
   const configured = wf.startsWith("~") ? resolve(homedir(), wf.slice(1).replace(/^\//, "")) : resolve(cwd, wf);
@@ -224,12 +225,13 @@ let code = 1;
 let errors = 0;
 try {
   const initial = issues.splice(0);
+  log(`並列数: ${concurrency}（takt の設定の concurrency）`);
   addIssues(initial, listTasks(), "対象");
   for (;;) {
     try {
       const tasks = listTasks();
       if (ownsInbox) addIssues(takeFromInbox(inbox), tasks, "追加");
-      const plan = planRound({ stages: issues.map((n) => [n, stage(n, tasks)]), ready, concurrency: Number(opts.concurrency) });
+      const plan = planRound({ stages: issues.map((n) => [n, stage(n, tasks)]), ready, concurrency });
       for (const n of plan.enqueue) await enqueue(n);
       const { end } = plan;
       if (end !== null) {
