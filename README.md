@@ -85,6 +85,7 @@ dotfiles/
 │   ├── setup-new-mac.sh             # 新しい Mac に適用するまでのウィザード
 │   └── gyazo-retire.sh              # Gyazo 退会ウィザード（cap.so へ移行）
 ├── .github/workflows/ci.yml  # CI（scripts/check.sh を実行）
+├── .github/workflows/nightly.yml  # 毎晩の Cloud 録画環境の検証（必須チェックではない）
 ├── .takt/                 # このリポジトリ用の takt 設定
 ├── docs/
 │   ├── manual-setup.md         # 手動設定ガイド
