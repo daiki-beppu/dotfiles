@@ -13,7 +13,7 @@ description: 作業の学びを、公開前提の開発ログ docs/devlog/YYYY-M
 
 1. **main を最新にしてブランチを切る。** リポジトリの worktree 規約に従い、`git fetch` して `origin/main` から `docs/devlog-<slug>` を作る。完了条件: 既存の開発ログ（`docs/devlog/*.md`）と、最新の用語集・判断の記録（`GLOSSARY.md`・`docs/adr/` など、そのリポジトリにあるもの）を読み終えている。
 
-2. **素材を集める。** 対象の作業について、チケットの本文と resolution コメント、関連する調査記録と PR の差分、このセッションのやり取りを読む。takt で実装した作業なら、その takt worktree の `.takt/runs/*/` も読む（中心は `trace.md`・`context/task/order.md`・`reports/`。`logs/*.jsonl` は数 MB あるので grep で必要な所だけ）。利用上限などで止まって再開したタスクは run が複数に分かれるので、`.takt/tasks.yaml` の `source_run_slug` → `run_slug` をたどって全部読む。完了条件: 次の 2 つが分かっている。
+2. **素材を集める。** 対象の作業について、チケットの本文と resolution コメント、関連する調査記録と PR の差分、このセッションのやり取りを読む。takt で実装した作業なら、その run の `.takt/runs/<slug>/` も読む。片付けた後の run は main checkout の `.takt/runs/` に写してあり、slug に `-issue-<n>-` が入る。まだ片付けていなければ takt worktree の `.takt/runs/*/` にある（中心は `trace.md`・`context/task/order.md`・`reports/`。`logs/*.jsonl` は数 MB あるので grep で必要な所だけ）。利用上限などで止まって再開したタスクは run が複数に分かれるので、`.takt/tasks.yaml` の `source_run_slug` → `run_slug` をたどって全部読む（片付けた後はタスクの記録が無いので、main checkout の `.takt/runs/` で同じ issue 番号の slug を全部読む）。完了条件: 次の 2 つが分かっている。
    - 作業の中で**判断が変わった瞬間**（候補を比べて選んだ、想定と違う結果が出た、決めたことどうしが矛盾した、レビューで差し戻された、思い込みや言い過ぎが外れた）
    - その判断が**その後の main で直されたかどうか**。直されていたら、エントリの最後に「その後」の節を立てて経緯を書く。本文が最新の用語集と食い違ったままにならないようにする
 

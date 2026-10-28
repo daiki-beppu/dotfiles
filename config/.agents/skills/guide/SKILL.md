@@ -144,7 +144,7 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 - Orca の Chat UI の設定でチャット（`outcome.kind` が `structured`）として起動したとき、`orca terminal rename` がそのタブに効くか。実機で確かめていない。
 - 許可を絞らない対話セッションなので、許可の確認待ちで止まりうる。止まった場合は人がタブで答える（入力待ちは `orca terminal show` の `agentWait` で、手が止まっているか（idle。停止の条件ではない）は `orca terminal wait --for tui-idle` で観測し、時間切れは起動から `--stall-minutes` 分で検知し、仕様のスレッドへ判断依頼を送る。`agentWait` は、Claude が確認の質問（AskUserQuestion）を出している間は `{source:"hook", since}` で、ターンを終えて次の入力を待つだけのときは `null`。後者は入力待ちとして扱わず、時間切れで拾う。ツール実行の許可確認（`prompt-text`・`title` の source）は、許可スキップ設定の環境では出せず未確認）。
 - `orca agent launch --prompt "/devlog …"` から knowledge へ続く対話セッションが PR 作成まで進むかは、実際の起動で確かめていない。許可については上の記述（許可を絞らない対話セッションは確認待ちで止まりうる）のとおり。
-- devlog への素材は、仕様・親・閉じた sub-issue の番号と、takt list の `worktreePath` 配下の `.takt/runs`。worktree を片付けた後の run は渡せない（issue と PR だけが素材になる）。
+- devlog への素材は、仕様・親・閉じた sub-issue の番号と、その sub-issue の takt の run のディレクトリ。run は、takt-sequence がクローンを片付ける前に写した main checkout の `.takt/runs/*-issue-<n>-*` と、まだ片付けていないクローンの `.takt/runs` から探す。写す前に人が `rm -rf` で消した run は渡せない（issue と PR だけが素材になる）。
 - 閉じたタブの handle を `orca terminal show` すると、`terminal_handle_stale` ではなく `ok: true` のまま `connected: false` が返る（2026-10-17 に実機で確認）。観測はどちらも「見つからない」とする。`terminal_handle_stale` が返るのは Orca の再起動後などと見ているが、確かめていない。
 - `orca worktree create --json` の応答の `result.worktree.path`（Orca の CLI の実装から読んだ形）と、`/wayfinder #<map> #<ticket>` の引数の解釈は、実機で確かめていない。
 - 閉じるのは各工程・takt-sequence・to-spec の最後の起動の印の handle と、wayfinder の ticket の今の回の最後の起動の印の handle だけ。印を消して流し直す前の古いタブ、差し戻し前の回のタブ、手が止まる前に仕様・map が閉じられたか map が保留になったタブは残る（人が閉じる）。
