@@ -16,9 +16,18 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
   const commentsAt = (path) => paged(path).map((c) => ({ author: c.user?.login, body: c.body ?? "", createdAt: c.created_at }));
   const readComments = (number) => commentsAt(`repos/${repo}/issues/${number}/comments?per_page=100`);
+  // commit の check-runs。run の番号は details_url から取る（再実行に使う）。
+  const readChecks = (sha) =>
+    paged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
+      .flatMap((p) => p.check_runs)
+      .map((c) => {
+        const run = /\/actions\/runs\/(\d+)/.exec(c.details_url ?? "");
+        return { id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, runId: run ? Number(run[1]) : null };
+      });
 
   return {
     readComments,
+    readChecks,
     viewer: () => JSON.parse(gh(["api", "user"])).login,
     repoName: () => JSON.parse(gh(["repo", "view", "--json", "nameWithOwner"])).nameWithOwner,
 
@@ -78,12 +87,7 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
     // main の最新の commit と、その判定の材料（ruleset・check-runs・commit comment）。判定は takt の main-state.mjs が行う。
     readMain() {
       const sha = JSON.parse(gh(["api", `repos/${repo}/commits/main`])).sha;
-      const checks = paged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
-        .flatMap((p) => p.check_runs)
-        .map((c) => {
-          const run = /\/actions\/runs\/(\d+)/.exec(c.details_url ?? "");
-          return { id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, runId: run ? Number(run[1]) : null };
-        });
+      const checks = readChecks(sha);
       return {
         sha,
         rules: paged(`repos/${repo}/rules/branches/main`),

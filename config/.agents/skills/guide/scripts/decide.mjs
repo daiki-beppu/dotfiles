@@ -13,7 +13,8 @@
 //     | { kind: "merge-auto", key, spec, pr }   （学びの PR が OPEN で自動マージが未予約）
 //     | { kind: "review-fix", key, issue, pr, head, branch, reports }
 //       （渡した sub-issue の OPEN な PR の現在の head に viewer の takt の失敗のコメントがあり、その head の起動の印・やり直しの印が無く、起動が上限未満。印は PR に書く）
-//       snapshot.reviewPullRequests: [{ spec, issue, number, state, head, headBranch, comments }] / snapshot.mergeTasks: [{ prNumber, kind, createdAt, initialHead, pushedHead, reports }]
+//       （main が赤く、PR の現在の head の落ちたチェックがすべて main の落ちた必須チェックなら出さない。main の壊れは PR ごとに直さない）
+//       snapshot.reviewPullRequests: [{ spec, issue, number, state, head, headBranch, comments, checks }] / snapshot.mergeTasks: [{ prNumber, kind, createdAt, initialHead, pushedHead, reports }]
 //     | { kind: "request-review-decision", key, spec, issue, pr, head, cause, title, threadId, reason, reports }
 //       （上限到達・やり直しの後の失敗・レビューそのものが落ちた（merge タスクが現在の head で 2 回 failed）のどれか。仕様の Discord スレッドへ送る。印は仕様に書き、番号は PR）
 //     | { kind: "wayfinder", key, map, ticket, type }
@@ -53,7 +54,7 @@
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
-import { mainState } from "../../takt/scripts/main-state.mjs";
+import { failsLikeMain, mainState } from "../../takt/scripts/main-state.mjs";
 import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
 
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
@@ -1178,6 +1179,7 @@ function decideReviewFixes(snapshot, dispatched) {
     if (result.fix) {
       const key = `review-fix:${pr.number}:${pr.head}`;
       if (dispatched.has(key)) continue;
+      if (snapshot.main !== undefined && failsLikeMain(snapshot.main, pr.checks ?? [])) continue;
       actions.push({ kind: "review-fix", key, issue: pr.issue, pr: pr.number, head: pr.head, branch: pr.headBranch, reports: reportsOf(snapshot.mergeTasks, pr.number, pr.head) });
     } else if (result.decision) {
       const specIssue = snapshot.issues.find((i) => i.number === pr.spec);

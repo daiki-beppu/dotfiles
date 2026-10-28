@@ -250,6 +250,16 @@ test("readMain: main の sha の commit の check-runs・ruleset・commit commen
   ]);
 });
 
+test("readChecks: 指定した commit の check-runs を readMain と同じ形で読む", () => {
+  const HEAD = "a".repeat(40);
+  const { calls, execFile } = fakeGh((args) => JSON.stringify([{ total_count: 1, check_runs: [
+    { id: 5, name: "lint", status: "completed", conclusion: "failure", details_url: "https://github.com/o/r/actions/runs/888/job/1" },
+  ] }]));
+  const checks = createGithub({ repo: "o/r", cwd: "/x", execFile }).readChecks(HEAD);
+  assert.deepEqual(checks, [{ id: 5, name: "lint", status: "completed", conclusion: "failure", runId: 888 }]);
+  assert.deepEqual(calls.map((c) => c.args), [["api", `repos/o/r/commits/${HEAD}/check-runs?per_page=100`, "--paginate", "--slurp"]]);
+});
+
 test("commitComment: commit の comments に POST する", () => {
   const { calls, execFile } = fakeGh(() => "{}");
   createGithub({ repo: "o/r", cwd: "/x", execFile }).commitComment("abc", "案内役: y");

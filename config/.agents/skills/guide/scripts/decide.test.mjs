@@ -2947,7 +2947,7 @@ const rfMerge = (over = {}) => ({ prNumber: 70, kind: "completed", createdAt: "2
 
 // 仕様 #12 の親 #20 が #21 #22 を takt-sequence に渡した状態。#21 の最新の takt タスクの PR #70 が OPEN。
 // reviewPullRequests は snapshot.mjs が作る形（読み取り対象の PR だけ）。
-const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTasks = [rfMerge()], specComments = SENT_ALL, over = {} } = {}) =>
+const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTasks = [rfMerge()], specComments = SENT_ALL, checks = [], over = {} } = {}) =>
   snapshot(
     [
       spec(12, { comments: specComments }),
@@ -2958,7 +2958,7 @@ const rfWorld = ({ comments = [rfFailed(H1)], head = H1, state = "OPEN", mergeTa
     {
       taktTasks: [{ issue: 21, kind: "completed", createdAt: "2026-10-17T00:00:00Z", prUrl: "https://github.com/o/r/pull/70" }],
       pullRequests: [{ number: 70, state, author: VIEWER, body: "", autoMerge: false, head, headBranch: RF_BRANCH }],
-      reviewPullRequests: [{ spec: 12, issue: 21, number: 70, state, head, headBranch: RF_BRANCH, comments }],
+      reviewPullRequests: [{ spec: 12, issue: 21, number: 70, state, head, headBranch: RF_BRANCH, comments, checks }],
       mergeTasks,
       ...over,
     },
@@ -3817,4 +3817,29 @@ test("main の修復: archive-thread の直後、他の行動より先に出す"
   const kinds = decide(snapshot([specBare(40), spec(12, { state: "CLOSED", comments: [APPROVAL_SENT_555] })], { main: mainOf(RED) })).map((a) => a.kind);
   assert.deepEqual(kinds.slice(0, 2), ["archive-thread", "rerun-main"]);
   assert.ok(kinds.includes("request-approval"));
+});
+
+// ---- main が赤い間の review-fix ----
+
+const GREEN = [check(1, NIX, "success"), check(2, SC, "success")];
+const rfOnMain = (main, prChecks) => reviewFixes(decide(rfWorld({ checks: prChecks, over: { main } })));
+
+test("main が赤い間の review-fix: PR の現在の head が main と同じ必須チェックだけで落ちていれば、review-fix を出さない", () => {
+  assert.deepEqual(rfOnMain(mainOf(RED), [check(11, NIX, "failure"), check(12, SC, "success")]), []);
+});
+
+test("main が赤い間の review-fix: PR が main と違うチェックで落ちていれば、今までどおり出す（main と同じチェックにも落ちていても出す）", () => {
+  assert.deepEqual(rfOnMain(mainOf(RED), [check(11, NIX, "success"), check(12, SC, "failure")]), [rfAction()]);
+  assert.deepEqual(rfOnMain(mainOf(RED), [check(11, NIX, "failure"), check(13, "Cloud evidence", "failure")]), [rfAction()]);
+});
+
+test("main が赤い間の review-fix: PR に落ちたチェックが無い（CI 以外の指摘で失敗した）なら、今までどおり出す", () => {
+  assert.deepEqual(rfOnMain(mainOf(RED), [check(11, NIX, "success"), check(12, SC, "success")]), [rfAction()]);
+});
+
+test("main が赤い間の review-fix: main が緑・未定・スナップショットに無いなら、同じチェックで落ちた PR にも今までどおり出す", () => {
+  const prChecks = [check(11, NIX, "failure")];
+  assert.deepEqual(rfOnMain(mainOf(GREEN), prChecks), [rfAction()]);
+  assert.deepEqual(rfOnMain(mainOf([check(1, NIX, "failure")]), prChecks), [rfAction()]);
+  assert.deepEqual(rfOnMain(undefined, prChecks), [rfAction()]);
 });
