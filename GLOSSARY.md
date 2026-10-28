@@ -105,3 +105,15 @@ _Avoid_: クラッシュ、レビュー失敗（失敗のコメントが付い�
 **セッションの停止**:
 案内役が起動した工程のセッション、または takt-sequence のタブが、結果を GitHub に出さないまま進まなくなった状態。takt-sequence の結果は、渡した sub-issue がすべて閉じること。判断依頼の原因の 1 つ。
 _Avoid_: ハング、タイムアウト
+
+**main の修復**:
+main の push の CI が落ちてから、緑に戻るまでの流れ。落ちた job の再実行 → main-fix → 判断依頼、の順に進む。マージの前に止めず、マージの後に直すための仕組み（ADR 0004）。
+_Avoid_: main の復旧、hotfix
+
+**main-fix**:
+main の修復で、案内役が main から切った worktree に起動するセッション。修正の PR を main 向けに新しく出して、自動マージを予約する。PR の head ブランチを直す修正のセッション（review-fix）とは別物。
+_Avoid_: main 用の review-fix
+
+**最後に緑だった commit**:
+main の first-parent の履歴をさかのぼって、必須チェックがすべて success だった最も新しい commit。そこから落ちた commit までが、原因の候補の範囲になる。
+_Avoid_: last good commit、base
