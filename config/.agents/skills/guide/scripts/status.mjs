@@ -3,7 +3,7 @@
 import {
   CAUSE_FORMAL_SPEC, FOG_CAUSE, MARKER_FORMAL_SPEC_LAUNCHING, MARKER_HANDED_PREFIX, MARKER_KNOWLEDGE_LAUNCHING, MARKER_KNOWLEDGE_STARTED,
   closedTabMarker, decisionRequests, hasFog, hasSpecOfMap, hasStepResult, isParentOf, knowledgePrOf, lastFormalSpec, latestLaunches, mainFixLaunchingMarker, markers,
-  openMaps, openSpecs, pendingGrillingReplies, sentApprovalRequest, specOfMap, stallCause, ticketSessionsToObserve, ticketsStarted,
+  openMaps, openSpecs, pendingGrillingReplies, sentApprovalRequest, sentMainDecisions, specOfMap, stallCause, ticketSessionsToObserve, ticketsStarted,
 } from "./decide.mjs";
 import { mainState } from "../../takt/scripts/main-state.mjs";
 
@@ -157,14 +157,15 @@ const TITLE_WIDTH = 40;
 export const clockOf = (date) => date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 export const timeOf = (date) => date.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-// main が赤い間だけ出す 1 行。段階は C に main-fix の起動の印があれば修正中、無ければ再実行中。緑・未定なら null。
+// main が赤い間だけ出す 1 行。段階は C に判断依頼を送っていれば判断待ち、main-fix の起動の印があれば修正中、無ければ再実行中。緑・未定なら null。
 export function mainLineOf(snapshot) {
   if (snapshot.main === undefined) return null;
   const { state, failed } = mainState(snapshot.main);
   if (state !== "red") return null;
   const { sha, comments = [] } = snapshot.main;
   const fixing = comments.some((c) => c.author === snapshot.viewer && c.body === mainFixLaunchingMarker(sha));
-  return `main: 赤（${failed.map((f) => f.name).join("、")}）・${fixing ? `修正中（main-fix ${sha.slice(0, 7)}）` : "再実行中"}`;
+  const stage = sentMainDecisions(snapshot).length > 0 ? "判断待ち" : fixing ? `修正中（main-fix ${sha.slice(0, 7)}）` : "再実行中";
+  return `main: 赤（${failed.map((f) => f.name).join("、")}）・${stage}`;
 }
 
 // 1 行目に時刻と件数、次に main が赤ければその 1 行、続けて 1 行に 1 件。列は表示幅でそろえる。

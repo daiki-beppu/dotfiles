@@ -52,6 +52,9 @@
 //       （再実行の印より後に同じ必須チェックが落ち直し、C に main-fix の起動の印が無く、範囲の起動の印が上限未満。印は C の commit comment に書く）
 //     | { kind: "close-tab", key, sha, step: "main-fix", handle, gone }
 //       （main が緑に戻り、main-fix のタブの手が止まっている。閉じた印は起動の印と同じ commit comment に書く）
+//     | { kind: "request-main-decision", key, sha, cause, reason, checks, runs, lastGreen, pullRequests, spec, threadId }
+//       （main の修復が進まない: main-fix の起動が上限・main-fix が直せなかった印・main-fix のセッションの停止。C ごと原因ごとに 1 度だけ。
+//        送り先は範囲の PR が閉じた issue の仕様のスレッド。たどれなければ spec・threadId は null で repo のチャンネル。印は仕様か C の commit comment に書く）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -1353,6 +1356,9 @@ export const mainFixTabTitle = (sha) => `main-fix ${sha.slice(0, 7)}`;
 // 修復の起動回数の上限。最後に緑だった commit より後の起動の印の数で数える（仮決め）。
 export const MAIN_FIX_LAUNCH_LIMIT = 2;
 const MAIN_FIX_LAUNCHED = /^案内役: main-fix を起動した（commit (\w+) \/ ターミナル (\S+) \/ ([^）]+)）/;
+// main の修復が進まないときの判断依頼の原因（停止は stallCause("main-fix")）。印は decisionMarker と同じ形で、対象は #N ではなく commit C。
+export const CAUSE_MAIN_REPAIR = "main の修復";
+export const mainDecisionMarker = (sha, cause) => `${MARKER_DECISION_PREFIX}（commit ${sha} ${cause}）`;
 
 const ownCommitComments = (main, viewer) => (main.commitComments ?? []).filter((c) => c.author === viewer && typeof c.body === "string");
 
@@ -1370,8 +1376,52 @@ function rerunStillFailing(main, viewer, failed) {
   });
 }
 
+// 範囲の PR を重複なく、新しい順（範囲は C から古い方への順）に並べる。
+const rangePullRequests = (main) => [...new Map((main.range ?? []).flatMap((r) => r.pullRequests).map((p) => [p.number, p])).values()];
+const failedRuns = (failed) => [...new Set(failed.map((f) => f.runId).filter((r) => r !== null))];
+
+// C に送り済みの main の判断依頼の原因。印は C の commit comment か、送り先の仕様の issue のどちらかにある。
+export function sentMainDecisions(snapshot) {
+  const { main, viewer } = snapshot;
+  const bodies = new Set([...markers(main, viewer), ...snapshot.issues.filter(isSpec).flatMap((i) => markers(i, viewer))]);
+  return [CAUSE_MAIN_REPAIR, stallCause("main-fix")].filter((cause) => bodies.has(mainDecisionMarker(main.sha, cause)));
+}
+
+// main-fix のセッションが C に書いた、直せなかった印の理由（最後のもの）。無ければ null。
+function mainFixFailure(main, viewer) {
+  const head = `${mainFixFailedMarker(main.sha)}: `;
+  const body = markers(main, viewer).filter((b) => b.startsWith(head)).at(-1);
+  return body === undefined ? null : body.slice(head.length).trim();
+}
+
+// 送り先: 範囲の PR を新しい順にたどり、閉じた issue を sub-issue に持つ親の仕様で、承認依頼のスレッドがある最初のもの。無ければ repo のチャンネル。
+function mainDecisionTarget(snapshot, pullRequests) {
+  const { issues, viewer } = snapshot;
+  for (const n of pullRequests.flatMap((p) => p.closes)) {
+    for (const parent of issues.filter((p) => (p.subIssues ?? []).some((s) => s.number === n))) {
+      const spec = issues.find((s) => isSpec(s) && isParentOf(parent, s.number) && sentApprovalRequest(s, viewer) !== null);
+      if (spec !== undefined) return { spec: spec.number, threadId: sentApprovalRequest(spec, viewer).threadId };
+    }
+  }
+  return { spec: null, threadId: null };
+}
+
+// main の修復が進まないときの判断依頼。C ごと原因ごとに 1 度だけ（送り済みの印か dispatched があれば出さない）。
+function mainDecision(snapshot, dispatched, cause, reason) {
+  const { main } = snapshot;
+  const key = `request-main-decision:${main.sha}:${cause}`;
+  if (dispatched.has(key) || sentMainDecisions(snapshot).includes(cause)) return [];
+  const { failed } = mainState(main);
+  const pullRequests = rangePullRequests(main);
+  return [{
+    kind: "request-main-decision", key, sha: main.sha, cause, reason, checks: failed.map((f) => f.name), runs: failedRuns(failed),
+    lastGreen: main.lastGreen ?? null, pullRequests, ...mainDecisionTarget(snapshot, pullRequests),
+  }];
+}
+
 // run ごとに 1 回だけ再実行する。印のある run は、再実行でも落ちたままなら、その先の main-fix に進む。
-// main-fix は C ごとに 1 回、範囲（最後に緑だった commit より後）の起動の印が上限未満のときだけ。
+// main-fix は C ごとに 1 回、範囲（最後に緑だった commit より後）の起動の印が上限未満のときだけ。上限に達していれば判断依頼に進む。
+// main-fix が直せなかった印を C に書いていれば、判断依頼に進む。
 function decideMainRepair(snapshot, dispatched) {
   const { main, viewer } = snapshot;
   if (main === undefined) return [];
@@ -1381,17 +1431,38 @@ function decideMainRepair(snapshot, dispatched) {
   const runs = [...new Set(failed.map((f) => f.runId).filter((r) => r !== null && !marked.has(mainRerunMarker(r))))];
   const key = `rerun-main:${main.sha}`;
   if (runs.length > 0) return dispatched.has(key) ? [] : [{ kind: "rerun-main", key, sha: main.sha, runs, checks: failed.map((f) => f.name) }];
+  const failure = mainFixFailure(main, viewer);
+  if (failure !== null) return mainDecision(snapshot, dispatched, CAUSE_MAIN_REPAIR, `main-fix が直せなかった: ${failure}`);
   const fixKey = `main-fix:${main.sha}`;
   if (marked.has(mainFixLaunchingMarker(main.sha)) || dispatched.has(fixKey) || !rerunStillFailing(main, viewer, failed)) return [];
-  const range = main.range ?? [];
-  const inRange = new Set(range.map((r) => r.sha));
+  const inRange = new Set((main.range ?? []).map((r) => r.sha));
   const launches = ownCommitComments(main, viewer).filter((c) => inRange.has(c.sha) && c.body === mainFixLaunchingMarker(c.sha)).length;
-  if (launches >= MAIN_FIX_LAUNCH_LIMIT) return [];
-  const pullRequests = [...new Map(range.flatMap((r) => r.pullRequests).map((p) => [p.number, p])).values()];
+  if (launches >= MAIN_FIX_LAUNCH_LIMIT) {
+    return mainDecision(snapshot, dispatched, CAUSE_MAIN_REPAIR, `main-fix の起動が上限（${MAIN_FIX_LAUNCH_LIMIT} 回）に達した`);
+  }
   return [{
     kind: "main-fix", key: fixKey, sha: main.sha, checks: failed.map((f) => f.name),
-    runs: [...new Set(failed.map((f) => f.runId).filter((r) => r !== null))], lastGreen: main.lastGreen ?? null, pullRequests,
+    runs: failedRuns(failed), lastGreen: main.lastGreen ?? null, pullRequests: rangePullRequests(main),
   }];
+}
+
+// main-fix のセッションの観測の対象。main が赤く、C に viewer の起動した印（handle つき、最後のもの）があり、結果が無く、停止の判断依頼を送っていないもの。
+// 結果は、main の新しい commit が来た（起動の印が今の C に無くなる）か、C に直せなかった印があること。
+export function mainFixSessionsToObserve(snapshot) {
+  const { main, viewer } = snapshot;
+  if (main === undefined || mainState(main).state !== "red") return [];
+  if (mainFixFailure(main, viewer) !== null || sentMainDecisions(snapshot).includes(stallCause("main-fix"))) return [];
+  const launched = markers(main, viewer).map((b) => MAIN_FIX_LAUNCHED.exec(b)).filter((m) => m !== null && m[1] === main.sha).at(-1);
+  return launched === undefined ? [] : [{ sha: main.sha, step: "main-fix", handle: launched[2], startedAt: launched[3] }];
+}
+
+// main-fix のセッションが結果を出さないまま止まったときの判断依頼。止まり方の判定は工程と同じ。
+function decideMainFixStalls(snapshot, dispatched) {
+  return mainFixSessionsToObserve(snapshot).flatMap(({ handle, startedAt }) => {
+    const observation = snapshot.sessions?.[handle];
+    const reason = observation === undefined ? null : stallReason(observation, startedAt, snapshot);
+    return reason === null ? [] : mainDecision(snapshot, dispatched, stallCause("main-fix"), reason);
+  });
 }
 
 // 閉じる候補の main-fix のタブ: main が緑で、起動した印（handle つき）があり、同じ commit に閉じた印が無いもの。
@@ -1489,6 +1560,7 @@ export function decide(snapshot) {
     ...decideCloseMainFixTabs(snapshot, dispatched),
     ...decideArchiveThreads(snapshot, dispatched),
     ...decideMainRepair(snapshot, dispatched),
+    ...decideMainFixStalls(snapshot, dispatched),
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideToSpec(snapshot, dispatched),

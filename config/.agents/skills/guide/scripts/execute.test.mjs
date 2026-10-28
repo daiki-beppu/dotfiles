@@ -1743,3 +1743,69 @@ test("close-tab: main-fix のタブ（sha つき）は、閉じた印を issue �
   await execute({ kind: "close-tab", key: "close-tab:term_m", sha, step: "main-fix", handle: "term_m", gone: false });
   assert.deepEqual(calls, ["close term_m", "commit-comment bbbbbbb 案内役: main-fix のタブを閉じた（ターミナル term_m）"]);
 });
+
+// main の判断依頼: Discord は本物のアダプタに偽の fetch を注入し、GitHub の印と同じ列に呼び出しを並べる。
+const mainDecisionWorld = () => {
+  const calls = [];
+  const fetch = async (url, init) => {
+    const { pathname } = new URL(url);
+    if (init.method === "GET") {
+      calls.push(`discord GET ${pathname}`);
+      return { ok: true, status: 200, json: async () => [{ id: "C1", name: "r", type: 0 }] };
+    }
+    calls.push(`discord POST ${pathname} ${JSON.parse(init.body).content}`);
+    return { ok: true, status: 200, json: async () => ({ id: "M" }) };
+  };
+  const execute = createExecute({
+    github: {
+      comment: (n, body) => calls.push(`comment #${n} ${body}`),
+      commitComment: (s, body) => calls.push(`commit-comment ${s.slice(0, 7)} ${body}`),
+    },
+    discord: createDiscord({ token: "t", guildId: "g", userId: "U", fetch }),
+    cwd: "/x", repo: REPO,
+  });
+  return { calls, execute };
+};
+const MAIN_C = "c".repeat(40);
+const MAIN_GREEN = "a".repeat(40);
+const mainDecisionAction = (over = {}) => ({
+  kind: "request-main-decision", key: `request-main-decision:${MAIN_C}:main の修復`, sha: MAIN_C, cause: "main の修復",
+  reason: "main-fix が直せなかった: revert すべきか判断が要る", checks: ["Nix flake evaluation", "ShellCheck (severity=error)"], runs: [701],
+  lastGreen: MAIN_GREEN, pullRequests: [{ number: 50, title: "feat: x", closes: [41] }, { number: 49, title: "fix: y", closes: [] }], spec: 12, threadId: "555", ...over,
+});
+
+test("main の判断依頼: 送り先が仕様なら、仕様に印を書いてから仕様のスレッドへ送る。本文に落ちたチェック・run の URL・C・最後に緑だった commit・範囲の PR・理由が入る", async () => {
+  const { calls, execute } = mainDecisionWorld();
+  await execute(mainDecisionAction());
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0], `comment #12 案内役: Discord に判断依頼を送る（commit ${MAIN_C} main の修復）`);
+  assert.ok(calls[1].startsWith("discord POST /api/v10/channels/555/messages "), calls[1]);
+  const content = calls[1].replace(/^discord POST \S+ /, "");
+  for (const part of [
+    "<@U>", "Nix flake evaluation", "ShellCheck (severity=error)", "https://github.com/o/r/actions/runs/701", MAIN_C, MAIN_GREEN,
+    "#50 feat: x https://github.com/o/r/pull/50 閉じた issue: #41", "#49 fix: y", "main-fix が直せなかった: revert すべきか判断が要る",
+  ]) assert.ok(content.includes(part), `本文に ${part} が無い: ${content}`);
+});
+
+test("main の判断依頼: 仕様にたどれなければ、repo のチャンネルを確保し、C の commit comment に印を書いてから送る", async () => {
+  const { calls, execute } = mainDecisionWorld();
+  await execute(mainDecisionAction({ spec: null, threadId: null, cause: "main-fix のセッションの停止", reason: "起動したセッションが Orca に見つからない" }));
+  assert.deepEqual(calls.slice(0, 2), [
+    "discord GET /api/v10/guilds/g/channels",
+    `commit-comment ccccccc 案内役: Discord に判断依頼を送る（commit ${MAIN_C} main-fix のセッションの停止）`,
+  ]);
+  assert.ok(calls[2].startsWith("discord POST /api/v10/channels/C1/messages "), calls[2]);
+  assert.ok(calls[2].includes("main の修復が進まない（main-fix のセッションの停止）"), calls[2]);
+  assert.equal(calls.length, 3);
+});
+
+test("main の判断依頼: 送信が失敗しても印は残る（流し直しても二度送らない）", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    discord: { sendMainDecisionRequest: async () => { throw new Error("discord down"); } },
+    cwd: "/x", repo: REPO,
+  });
+  await assert.rejects(execute(mainDecisionAction()), /discord down/);
+  assert.deepEqual(calls, [`comment #12 案内役: Discord に判断依頼を送る（commit ${MAIN_C} main の修復）`]);
+});

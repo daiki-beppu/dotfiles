@@ -25,6 +25,7 @@ import {
   grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
+  mainDecisionMarker,
   mainFixLaunchedMarker,
   mainFixLaunchingMarker,
   mainRerunMarker,
@@ -236,6 +237,14 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchMainFix({ cwd, repo, sha: action.sha, checks: action.checks, runs: action.runs, lastGreen: action.lastGreen, pullRequests: action.pullRequests });
       github.commitComment(action.sha, mainFixLaunchedMarker(action.sha, handle, launchedAt));
+    } else if (action.kind === "request-main-decision") {
+      // 送り先が repo のチャンネルなら、承認依頼と同じくチャンネルの確保を印より先に行う（繰り返しても安全）。
+      const threadId = action.threadId ?? (await discord.ensureChannel(repo.split("/")[1].toLowerCase()));
+      // 印は送信より先に、送り先が仕様ならその仕様に、repo のチャンネルなら C の commit comment に書く。
+      if (action.spec !== null) github.comment(action.spec, mainDecisionMarker(action.sha, action.cause));
+      else github.commitComment(action.sha, mainDecisionMarker(action.sha, action.cause));
+      const { sha, cause, reason, checks, runs, lastGreen, pullRequests } = action;
+      await discord.sendMainDecisionRequest({ threadId, repo, sha, cause, reason, checks, runs, lastGreen, pullRequests });
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);
