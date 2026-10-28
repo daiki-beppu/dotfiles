@@ -1,6 +1,6 @@
 ---
 name: guide
-description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、渡した sub-issue の open な PR の現在の head で takt のレビューが失敗したら head ブランチの worktree に修正のセッション（review-fix）を起動し、修正の起動が上限に達した・やり直しの後も失敗した・レビューそのものが落ちた・修正のセッションが結果を出さないまま止まったときは仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、晴れた map（霧が無く、子がすべて閉じている）からは `to-spec` を Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送り、grilling・task が resolution に書いた仮決めは 1 件ずつ map のスレッドへ流し、grilling の不可逆な判断の問い（AskUserQuestion）には問いつきの判断依頼を送って、本人の Discord の返信を ticket に書き戻し、止まっていたタブへ流し込む常駐スクリプト「案内役」を動かす依頼に使う。
+description: 仕様（spec ラベル）の承認依頼を Discord に送り、承認済み（spec-approved ラベル）の仕様を to-tickets から takt-sequence まで流し、流れが止まったら（sub-issue の takt の run が ABORT、formal-spec の検証失敗、起動したセッションが結果を出さないまま停止、または takt-sequence が sub-issue を残したまま停止）仕様のスレッドへ判断依頼を送り、main の CI の必須チェックが落ちたら落ちた job を 1 回だけ再実行し、渡した sub-issue の open な PR の現在の head で takt のレビューが失敗したら head ブランチの worktree に修正のセッション（review-fix）を起動し、修正の起動が上限に達した・やり直しの後も失敗した・レビューそのものが落ちた・修正のセッションが結果を出さないまま止まったときは仕様のスレッドへ判断依頼を送り、open な wayfinder の map の frontier にある research・grilling・task の ticket ごとに `/wayfinder` のセッションを Orca のタブに起動し、晴れた map（霧が無く、子がすべて閉じている）からは `to-spec` を Orca のタブに起動し、map ごとの Discord スレッドへ prototype の ticket（人が見る ticket）を知らせ、起動した ticket のセッションが止まったらそのスレッドへ判断依頼を送り、grilling・task が resolution に書いた仮決めは 1 件ずつ map のスレッドへ流し、grilling の不可逆な判断の問い（AskUserQuestion）には問いつきの判断依頼を送って、本人の Discord の返信を ticket に書き戻し、止まっていたタブへ流し込む常駐スクリプト「案内役」を動かす依頼に使う。
 ---
 
 # 案内役
@@ -41,6 +41,7 @@ description: 仕様（spec ラベル）の承認依頼を Discord に送り、�
 | 扱う仕様か map（保留でない）に、判断依頼を送った後の印（メッセージ M つき。grilling の問いを除く）があり、同じ組の答えた印がなく、M への本人（`guide.discord.user-id`）の返信（本文が空でないもの）か ✅ がある | 判断依頼の印と同じ issue に答えた印を書く。状況の一覧の判断待ちから外すためだけで、他の行動は変えない。本人以外の返信・✅、❌ では書かない。答えた印の無い間だけ M の返信とリアクションを毎周読む |
 | 起動の印に handle がある工程・takt-sequence・wayfinder の ticket・to-spec の結果が GitHub に出ていて（wayfinder は ticket が閉じた、to-spec は map の仕様ができた）、判断依頼を送っておらず、閉じた印が無い。タブの手が止まっている（工程は `orca terminal wait --for tui-idle` が満たされる、takt-sequence は画面に終わりの行がある） | `orca terminal close` でタブを閉じ、閉じた印を書く。タブが既に見つからなければ、閉じずに印だけ書く。判断依頼を送ったタブ、formal-spec の最後の結果が failed のタブ、入力待ちのタブは、人が答える場所なので閉じない |
 | closed の `spec`（`--from` の範囲内）に viewer の承認依頼を送った印、または closed の `wayfinder:map` に viewer の map のスレッドを立てた印があり、そのスレッド T をアーカイブした印が無い | スレッド T をアーカイブし（`PATCH /channels/T` に `archived: true`。チャンネルの一覧から消える）、アーカイブした印を書く。スレッドが既に消されていれば（404）アーカイブせずに印だけ書く。人がアーカイブを戻しても、印があるので繰り返さない |
+| main の最新の commit C（first-parent）の、ruleset の必須チェック（名前は `GET repos/{repo}/rules/branches/main` から読み、repo ごとに書き込まない）のどれかが failure・cancelled・timed_out で、落ちた run R の再実行の印が C に無い。必須チェックが実行中・未登録なら判定しない（次の周で読む）。必須でないチェックの失敗では動かない | 先に再実行の印を C の commit comment に書き、落ちた job を 1 回だけ再実行する（`gh run rerun R --failed`）。再実行で通れば何もしない。再実行でも落ちたままなら繰り返さない。main が赤い間は、状況の一覧のヘッダの次に `main: 赤（<落ちたチェック>）・再実行中` の 1 行を出す。判定は takt スキルの `scripts/main-state.mjs`（takt-sequence と共通）が行う |
 
 `wayfinder:on-hold` ラベルの付いた map は保留として扱い、上の表の map の行（起動・スレッド・通知・観測・判断依頼・差し戻しの書き戻し）のどれも出さない。ラベルを外せば、次の周から扱う。保留中に起動済みのセッションは止めない。
 
@@ -57,7 +58,7 @@ node <skill>/scripts/guide.mjs <owner/repo> [--interval 60] [--from <仕様の i
 
 - `--dry-run`: 1 周だけ読み、観測した要約・状況の一覧・行動を表示して終わる。GitHub への書き込みも子プロセスの起動もしない。
 - ペインの表示: 行動は `実行: <内容>` の 1 行ずつ。状況の一覧（仕様と map ごとに 1 行、`仕様 #n <段階> <詳細> <題名>`）は、行が前と変わった周だけ出し直す。TTY なら最下行に今の段階（読み取り中・判断中・実行中・次の周の時刻つきの待機中）を上書きで出す。段階の判定は `scripts/status.mjs` の表にある。
-- 前提: `gh` が認証済み。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
+- 前提: `gh` が認証済み。main の修復は、main の ruleset・check-runs・commit comment を `gh api` で読み、`gh run rerun` を使う。review-fix は `git`、`orca worktree create`、`takt-node.sh`（merge タスクの記録を TaskRunner から読む）を使う。キーチェーン（アカウントは `$USER`）に `guide.discord.bot-token` / `guide.discord.guild-id` / `guide.discord.user-id` がある（`security find-generic-password -a "$USER" -s <名前> -w` で読む）。Bot は guild に参加し、チャンネルの管理・リアクションの追加・公開スレッドの作成・スレッド内の送信・メッセージ履歴の閲覧の権限を持つ。特権インテントは使わない。実行モードでは加えて `takt watch` が動いていて、`orca` と `claude` がある。Orca が起動していて、対象 repo の main checkout が Orca に登録済みで、`orca agent launch --agent claude` が使える（formal-spec・to-tickets・knowledge・wayfinder・to-spec の起動に使う。to-spec スキルが要る）。wayfinder の task の起動には `orca worktree create` と `git fetch origin` も使う。
 - cwd の repo が引数と違うか、キーチェーンの値がない（無い名前を表示する）と終了コード 2、行動の実行が失敗すれば終了コード 1 で止まる。ただし `orca terminal close` の失敗は止まらず、`やり直し待ち:` の行を出して閉じた印を書かずに次の周で閉じ直す。
 
 takt watch・align-behind と一緒に立てるときは、`guide.mjs` の代わりに `desk.mjs` を同じ場所で流す。Orca の新しいタブに、左に takt watch、右に案内役、案内役の下に align-behind のペインを作る。案内役の引数はそのまま案内役に渡す。`--no-guide` を付けると案内役を立てず、watch の右に align-behind を置く（takt スキルが案内役なしで runner を立てるとき）。
@@ -113,6 +114,7 @@ state ファイルは持たない。済んだ行動は GitHub のコメント（
 | `案内役: Discord に map のスレッドを立てた（スレッド T）` | wayfinder の map | 立てた後に書く（2 段目）。T がスレッドの ID。通知と判断依頼の送り先 |
 | `案内役: Discord に人が見る ticket を知らせる（#t）` | wayfinder の map | prototype の ticket t を知らせる前に書く。閉じ括弧まで照合する。これがあれば再送しない |
 | `案内役: Discord のスレッドをアーカイブした（スレッド T）` | 閉じた仕様か map | スレッド T をアーカイブした後に書く（アーカイブし直しは害が無いので後に書く）。閉じ括弧まで照合する。これがあればアーカイブしない |
+| `案内役: main の失敗した job を再実行する（run R）` | main の失敗した commit C の commit comment | 再実行する前に書く。R は落ちた必須チェックの Actions の run。閉じ括弧まで照合する。これがある run は再実行しない（issue も PR も持たない main の状態を毎周読み直すため、印は commit に置く） |
 | `案内役: knowledge を起動する` | 仕様 | 起動する前に書く（1 段目）。これがある仕様には knowledge を出さない。起動の成否が不明でも二重に起動しない |
 | `案内役: knowledge を起動した（ターミナル H / T）` | 仕様 | 起動した後に書く（2 段目）。H は `orca agent launch --json` の応答の `result.outcome.handle`、T は起動時刻（ISO 8601）。handle が応答から取れなければ書かずに案内役が止まる |
 | `案内役: knowledge を起動した`（「（ターミナル」が続かない。古い版の印） | 仕様 | 読み取りだけ残す。これがある仕様には knowledge を出さない |

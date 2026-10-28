@@ -1,11 +1,12 @@
 // snapshot.mjs のテスト。GitHub・Discord は偽物。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closedTabMarker, decide, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
+import { closedTabMarker, decide, mainRerunMarker, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { REVIEW_FAILED, fixLaunchedMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 
 const VIEWER = "me";
+const NO_MAIN = () => ({ sha: "0".repeat(40), rules: [], checks: [], comments: [] });
 const SENDING = "案内役: Discord に承認依頼を送る";
 const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
 const issue = (number, over = {}) => ({ number, title: "t", state: "OPEN", labels: ["spec"], body: "", comments: [], subIssues: [], ...over });
@@ -20,7 +21,7 @@ const build = (issues, reactions = [{ emoji: "✅", userId: "U1" }], pullRequest
   const reads = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1", fromSpec,
-    github: { readIssues: () => issues, readPullRequests: () => pullRequests },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => pullRequests },
     discord: { readReactions: async (ref) => { reads.push(ref); return reactions; } },
     taktTasks: () => TASKS,
   });
@@ -50,7 +51,7 @@ test("送り済みの OPEN な仕様（承認済みでも）だけ、マーカ�
 test("リアクションの取得が失敗したら例外にする", async () => {
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => [issue(12, { comments: sent })], readPullRequests: () => [] },
+    github: { readMain: NO_MAIN, readIssues: () => [issue(12, { comments: sent })], readPullRequests: () => [] },
     discord: { readReactions: async () => { throw new Error("Discord GET が 404"); } },
     taktTasks: () => [],
   });
@@ -79,7 +80,7 @@ const buildObserved = (issues, { pullRequests = [], observe, stallMinutes } = {}
   const observed = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => issues, readPullRequests: () => pullRequests },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => pullRequests },
     discord: { readReactions: async () => [] },
     taktTasks: () => [],
     now: () => NOW,
@@ -127,7 +128,7 @@ test("sessions: handle の無い印・結果が出て閉じた工程・承認依
 test("sessions: 観測すべき工程が無くても now と空の sessions を返す（既存の呼び出しが observeSession なしでも壊れない）", async () => {
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => [issue(12)], readPullRequests: () => [] },
+    github: { readMain: NO_MAIN, readIssues: () => [issue(12)], readPullRequests: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [],
   });
@@ -260,7 +261,7 @@ const buildReplies = (issues, { readReplies = async () => [] } = {}) => {
   const commentsOf = (n) => issues.find((i) => i.number === n).comments;
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => issues, readPullRequests: () => [], readComments: commentsOf },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => [], readComments: commentsOf },
     discord: { readReactions: async () => [], readReplies: async (ref) => { reads.push(ref); return readReplies(ref); } },
     taktTasks: () => [],
     now: () => NOW,
@@ -314,7 +315,7 @@ const buildRefresh = (ticket, { later, readComments, waitSince = S1 }) => {
   const calls = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: {
+    github: { readMain: NO_MAIN,
       readIssues: () => [mapIssue([ticket]), { ...ticket, comments: stale }],
       readPullRequests: () => [],
       readComments: readComments ?? ((n) => { calls.push(n); return latest; }),
@@ -378,7 +379,7 @@ const buildReactions = (issues, { readReactions } = {}) => {
   const reads = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => issues, readPullRequests: () => [], readComments: (n) => issues.find((i) => i.number === n).comments },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => [], readComments: (n) => issues.find((i) => i.number === n).comments },
     discord: { readReactions: async (ref) => { reads.push(ref); return readReactions ? readReactions(ref) : []; }, readReplies: async () => [] },
     taktTasks: () => [],
     now: () => NOW,
@@ -436,7 +437,7 @@ const reviewWorld = ({ tasks, prs, mergeRows = [MERGE] } = {}) => {
   ];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: {
+    github: { readMain: NO_MAIN,
       readIssues: () => issues,
       readPullRequests: () => prs ?? [prRow(70), prRow(71, "CLOSED"), prRow(80)],
       readComments: (n) => { reads.comments.push(n); return [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }]; },
@@ -488,7 +489,7 @@ test("reviewPullRequests: 読んだ結果から decide が review-fix を 1 件�
 test("reviewPullRequests: merge タスクの読み取りが失敗したら例外にする（黙って空にしない）", async () => {
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => reviewIssues(), readPullRequests: () => [prRow(70)], readComments: () => [] },
+    github: { readMain: NO_MAIN, readIssues: () => reviewIssues(), readPullRequests: () => [prRow(70)], readComments: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [taskOf(21, 70)],
     mergeTasks: async () => { throw new Error("takt-node.sh が失敗"); },
@@ -517,7 +518,7 @@ const fixWorld = ({ comments, head = RF_HEAD, state = "OPEN", observed = [] } = 
   ];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: {
+    github: { readMain: NO_MAIN,
       readIssues: () => issues,
       readPullRequests: () => [prRow(70, state, { head })],
       readComments: () => comments,
@@ -559,7 +560,7 @@ test("修正のセッション: 判断依頼を送り済みの PR（仕様に停
   const observed = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => issues, readPullRequests: () => [prRow(70)], readComments: () => [fixLaunched(RF_HEAD, "term_f")] },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => [prRow(70)], readComments: () => [fixLaunched(RF_HEAD, "term_f")] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [taskOf(21, 70)],
     mergeTasks: async () => [],
@@ -600,7 +601,7 @@ test("decisionAnswers: 送った印があり答えた印の無い判断依頼だ
   const reactions = [{ emoji: "✅", userId: "U1" }];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readIssues: () => [spec, closed], readPullRequests: () => [], readComments: () => [] },
+    github: { readMain: NO_MAIN, readIssues: () => [spec, closed], readPullRequests: () => [], readComments: () => [] },
     discord: {
       readReactions: async (ref) => { reactionReads.push(ref); return reactions; },
       readReplies: async (ref) => { replyReads.push(ref); return replies; },
@@ -614,4 +615,33 @@ test("decisionAnswers: 送った印があり答えた印の無い判断依頼だ
   assert.deepEqual(reactionReads, [{ threadId: "555", messageId: "M1" }]);
   assert.deepEqual(snap.decisionAnswers, { M1: { replies, reactions } });
   assert.deepEqual(decide(snap).filter((a) => a.kind === "record-decision-answer").map((a) => a.issue), [21]);
+});
+
+test("main: main の最新の commit の必須チェック（名前は ruleset の応答から読む）・check-runs・commit comment をスナップショットに入れる", async () => {
+  const SHA = "c".repeat(40);
+  const rules = [
+    { type: "deletion" },
+    { type: "required_status_checks", parameters: { required_status_checks: [{ context: "Nix flake evaluation", integration_id: 15368 }, { context: "ShellCheck (severity=error)", integration_id: 15368 }] } },
+  ];
+  const checks = [
+    { id: 1, name: "Nix flake evaluation", status: "completed", conclusion: "failure", runId: 777 },
+    { id: 2, name: "ShellCheck (severity=error)", status: "completed", conclusion: "success", runId: 778 },
+  ];
+  const comments = [{ author: VIEWER, body: mainRerunMarker(777), createdAt: "2026-10-28T00:00:00Z" }];
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readMain: () => ({ sha: SHA, rules, checks, comments }), readIssues: () => [], readPullRequests: () => [] },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+  });
+  const snap = await read();
+  assert.deepEqual(snap.main, { sha: SHA, required: ["Nix flake evaluation", "ShellCheck (severity=error)"], checks, comments });
+  assert.deepEqual(decide(snap).filter((a) => a.kind === "rerun-main"), []);
+  const unmarked = await createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readMain: () => ({ sha: SHA, rules, checks, comments: [] }), readIssues: () => [], readPullRequests: () => [] },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+  })();
+  assert.deepEqual(decide(unmarked).filter((a) => a.kind === "rerun-main").map((a) => a.runs), [[777]]);
 });

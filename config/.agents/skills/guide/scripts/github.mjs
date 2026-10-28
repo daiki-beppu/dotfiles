@@ -14,8 +14,8 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
     }
   };
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
-  const readComments = (number) =>
-    paged(`repos/${repo}/issues/${number}/comments?per_page=100`).map((c) => ({ author: c.user?.login, body: c.body ?? "", createdAt: c.created_at }));
+  const commentsAt = (path) => paged(path).map((c) => ({ author: c.user?.login, body: c.body ?? "", createdAt: c.created_at }));
+  const readComments = (number) => commentsAt(`repos/${repo}/issues/${number}/comments?per_page=100`);
 
   return {
     readComments,
@@ -73,6 +73,31 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
         head: p.head?.sha,
         headBranch: p.head?.ref,
       }));
+    },
+
+    // main の最新の commit と、その判定の材料（ruleset・check-runs・commit comment）。判定は takt の main-state.mjs が行う。
+    readMain() {
+      const sha = JSON.parse(gh(["api", `repos/${repo}/commits/main`])).sha;
+      const checks = paged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
+        .flatMap((p) => p.check_runs)
+        .map((c) => {
+          const run = /\/actions\/runs\/(\d+)/.exec(c.details_url ?? "");
+          return { id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, runId: run ? Number(run[1]) : null };
+        });
+      return {
+        sha,
+        rules: paged(`repos/${repo}/rules/branches/main`),
+        checks,
+        comments: commentsAt(`repos/${repo}/commits/${sha}/comments?per_page=100`),
+      };
+    },
+
+    commitComment(sha, body) {
+      gh(["api", `repos/${repo}/commits/${sha}/comments`, "-f", `body=${body}`]);
+    },
+
+    rerunFailed(runId) {
+      gh(["run", "rerun", String(runId), "--failed", "--repo", repo]);
     },
 
     mergeAuto(number) {

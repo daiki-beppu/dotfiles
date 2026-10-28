@@ -1,5 +1,5 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
-// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
+// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合と、main-state.mjs の main の状態の判定だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
 //
 // snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
 //             reactions: [{ emoji, userId }], assignees: [login], blockedBy: [{ number, state }] }]
@@ -44,6 +44,8 @@
 //       （送った判断依頼（2 段目の印つき）のメッセージに本人の返信か ✅ がある。答えた印を判断依頼と同じ issue に書く。snapshot.decisionAnswers: { [messageId]: { replies, reactions } }）
 //     | { kind: "archive-thread", key, issue, threadId, subject: "仕様" | "map" }
 //       （閉じた仕様の承認依頼のスレッド・閉じた map のスレッドに、アーカイブした印が無い。印はその issue に書く）
+//     | { kind: "rerun-main", key, sha, runs, checks }
+//       （main の最新の commit の必須チェックが落ち、その commit に再実行の印が無い run がある。印は commit comment に書く。snapshot.main: { sha, required, checks, comments }）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -51,6 +53,7 @@
 // to-tickets の印は 2 段: 起動前（二重起動の防止）と、起動後（ターミナルの handle と起動時刻）。
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
+import { mainState } from "../../takt/scripts/main-state.mjs";
 import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
 
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
@@ -1331,6 +1334,22 @@ function decideArchiveThreads(snapshot, dispatched) {
   return actions.sort((a, b) => a.issue - b.issue);
 }
 
+// main の修復の印は、失敗した commit の commit comment に書く（issue も PR も持たない main の状態を毎周読み直すため）。
+export const mainRerunMarker = (run) => `案内役: main の失敗した job を再実行する（run ${run}）`;
+
+// run ごとに 1 回だけ。印のある run は、再実行でも落ちたままでも出さない（その先は main-fix の役目）。
+function decideMainRepair(snapshot, dispatched) {
+  const { main, viewer } = snapshot;
+  if (main === undefined) return [];
+  const { state, failed } = mainState(main);
+  if (state !== "red") return [];
+  const marked = new Set(markers(main, viewer));
+  const runs = [...new Set(failed.map((f) => f.runId).filter((r) => r !== null && !marked.has(mainRerunMarker(r))))];
+  const key = `rerun-main:${main.sha}`;
+  if (runs.length === 0 || dispatched.has(key)) return [];
+  return [{ kind: "rerun-main", key, sha: main.sha, runs, checks: failed.map((f) => f.name) }];
+}
+
 export function decide(snapshot) {
   const { viewer, issues } = snapshot;
   const dispatched = new Set(snapshot.dispatched ?? []);
@@ -1398,6 +1417,7 @@ export function decide(snapshot) {
   return [
     ...decideCloseTabs(snapshot, dispatched),
     ...decideArchiveThreads(snapshot, dispatched),
+    ...decideMainRepair(snapshot, dispatched),
     ...actions,
     ...decideWayfinder(snapshot, dispatched),
     ...decideToSpec(snapshot, dispatched),
