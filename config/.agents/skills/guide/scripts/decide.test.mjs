@@ -4020,3 +4020,8 @@ test("main の判断依頼: 印の文言", () => {
   assert.equal(D.mainDecisionMarker(MAIN_SHA, D.CAUSE_MAIN_REPAIR), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main の修復）`);
   assert.equal(D.mainDecisionMarker(MAIN_SHA, STALL), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main-fix のセッションの停止）`);
 });
+
+// #411 の検証の訓練。drill-main-fix-b と合わさると main で落ちる（ADR 0004）。
+test("drill #411: main-fix のタブの題名は MAIN_SHA の先頭 7 桁", () => {
+  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix ccccccc");
+});
