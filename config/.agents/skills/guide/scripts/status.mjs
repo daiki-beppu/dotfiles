@@ -5,6 +5,7 @@ import {
   closedTabMarker, decisionRequests, hasFog, hasSpecOfMap, hasStepResult, isParentOf, knowledgePrOf, lastFormalSpec, latestLaunches, markers,
   openMaps, openSpecs, pendingGrillingReplies, sentApprovalRequest, specOfMap, stallCause, ticketSessionsToObserve, ticketsStarted,
 } from "./decide.mjs";
+import { mainState } from "../../takt/scripts/main-state.mjs";
 
 const STALL_SUFFIX = stallCause("");
 
@@ -156,14 +157,22 @@ const TITLE_WIDTH = 40;
 export const clockOf = (date) => date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 export const timeOf = (date) => date.toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-// 1 行目に時刻と件数、続けて 1 行に 1 件。列は表示幅でそろえる。
-export function renderBoard(rows, now) {
+// main が赤い間だけ出す 1 行。緑・未定なら null。
+export function mainLineOf(snapshot) {
+  if (snapshot.main === undefined) return null;
+  const { state, failed } = mainState(snapshot.main);
+  return state === "red" ? `main: 赤（${failed.map((f) => f.name).join("、")}）・再実行中` : null;
+}
+
+// 1 行目に時刻と件数、次に main が赤ければその 1 行、続けて 1 行に 1 件。列は表示幅でそろえる。
+export function renderBoard(rows, now, mainLine = null) {
   const specs = rows.filter((r) => r.subject.startsWith("仕様")).length;
   const decisions = rows.filter((r) => r.phase === "判断待ち").length;
   const header = `${clockOf(now)} 状況: 仕様 ${specs} 件・map ${rows.length - specs} 件${decisions > 0 ? `（判断待ち ${decisions} 件）` : ""}`;
-  if (rows.length === 0) return `${header}\n  （扱う仕様も map も無い）`;
+  const top = mainLine === null ? [header] : [header, `  ${mainLine}`];
+  if (rows.length === 0) return [...top, "  （扱う仕様も map も無い）"].join("\n");
   const col = (key) => Math.max(...rows.map((r) => widthOf(r[key])));
   const [subject, phase, detail] = [col("subject"), col("phase"), col("detail")];
   const lines = rows.map((r) => `  ${pad(r.subject, subject)}  ${pad(r.phase, phase)}  ${pad(r.detail, detail)}  ${truncate(r.title, TITLE_WIDTH)}`.trimEnd());
-  return [header, ...lines].join("\n");
+  return [...top, ...lines].join("\n");
 }

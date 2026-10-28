@@ -1,7 +1,7 @@
 // status.mjs のテスト。スナップショットは decide.test.mjs と同じ形の最小のものを組み立てる。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { boardOf, renderBoard, truncate, widthOf } from "./status.mjs";
+import { boardOf, mainLineOf, renderBoard, truncate, widthOf } from "./status.mjs";
 
 const VIEWER = "daiki-beppu";
 const issue = (number, over = {}) => ({ number, title: `issue ${number}`, state: "OPEN", labels: [], body: "", comments: [], subIssues: [], ...over });
@@ -177,4 +177,31 @@ test("renderBoard: 長い題名は表示幅で切って … を付ける", () =>
   assert.ok(line.endsWith("…"));
   assert.ok(widthOf(line) < widthOf(title));
   assert.equal(truncate("abc", 10), "abc");
+});
+
+const mainOf = (nix, sc) => ({
+  sha: "c".repeat(40),
+  required: ["Nix flake evaluation", "ShellCheck (severity=error)"],
+  checks: [
+    { id: 1, name: "Nix flake evaluation", status: "completed", conclusion: nix, runId: 7 },
+    { id: 2, name: "ShellCheck (severity=error)", status: "completed", conclusion: sc, runId: 7 },
+  ],
+  comments: [],
+});
+
+test("main の行: 赤い間は落ちたチェックの名前を出し、一覧のヘッダの次（仕様より前）に置く", () => {
+  const snap = snapshot([issue(12, { labels: ["spec"] })], { main: mainOf("failure", "timed_out") });
+  assert.equal(mainLineOf(snap), "main: 赤（Nix flake evaluation、ShellCheck (severity=error)）・再実行中");
+  const lines = renderBoard(boardOf(snap), new Date(0), mainLineOf(snap)).split("\n");
+  assert.equal(lines[1], "  main: 赤（Nix flake evaluation、ShellCheck (severity=error)）・再実行中");
+  assert.match(lines[2], /^ {2}仕様 #12/);
+  assert.equal(renderBoard([], new Date(0), mainLineOf(snap)).split("\n")[1], lines[1]);
+});
+
+test("main の行: 緑・未定・main が無いときは出さない", () => {
+  const green = snapshot([], { main: mainOf("success", "success") });
+  assert.equal(mainLineOf(green), null);
+  assert.equal(mainLineOf(snapshot([], { main: { ...mainOf("failure", "success"), checks: [] } })), null);
+  assert.equal(mainLineOf(snapshot([])), null);
+  assert.equal(renderBoard([], new Date(0), mainLineOf(green)).split("\n")[1], "  （扱う仕様も map も無い）");
 });

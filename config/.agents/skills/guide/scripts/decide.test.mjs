@@ -3772,3 +3772,49 @@ test("アーカイブ: close-tab の次、他の行動より先に出す", () =>
   assert.equal(kinds[0], "archive-thread");
   assert.ok(kinds.includes("request-approval"));
 });
+
+const MAIN_SHA = "c".repeat(40);
+const NIX = "Nix flake evaluation";
+const SC = "ShellCheck (severity=error)";
+const check = (id, name, conclusion, status = "completed", runId = 700 + id) => ({ id, name, status, conclusion, runId });
+const mainOf = (checks, comments = []) => ({ sha: MAIN_SHA, required: [NIX, SC], checks, comments });
+const reruns = (main, over = {}) => decide(snapshot([], { main, ...over })).filter((a) => a.kind === "rerun-main");
+const RED = [check(1, NIX, "failure"), check(2, SC, "success")];
+
+test("main の修復: main が緑なら何も出ない。main が無いスナップショットでも何も出ない", () => {
+  assert.deepEqual(reruns(mainOf([check(1, NIX, "success"), check(2, SC, "success")])), []);
+  assert.deepEqual(reruns(undefined), []);
+});
+
+test("main の修復: main が赤く再実行の印が無ければ、落ちた run の再実行を 1 つ出す", () => {
+  assert.deepEqual(reruns(mainOf(RED)), [{ kind: "rerun-main", key: `rerun-main:${MAIN_SHA}`, sha: MAIN_SHA, runs: [701], checks: [NIX] }]);
+});
+
+test("main の修復: 同じ run で落ちたチェックは run を 1 つにまとめ、cancelled・timed_out も落ちたとみなす", () => {
+  const [a] = reruns(mainOf([check(1, NIX, "cancelled", "completed", 900), check(2, SC, "timed_out", "completed", 900)]));
+  assert.deepEqual(a.runs, [900]);
+  assert.deepEqual(a.checks, [NIX, SC]);
+});
+
+test("main の修復: 再実行の印があれば出さない。viewer 以外の印は数えない", () => {
+  assert.deepEqual(reruns(mainOf(RED, [byViewer(D.mainRerunMarker(701))])), []);
+  assert.equal(reruns(mainOf(RED, [{ author: "someone", body: D.mainRerunMarker(701) }])).length, 1);
+  assert.equal(reruns(mainOf(RED, [byViewer(D.mainRerunMarker(999))])).length, 1);
+});
+
+test("main の修復: 必須チェックが実行中・未登録なら何も出ない。必須でないチェックの失敗でも出ない", () => {
+  assert.deepEqual(reruns(mainOf([check(1, NIX, "failure"), check(2, SC, null, "in_progress")])), []);
+  assert.deepEqual(reruns(mainOf([check(1, NIX, "failure")])), []);
+  assert.deepEqual(reruns(mainOf([check(1, NIX, "success"), check(2, SC, "success"), check(3, "Cloud evidence", "failure")])), []);
+});
+
+test("main の修復: 同じスナップショットで 2 周しても二重に出さない（dispatched）", () => {
+  const [first] = reruns(mainOf(RED));
+  assert.deepEqual(reruns(mainOf(RED), { dispatched: [first.key] }), []);
+});
+
+test("main の修復: archive-thread の直後、他の行動より先に出す", () => {
+  const kinds = decide(snapshot([specBare(40), spec(12, { state: "CLOSED", comments: [APPROVAL_SENT_555] })], { main: mainOf(RED) })).map((a) => a.kind);
+  assert.deepEqual(kinds.slice(0, 2), ["archive-thread", "rerun-main"]);
+  assert.ok(kinds.includes("request-approval"));
+});

@@ -25,6 +25,7 @@ import {
   grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
+  mainRerunMarker,
   provisionalRejectedMarker,
   provisionalSendingMarker,
   provisionalSentMarker,
@@ -219,6 +220,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       // close-tab と同じく印は後に書く（アーカイブし直しは害が無い）。失敗すれば印を書かずに止まり、次に流したときにやり直す。
       await discord.archiveThread({ threadId: action.threadId });
       github.comment(action.issue, archivedThreadMarker(action.threadId));
+    } else if (action.kind === "rerun-main") {
+      // 印は再実行より先（再実行の成否が不明でも、同じ run を 2 回再実行しない）。
+      for (const run of action.runs) {
+        github.commitComment(action.sha, mainRerunMarker(run));
+        github.rerunFailed(run);
+      }
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

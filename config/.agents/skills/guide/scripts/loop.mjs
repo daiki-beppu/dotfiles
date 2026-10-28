@@ -1,6 +1,6 @@
 // 案内役の常駐ループ。スナップショットの取得・行動の実行・待機・表示（log・board・status）は呼び出し側が注入し、ここはアダプタを import しない。
 import { decide } from "./decide.mjs";
-import { boardOf, renderBoard, timeOf } from "./status.mjs";
+import { boardOf, mainLineOf, renderBoard, timeOf } from "./status.mjs";
 
 const MAX_READ_ERRORS = 3;
 // ターミナルの handle（term_ + UUID）は先頭 8 桁で見分けられる。行の頭が長い識別子で埋まらないように縮める。
@@ -31,6 +31,7 @@ const DESCRIBE = {
   "inject-answer": (a) => `ticket #${a.ticket} の回答をタブ ${shortHandle(a.handle)} に orca terminal send で流し込む`,
   "review-fix": (a) => `PR #${a.pr}（sub-issue #${a.issue}）の takt のレビューの失敗を直す review-fix を、head ブランチの worktree の Orca のタブで起動する`,
   "archive-thread": (a) => `閉じた${a.subject === "map" ? " map" : "仕様"} #${a.issue} の Discord スレッドをアーカイブする`,
+  "rerun-main": (a) => `main の commit ${a.sha.slice(0, 7)} で落ちた必須チェック（${a.checks.join("、")}）の job を 1 回だけ再実行する（run ${a.runs.join(" ")}）`,
   "close-tab": (a) => `終わった ${a.step} のタブ（#${a.issue}）を${a.gone ? "閉じた記録だけ残す（既に無い）" : "閉じる"}`,
   knowledge: (a) => `仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,
 };
@@ -43,7 +44,7 @@ export async function runRound({ readSnapshot, execute, log, board = noop, statu
   const snapshot = { ...(await readSnapshot()), dispatched: [...dispatched] };
   status("判断中…");
   const actions = decide(snapshot);
-  board(renderBoard(boardOf(snapshot), snapshot.now ? new Date(snapshot.now) : new Date()));
+  board(renderBoard(boardOf(snapshot), snapshot.now ? new Date(snapshot.now) : new Date(), mainLineOf(snapshot)));
   if (dryRun) {
     if (actions.length === 0) log("することなし");
     for (const a of actions) log(`行動: ${describe(a)}`);

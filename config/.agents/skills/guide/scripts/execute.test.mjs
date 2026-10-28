@@ -1683,3 +1683,22 @@ test("archive-thread: アーカイブが失敗したら印を書かずに例外�
   await assert.rejects(execute({ kind: "archive-thread", key: "archive-thread:555", issue: 12, threadId: "555", subject: "仕様" }), /403/);
   assert.deepEqual(calls, []);
 });
+
+test("rerun-main: run ごとに、再実行の印を commit comment に書いてから、落ちた job を再実行する", async () => {
+  const calls = [];
+  const sha = "c".repeat(40);
+  const execute = createExecute({
+    github: {
+      commitComment: (s, body) => calls.push(`commit-comment ${s.slice(0, 7)} ${body}`),
+      rerunFailed: (run) => calls.push(`rerun ${run}`),
+    },
+    cwd: "/x", repo: REPO,
+  });
+  await execute({ kind: "rerun-main", key: `rerun-main:${sha}`, sha, runs: [701, 702], checks: ["a", "b"] });
+  assert.deepEqual(calls, [
+    "commit-comment ccccccc 案内役: main の失敗した job を再実行する（run 701）",
+    "rerun 701",
+    "commit-comment ccccccc 案内役: main の失敗した job を再実行する（run 702）",
+    "rerun 702",
+  ]);
+});

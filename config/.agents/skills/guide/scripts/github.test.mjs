@@ -217,3 +217,47 @@ test("createSubIssue: issue を起こしてから、応答の id で parent の 
     ["api", "repos/o/r/issues/20/sub_issues", "-F", "sub_issue_id=777"],
   ]);
 });
+
+test("readMain: main の sha の commit の check-runs・ruleset・commit comment を読み、run の番号を details_url から取る", () => {
+  const SHA = "c".repeat(40);
+  const { calls, execFile } = fakeGh((args) => {
+    const path = args[1];
+    if (path === "repos/o/r/commits/main") return JSON.stringify({ sha: SHA });
+    if (path.startsWith(`repos/o/r/commits/${SHA}/check-runs`)) {
+      return JSON.stringify([{ total_count: 2, check_runs: [
+        { id: 2, name: "lint", status: "completed", conclusion: "failure", details_url: "https://github.com/o/r/actions/runs/777/job/9" },
+        { id: 3, name: "ext", status: "queued", conclusion: null, details_url: "https://example.com/x" },
+      ] }]);
+    }
+    if (path === "repos/o/r/rules/branches/main") return JSON.stringify([[{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }] } }]]);
+    if (path.startsWith(`repos/o/r/commits/${SHA}/comments`)) return JSON.stringify([[{ user: { login: "me" }, body: "案内役: x", created_at: "2026-10-28T00:00:00Z" }]]);
+    throw new Error(`想定外のパス: ${path}`);
+  });
+  const main = createGithub({ repo: "o/r", cwd: "/x", execFile }).readMain();
+  assert.deepEqual(main, {
+    sha: SHA,
+    rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }] } }],
+    checks: [
+      { id: 2, name: "lint", status: "completed", conclusion: "failure", runId: 777 },
+      { id: 3, name: "ext", status: "queued", conclusion: null, runId: null },
+    ],
+    comments: [{ author: "me", body: "案内役: x", createdAt: "2026-10-28T00:00:00Z" }],
+  });
+  assert.deepEqual(calls.slice(1).map((c) => c.args), [
+    ["api", `repos/o/r/commits/${SHA}/check-runs?per_page=100`, "--paginate", "--slurp"],
+    ["api", "repos/o/r/rules/branches/main", "--paginate", "--slurp"],
+    ["api", `repos/o/r/commits/${SHA}/comments?per_page=100`, "--paginate", "--slurp"],
+  ]);
+});
+
+test("commitComment: commit の comments に POST する", () => {
+  const { calls, execFile } = fakeGh(() => "{}");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).commitComment("abc", "案内役: y");
+  assert.deepEqual(calls, [{ cmd: "gh", args: ["api", "repos/o/r/commits/abc/comments", "-f", "body=案内役: y"], cwd: "/x" }]);
+});
+
+test("rerunFailed: gh run rerun <run> --failed --repo <repo> を渡す", () => {
+  const { calls, execFile } = fakeGh(() => "");
+  createGithub({ repo: "o/r", cwd: "/x", execFile }).rerunFailed(777);
+  assert.deepEqual(calls, [{ cmd: "gh", args: ["run", "rerun", "777", "--failed", "--repo", "o/r"], cwd: "/x" }]);
+});
