@@ -5,7 +5,7 @@
 // 案内役は、コマンド行に scripts/guide.mjs を含み、cwd が repo root のプロセス。コマンド行の `--terminal <handle>` が案内役の自分のペイン。
 // takt watch と align-behind のペインは、そのプロセスの環境変数 ORCA_TERMINAL_HANDLE（Orca がペインのシェルに渡す）で知る。
 // 使い方（repo root で、watch が動いている状態で）:
-//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]
+//   node <skill>/scripts/start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -14,9 +14,9 @@ import { runOrca } from "../../guide/scripts/orca-agent.mjs";
 import { SPLIT_DOWN, SPLIT_RIGHT } from "../../guide/scripts/pane.mjs";
 import { startTaktSequence } from "../../guide/scripts/takt.mjs";
 
-const OPTIONS = ["--workflow", "--base", "--interval", "--fix-wait"];
+const OPTIONS = ["--workflow", "--base", "--interval", "--fix-wait", "--concurrency"];
 
-// takt-sequence に渡す引数を確かめ、そのまま返す。issue が 1 つも無い・知らない引数・値の無いオプション・正でない --fix-wait は null。
+// takt-sequence に渡す引数を確かめ、そのまま返す。issue が 1 つも無い・知らない引数・値の無いオプション・正でない --fix-wait・正の整数でない --concurrency は null。
 export function checkSequenceArgs(argv) {
   let issues = 0;
   for (let i = 0; i < argv.length; i++) {
@@ -26,6 +26,7 @@ export function checkSequenceArgs(argv) {
       const v = argv[++i];
       if (v === undefined || v.startsWith("--")) return null;
       if (a === "--fix-wait" && !(Number(v) > 0)) return null;
+      if (a === "--concurrency" && !(Number.isInteger(Number(v)) && Number(v) > 0)) return null;
     } else return null;
   }
   return issues > 0 ? argv : null;
@@ -75,7 +76,7 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync
 if (isMain) {
   const args = checkSequenceArgs(process.argv.slice(2));
   if (args === null) {
-    console.error("usage: node start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10]（--fix-wait は正の数）");
+    console.error("usage: node start-sequence.mjs <issue>... [--workflow default] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]（--fix-wait は正の数、--concurrency は正の整数）");
     process.exit(2);
   }
   const sh = (cmd, a) => execFileSync(cmd, a, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();

@@ -114,7 +114,7 @@ test("guideTerminal: repo root の案内役のうち、--terminal を持つも�
   assert.equal(guideTerminal([guide({ command: "node guide.mjs o/r --terminal" })], "/repo"), undefined);
 });
 
-test("checkSequenceArgs: issue の並びと --workflow・--base・--interval・--fix-wait を受け取り、それ以外と issue の無い並びは断る", () => {
+test("checkSequenceArgs: issue の並びと --workflow・--base・--interval・--fix-wait・--concurrency を受け取り、それ以外と issue の無い並びは断る", () => {
   assert.deepEqual(checkSequenceArgs(ARGS), ARGS);
   assert.deepEqual(checkSequenceArgs(["#701"]), ["#701"]);
   assert.equal(checkSequenceArgs([]), null);
@@ -122,6 +122,9 @@ test("checkSequenceArgs: issue の並びと --workflow・--base・--interval・-
   assert.equal(checkSequenceArgs(["701", "--merge"]), null);
   assert.equal(checkSequenceArgs(["701", "--workflow"]), null);
   assert.equal(checkSequenceArgs(["701", "--fix-wait", "0"]), null);
+  assert.deepEqual(checkSequenceArgs(["701", "--concurrency", "2"]), ["701", "--concurrency", "2"]);
+  assert.equal(checkSequenceArgs(["701", "--concurrency", "0"]), null);
+  assert.equal(checkSequenceArgs(["701", "--concurrency", "1.5"]), null);
 });
 
 test("repo に takt-sequence が動いていれば、ペインを開かずにそこへ issue を足し、足した先とオプションを使わないことを 1 行出す", () => {
