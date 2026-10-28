@@ -205,3 +205,11 @@ test("main の行: 緑・未定・main が無いときは出さない", () => {
   assert.equal(mainLineOf(snapshot([])), null);
   assert.equal(renderBoard([], new Date(0), mainLineOf(green)).split("\n")[1], "  （扱う仕様も map も無い）");
 });
+
+test("main の行: C に viewer の main-fix の起動の印があれば、段階を修正中（main-fix <C の先頭 7 桁>）にする", () => {
+  const launching = { author: VIEWER, body: `案内役: main-fix を起動する（commit ${"c".repeat(40)}）` };
+  const fixing = snapshot([], { main: { ...mainOf("failure", "success"), comments: [launching] } });
+  assert.equal(mainLineOf(fixing), "main: 赤（Nix flake evaluation）・修正中（main-fix ccccccc）");
+  const other = snapshot([], { main: { ...mainOf("failure", "success"), comments: [{ ...launching, author: "someone" }] } });
+  assert.equal(mainLineOf(other), "main: 赤（Nix flake evaluation）・再実行中");
+});

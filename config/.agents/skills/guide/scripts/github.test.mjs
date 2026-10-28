@@ -225,12 +225,13 @@ test("readMain: main の sha の commit の check-runs・ruleset・commit commen
     if (path === "repos/o/r/commits/main") return JSON.stringify({ sha: SHA });
     if (path.startsWith(`repos/o/r/commits/${SHA}/check-runs`)) {
       return JSON.stringify([{ total_count: 2, check_runs: [
-        { id: 2, name: "lint", status: "completed", conclusion: "failure", details_url: "https://github.com/o/r/actions/runs/777/job/9" },
+        { id: 2, name: "lint", status: "completed", conclusion: "failure", details_url: "https://github.com/o/r/actions/runs/777/job/9", completed_at: "2026-10-28T01:00:00Z" },
         { id: 3, name: "ext", status: "queued", conclusion: null, details_url: "https://example.com/x" },
       ] }]);
     }
     if (path === "repos/o/r/rules/branches/main") return JSON.stringify([[{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }] } }]]);
     if (path.startsWith(`repos/o/r/commits/${SHA}/comments`)) return JSON.stringify([[{ user: { login: "me" }, body: "案内役: x", created_at: "2026-10-28T00:00:00Z" }]]);
+    if (path === "repos/o/r/comments?per_page=100") return JSON.stringify([[{ commit_id: "b".repeat(40), user: { login: "me" }, body: "案内役: z", created_at: "2026-10-27T00:00:00Z" }]]);
     throw new Error(`想定外のパス: ${path}`);
   });
   const main = createGithub({ repo: "o/r", cwd: "/x", execFile }).readMain();
@@ -238,15 +239,17 @@ test("readMain: main の sha の commit の check-runs・ruleset・commit commen
     sha: SHA,
     rules: [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }] } }],
     checks: [
-      { id: 2, name: "lint", status: "completed", conclusion: "failure", runId: 777 },
-      { id: 3, name: "ext", status: "queued", conclusion: null, runId: null },
+      { id: 2, name: "lint", status: "completed", conclusion: "failure", runId: 777, completedAt: "2026-10-28T01:00:00Z" },
+      { id: 3, name: "ext", status: "queued", conclusion: null, runId: null, completedAt: null },
     ],
     comments: [{ author: "me", body: "案内役: x", createdAt: "2026-10-28T00:00:00Z" }],
+    commitComments: [{ sha: "b".repeat(40), author: "me", body: "案内役: z", createdAt: "2026-10-27T00:00:00Z" }],
   });
   assert.deepEqual(calls.slice(1).map((c) => c.args), [
     ["api", `repos/o/r/commits/${SHA}/check-runs?per_page=100`, "--paginate", "--slurp"],
     ["api", "repos/o/r/rules/branches/main", "--paginate", "--slurp"],
     ["api", `repos/o/r/commits/${SHA}/comments?per_page=100`, "--paginate", "--slurp"],
+    ["api", "repos/o/r/comments?per_page=100", "--paginate", "--slurp"],
   ]);
 });
 
@@ -256,7 +259,7 @@ test("readChecks: 指定した commit の check-runs を readMain と同じ形�
     { id: 5, name: "lint", status: "completed", conclusion: "failure", details_url: "https://github.com/o/r/actions/runs/888/job/1" },
   ] }]));
   const checks = createGithub({ repo: "o/r", cwd: "/x", execFile }).readChecks(HEAD);
-  assert.deepEqual(checks, [{ id: 5, name: "lint", status: "completed", conclusion: "failure", runId: 888 }]);
+  assert.deepEqual(checks, [{ id: 5, name: "lint", status: "completed", conclusion: "failure", runId: 888, completedAt: null }]);
   assert.deepEqual(calls.map((c) => c.args), [["api", `repos/o/r/commits/${HEAD}/check-runs?per_page=100`, "--paginate", "--slurp"]]);
 });
 
@@ -270,4 +273,22 @@ test("rerunFailed: gh run rerun <run> --failed --repo <repo> を渡す", () => {
   const { calls, execFile } = fakeGh(() => "");
   createGithub({ repo: "o/r", cwd: "/x", execFile }).rerunFailed(777);
   assert.deepEqual(calls, [{ cmd: "gh", args: ["run", "rerun", "777", "--failed", "--repo", "o/r"], cwd: "/x" }]);
+});
+
+test("readFirstParents: commits の一覧から sha の first-parent をたどり、2 番目の親（マージした側）には入らない", () => {
+  const c = (sha, ...parents) => ({ sha, parents: parents.map((p) => ({ sha: p })) });
+  const { calls, execFile } = fakeGh(() => JSON.stringify([c("c3", "c2", "x1"), c("x1", "c1"), c("c2", "c1"), c("c1", "c0")]));
+  assert.deepEqual(createGithub({ repo: "o/r", cwd: "/x", execFile }).readFirstParents("c3", 30), ["c3", "c2", "c1"]);
+  assert.deepEqual(calls[0].args, ["api", "repos/o/r/commits?sha=c3&per_page=30"]);
+});
+
+test("readCommitPullRequests: commit を入れたマージ済みの PR の番号・題・閉じた issue を GraphQL で読む（マージされていない PR は除く）", () => {
+  const { calls, execFile } = fakeGh(() => JSON.stringify({ data: { repository: { object: { associatedPullRequests: { nodes: [
+    { number: 50, title: "feat: x", state: "MERGED", closingIssuesReferences: { nodes: [{ number: 41 }] } },
+    { number: 51, title: "wip", state: "OPEN", closingIssuesReferences: { nodes: [] } },
+  ] } } } } }));
+  assert.deepEqual(createGithub({ repo: "o/r", cwd: "/x", execFile }).readCommitPullRequests("abc"), [{ number: 50, title: "feat: x", closes: [41] }]);
+  const args = calls[0].args;
+  assert.deepEqual(args.slice(0, 2), ["api", "graphql"]);
+  assert.ok(args.includes("owner=o") && args.includes("name=r") && args.includes("oid=abc"));
 });

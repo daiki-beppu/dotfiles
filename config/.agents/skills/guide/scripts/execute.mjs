@@ -1,5 +1,5 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
-// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・タブを閉じる）は注入する。
+// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・main-fix・タブを閉じる）は注入する。
 // 行動は失敗すれば例外で止まる。やり直してよい失敗だけは { retry: 理由 } を返し、ループはその行動を済んだ扱いにしない。
 import {
   MARKER_APPROVAL_SENDING,
@@ -25,6 +25,8 @@ import {
   grillingWrittenMarker,
   humanTicketMarker,
   launchedMarker,
+  mainFixLaunchedMarker,
+  mainFixLaunchingMarker,
   mainRerunMarker,
   provisionalRejectedMarker,
   provisionalSendingMarker,
@@ -32,7 +34,7 @@ import {
 } from "./decide.mjs";
 import { fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, taktRunDirs, readReviewReport, sendToSession, closeTab }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, launchMainFix, taktRunDirs, readReviewReport, sendToSession, closeTab }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -215,7 +217,9 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
           return { retry: String(e.message).split("\n")[0] };
         }
       }
-      github.comment(action.issue, closedTabMarker(action.step, action.handle));
+      // main-fix のタブは issue を持たないので、起動の印と同じ commit comment に書く。
+      if (action.sha !== undefined) github.commitComment(action.sha, closedTabMarker(action.step, action.handle));
+      else github.comment(action.issue, closedTabMarker(action.step, action.handle));
     } else if (action.kind === "archive-thread") {
       // close-tab と同じく印は後に書く（アーカイブし直しは害が無い）。失敗すれば印を書かずに止まり、次に流したときにやり直す。
       await discord.archiveThread({ threadId: action.threadId });
@@ -226,6 +230,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
         github.commitComment(action.sha, mainRerunMarker(run));
         github.rerunFailed(run);
       }
+    } else if (action.kind === "main-fix") {
+      // to-tickets と同じ 2 段の印を、失敗した commit C の commit comment に書く。
+      github.commitComment(action.sha, mainFixLaunchingMarker(action.sha));
+      const launchedAt = now().toISOString();
+      const { handle } = await launchMainFix({ cwd, repo, sha: action.sha, checks: action.checks, runs: action.runs, lastGreen: action.lastGreen, pullRequests: action.pullRequests });
+      github.commitComment(action.sha, mainFixLaunchedMarker(action.sha, handle, launchedAt));
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

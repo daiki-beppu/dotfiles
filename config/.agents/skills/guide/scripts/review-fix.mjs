@@ -6,26 +6,11 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { redoMarker } from "../../takt/scripts/review-stage.mjs";
 import { tabTitle } from "./decide.mjs";
-import { launchAgent, runOrca } from "./orca-agent.mjs";
+import { launchAgent, runOrca, worktreePath } from "./orca-agent.mjs";
 
 const INSTRUCTIONS = readFileSync(new URL("../references/review-fix.md", import.meta.url), "utf8");
 
 const runGit = (args, { cwd }) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
-
-// orca worktree create --json の応答 { ok, result: { worktree: { path } } } から path を取る。
-function worktreePath(reply) {
-  let parsed;
-  try {
-    parsed = JSON.parse(reply);
-  } catch {
-    throw new Error(`orca worktree create の応答から result.worktree.path が取れない（JSON ではない）: ${String(reply).trim().slice(0, 200)}`);
-  }
-  const path = parsed?.result?.worktree?.path;
-  if (typeof path !== "string" || path === "") {
-    throw new Error(`orca worktree create の応答から result.worktree.path が取れない: ${String(reply).trim().slice(0, 200)}`);
-  }
-  return path;
-}
 
 const prompt = ({ repo, pr, issue, head, branch, reports }) =>
   [
