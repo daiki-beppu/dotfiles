@@ -36,7 +36,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tasksFor, issueOf } from "./takt-list.mjs";
 import { DEFAULT_FIX_WAIT_MINUTES, REVIEW_FAILED, mainWaitMarker, reviewStage as decideReview } from "./review-stage.mjs";
-import { mainState, requiredChecks } from "./main-state.mjs";
+import { requiredChecks } from "./main-state.mjs";
 import { closeInbox, inboxDirOf, openInbox, takeFromInbox } from "./sequence-inbox.mjs";
 import { planRound } from "./sequence-plan.mjs";
 import { cleanupTask } from "./task-cleanup.mjs";
@@ -107,15 +107,16 @@ const taskOps = { runner: new TaskRunner(cwd, {}), deleteBranch };
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
 
-// base の最新の commit の状態（main-state.mjs の mainState）。周ごとに 1 回、要るときだけ読む（状態はファイルに持たない）
+// commit の check-runs（main-state.mjs の判定の入力）
+const readChecks = (sha) => ghPaged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
+  .flatMap((p) => p.check_runs)
+  .map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion }));
+// base の最新の commit の { required, checks }。周ごとに 1 回、要るときだけ読む（状態はファイルに持たない）
 let mainNow = null;
 function readMain() {
   if (mainNow) return mainNow;
   const sha = gh(["api", `repos/${repo}/commits/${opts.base}`]).sha;
-  const checks = ghPaged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
-    .flatMap((p) => p.check_runs)
-    .map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion }));
-  mainNow = mainState({ required: requiredChecks(ghPaged(`repos/${repo}/rules/branches/${opts.base}`)), checks });
+  mainNow = { required: requiredChecks(ghPaged(`repos/${repo}/rules/branches/${opts.base}`)), checks: readChecks(sha) };
   return mainNow;
 }
 
@@ -185,12 +186,11 @@ const attempts = new Map();
 // reviewed: 済み / waiting: 実行中か修正待ちか今起動した / stuck: 失敗して人の手が要る
 function reviewStage(n, pr, url, tasks) {
   const merges = tasks.filter((x) => x.data?.merge_task === true && Number(x.data?.pr_number) === pr.number);
-  const failedChecks = pr.statusCheckRollup.filter((c) => FAILED_CHECK.includes(c.conclusion ?? c.state)).map((c) => c.name ?? c.context);
   // main を読むのは、現在の head の失敗のコメントがあり、CI が落ちているときだけ
-  const failedHere = failedChecks.length > 0 && pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`));
+  const failedHere = pr.statusCheckRollup.some((c) => FAILED_CHECK.includes(c.conclusion ?? c.state)) && pr.comments.some((c) => c.author?.login === viewer && c.body.startsWith(`${REVIEW_FAILED} for head ${pr.headRefOid}:`));
   const { stage, reason, redo, mainWait } = decideReview({
     head: pr.headRefOid, viewer, comments: pr.comments, merges, attempts: attempts.get(pr.number) ?? [],
-    running: reviewing.has(pr.number), now: new Date(), waitMinutes: fixWait, main: failedHere ? readMain() : undefined, failedChecks,
+    running: reviewing.has(pr.number), now: new Date(), waitMinutes: fixWait, main: failedHere ? readMain() : undefined, checks: failedHere ? readChecks(pr.headRefOid) : [],
   });
   if (mainWait) gh(["api", `repos/${repo}/issues/${pr.number}/comments`, "-f", `body=${mainWaitMarker(pr.headRefOid, mainWait)}`]);
   if (stage === "reviewed") {
