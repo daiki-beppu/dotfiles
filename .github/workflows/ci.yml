@@ -22,28 +22,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run shellcheck, link, hook and agent-skill checks
         run: bash scripts/check.sh shellcheck links hooks guard-main-commit guard-pkill agent-skills guide
-
-  cloud-evidence:
-    name: Cloud evidence bootstrap and recording
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      # runner の apt は既定で Azure のミラーを先に使う。そこが遅いと ffmpeg の取得だけで timeout-minutes を使い切る
-      - name: Skip the Azure apt mirror
-        run: sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-      - name: Bootstrap recording environment
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/setup-codex-cloud.sh
-      - name: Verify recording from a subsequent shell
-        run: bash scripts/check-codex-cloud-evidence.sh

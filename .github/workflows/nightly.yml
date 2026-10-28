@@ -1,0 +1,58 @@
+name: Nightly
+
+# 外部の配布物（apt・npm・Playwright のブラウザー・gh）に頼るので、PR の必須チェックにはしない。
+# 配布元の変化で壊れるものは毎晩見つけ、bootstrap を触る PR でだけ PR 時にも回す。
+on:
+  schedule:
+    - cron: '0 18 * * *' # 03:00 JST
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - scripts/setup-codex-cloud.sh
+      - scripts/check-codex-cloud-evidence.sh
+      - scripts/sync-agent-skills.sh
+      - config/codex-cloud/**
+
+jobs:
+  cloud-evidence:
+    name: Cloud evidence bootstrap and recording
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # runner の apt は既定で Azure のミラーを先に使う。そこが遅いと ffmpeg の取得だけで timeout-minutes を使い切る
+      - name: Skip the Azure apt mirror
+        run: sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
+      - name: Bootstrap recording environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/setup-codex-cloud.sh
+      - name: Verify recording from a subsequent shell
+        run: bash scripts/check-codex-cloud-evidence.sh
+
+  # 定期実行の失敗は誰も見ていないので issue にする。開いたままの issue があれば追記して重複させない
+  report-failure:
+    needs: cloud-evidence
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='Nightly: Cloud evidence bootstrap が失敗している'
+          number="$(gh issue list --state open --search "\"$title\" in:title" --json number -q '.[0].number')"
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "再び失敗した。$RUN_URL"
+          else
+            gh issue create --title "$title" --label needs-triage --body "毎晩の Cloud evidence bootstrap が失敗した。$RUN_URL"
+          fi
