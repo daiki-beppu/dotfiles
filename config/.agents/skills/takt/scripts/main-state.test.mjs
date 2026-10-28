@@ -1,7 +1,7 @@
 // main-state.mjs の判定テスト。gh は呼ばない。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mainState, requiredChecks } from "./main-state.mjs";
+import { failsLikeMain, mainState, requiredChecks } from "./main-state.mjs";
 
 const NIX = "Nix flake evaluation";
 const SC = "ShellCheck (severity=error)";
@@ -45,3 +45,21 @@ for (const [name, over, expected] of table) {
 test("mainState: ruleset の応答から読んだ名前で判定する", () => {
   assert.deepEqual(mainState({ required: requiredChecks(RULES), checks: [run(1, NIX, "success"), run(2, SC, "failure")] }), { state: "red", failed: [{ name: SC, runId: 20 }] });
 });
+
+const RED_MAIN = { required: REQUIRED, checks: [run(1, NIX, "failure"), run(2, SC, "success")] };
+const failsLike = [
+  ["main と同じ必須チェックだけで落ちた PR は true", RED_MAIN, [run(11, NIX, "failure"), run(12, SC, "success")], true],
+  ["cancelled・timed_out も落ちたとみなす", { ...RED_MAIN, checks: [run(1, NIX, "timed_out"), run(2, SC, "success")] }, [run(11, NIX, "cancelled")], true],
+  ["main と違うチェックで落ちた PR は false", RED_MAIN, [run(11, NIX, "success"), run(12, SC, "failure")], false],
+  ["main と同じチェックに加えて、違うチェックでも落ちた PR は false", RED_MAIN, [run(11, NIX, "failure"), run(13, "Cloud evidence", "failure")], false],
+  ["落ちたチェックが無い PR は false", RED_MAIN, [run(11, NIX, "success")], false],
+  ["同名は最新を採る: 再実行で通ったチェックは落ちたとみなさない", RED_MAIN, [run(11, SC, "failure"), run(15, SC, "success"), run(12, NIX, "failure")], true],
+  ["main が緑なら false", { ...RED_MAIN, checks: [run(1, NIX, "success"), run(2, SC, "success")] }, [run(11, NIX, "failure")], false],
+  ["main が undetermined なら false", { ...RED_MAIN, checks: [run(1, NIX, "failure")] }, [run(11, NIX, "failure")], false],
+];
+
+for (const [name, main, checks, expected] of failsLike) {
+  test(`failsLikeMain: ${name}`, () => {
+    assert.equal(failsLikeMain(main, checks), expected);
+  });
+}

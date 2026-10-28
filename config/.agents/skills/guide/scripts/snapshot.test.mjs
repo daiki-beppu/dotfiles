@@ -428,8 +428,8 @@ const MERGE = { prNumber: 70, kind: "failed", createdAt: "2026-10-17T00:30:00Z",
 
 // 仕様 #12 の親 #20 が #21 #22 #23 を渡して起動済み。#21 は PR #70 が OPEN、#22 は PR なし、#23 は PR #71 が CLOSED。
 // #30 は渡していない issue で、PR #80 が OPEN。読み取りの回数は reads と merges に記録する。
-const reviewWorld = ({ tasks, prs, mergeRows = [MERGE] } = {}) => {
-  const reads = { comments: [], merges: 0 };
+const reviewWorld = ({ tasks, prs, mergeRows = [MERGE], main = NO_MAIN, prChecks = [] } = {}) => {
+  const reads = { comments: [], checks: [], merges: 0 };
   const issues = [
     issue(12, { comments: sent }),
     issue(20, { labels: [], body: "仕様: #12", comments: [handedFor(21, 22, 23), launched("takt-sequence", "term_seq")], subIssues: [21, 22, 23].map((number) => ({ number, state: "OPEN" })) }),
@@ -437,10 +437,11 @@ const reviewWorld = ({ tasks, prs, mergeRows = [MERGE] } = {}) => {
   ];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: NO_MAIN,
+    github: { readMain: main,
       readIssues: () => issues,
       readPullRequests: () => prs ?? [prRow(70), prRow(71, "CLOSED"), prRow(80)],
       readComments: (n) => { reads.comments.push(n); return [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }]; },
+      readChecks: (sha) => { reads.checks.push(sha); return prChecks; },
     },
     discord: { readReactions: async () => [] },
     taktTasks: () => tasks ?? [taskOf(21, 70), taskOf(22), taskOf(23, 71), taskOf(30, 80)],
@@ -455,10 +456,11 @@ test("reviewPullRequests: 渡した sub-issue の OPEN な PR だけを読み、
   const { read, reads } = reviewWorld();
   const snap = await read();
   assert.deepEqual(snap.reviewPullRequests, [
-    { spec: 12, issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/70", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }] },
+    { spec: 12, issue: 21, number: 70, state: "OPEN", head: RF_HEAD, headBranch: "feat/70", comments: [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }], checks: [] },
   ]);
   assert.deepEqual(snap.mergeTasks, [MERGE]);
   assert.deepEqual(reads.comments, [70]);
+  assert.deepEqual(reads.checks, [RF_HEAD]);
   assert.equal(reads.merges, 1);
 });
 
@@ -467,12 +469,14 @@ test("reviewPullRequests: PR を持たない issue・閉じた PR・渡してい
   await read();
   for (const n of [22, 23, 30, 71, 80]) assert.ok(!reads.comments.includes(n), `#${n} のコメントを読んだ`);
   assert.equal(reads.comments.length, 1);
+  assert.equal(reads.checks.length, 1);
 });
 
 test("reviewPullRequests: 読む PR が 1 件も無ければ、コメントも merge タスクも読まず、どちらも空にする", async () => {
   const { read, reads } = reviewWorld({ tasks: [taskOf(22), taskOf(30, 80)] });
   const snap = await read();
   assert.deepEqual(reads.comments, []);
+  assert.deepEqual(reads.checks, []);
   assert.equal(reads.merges, 0);
   assert.deepEqual(snap.reviewPullRequests, []);
   assert.deepEqual(snap.mergeTasks, []);
@@ -486,10 +490,20 @@ test("reviewPullRequests: 読んだ結果から decide が review-fix を 1 件�
   ]);
 });
 
+test("reviewPullRequests: main と同じ必須チェックで落ちた PR は、読んだ check-runs から decide が review-fix を出さない。違うチェックなら出す", async () => {
+  const MAIN_SHA = "c".repeat(40);
+  const rules = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "lint" }, { context: "test" }] } }];
+  const run = (id, name, conclusion) => ({ id, name, status: "completed", conclusion, runId: id });
+  const main = () => ({ sha: MAIN_SHA, rules, checks: [run(1, "lint", "failure"), run(2, "test", "success")], comments: [] });
+  const fixesOf = async (prChecks) => decide({ ...(await reviewWorld({ main, prChecks }).read()), dispatched: [] }).filter((a) => a.kind === "review-fix");
+  assert.deepEqual(await fixesOf([run(11, "lint", "failure"), run(12, "test", "success")]), []);
+  assert.equal((await fixesOf([run(11, "lint", "success"), run(12, "test", "failure")])).length, 1);
+});
+
 test("reviewPullRequests: merge タスクの読み取りが失敗したら例外にする（黙って空にしない）", async () => {
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: NO_MAIN, readIssues: () => reviewIssues(), readPullRequests: () => [prRow(70)], readComments: () => [] },
+    github: { readMain: NO_MAIN, readIssues: () => reviewIssues(), readPullRequests: () => [prRow(70)], readComments: () => [], readChecks: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [taskOf(21, 70)],
     mergeTasks: async () => { throw new Error("takt-node.sh が失敗"); },
@@ -522,6 +536,7 @@ const fixWorld = ({ comments, head = RF_HEAD, state = "OPEN", observed = [] } = 
       readIssues: () => issues,
       readPullRequests: () => [prRow(70, state, { head })],
       readComments: () => comments,
+      readChecks: () => [],
     },
     discord: { readReactions: async () => [] },
     taktTasks: () => [taskOf(21, 70)],
@@ -560,7 +575,7 @@ test("修正のセッション: 判断依頼を送り済みの PR（仕様に停
   const observed = [];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => [prRow(70)], readComments: () => [fixLaunched(RF_HEAD, "term_f")] },
+    github: { readMain: NO_MAIN, readIssues: () => issues, readPullRequests: () => [prRow(70)], readComments: () => [fixLaunched(RF_HEAD, "term_f")], readChecks: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [taskOf(21, 70)],
     mergeTasks: async () => [],
