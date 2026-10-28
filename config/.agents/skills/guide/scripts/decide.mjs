@@ -46,7 +46,12 @@
 //     | { kind: "archive-thread", key, issue, threadId, subject: "仕様" | "map" }
 //       （閉じた仕様の承認依頼のスレッド・閉じた map のスレッドに、アーカイブした印が無い。印はその issue に書く）
 //     | { kind: "rerun-main", key, sha, runs, checks }
-//       （main の最新の commit の必須チェックが落ち、その commit に再実行の印が無い run がある。印は commit comment に書く。snapshot.main: { sha, required, checks, comments }）
+//       （main の最新の commit の必須チェックが落ち、その commit に再実行の印が無い run がある。印は commit comment に書く。
+//        snapshot.main: { sha, required, checks, comments, commitComments: [{ sha, author, body, createdAt }], lastGreen, range: [{ sha, pullRequests: [{ number, title, closes }] }] }）
+//     | { kind: "main-fix", key, sha, checks, runs, lastGreen, pullRequests }
+//       （再実行の印より後に同じ必須チェックが落ち直し、C に main-fix の起動の印が無く、範囲の起動の印が上限未満。印は C の commit comment に書く）
+//     | { kind: "close-tab", key, sha, step: "main-fix", handle, gone }
+//       （main が緑に戻り、main-fix のタブの手が止まっている。閉じた印は起動の印と同じ commit comment に書く）
 // セッションの観測（snapshot.now: ISO 8601 / snapshot.stallMinutes: 既定 60 / snapshot.sessions）:
 //   sessions: { [handle]: { found, waiting, waitSource, waitSince, idle, startedAt, tail } }（sessionsToObserve が返す工程だけ）
 //   waiting は入力待ち（確認・許可）、waitSource はその種類（hook / prompt-text / title）、waitSince は hook の入力待ちの識別子、found は handle のセッションが Orca にあるか。起動時刻は観測ではなく起動の印のコメントから読む。
@@ -1339,7 +1344,34 @@ function decideArchiveThreads(snapshot, dispatched) {
 // main の修復の印は、失敗した commit の commit comment に書く（issue も PR も持たない main の状態を毎周読み直すため）。
 export const mainRerunMarker = (run) => `案内役: main の失敗した job を再実行する（run ${run}）`;
 
-// run ごとに 1 回だけ。印のある run は、再実行でも落ちたままでも出さない（その先は main-fix の役目）。
+// main-fix の印は 2 段（起動前 / 起動後）で、失敗した commit C の commit comment に書く。C は 40 桁の sha。
+export const mainFixLaunchingMarker = (sha) => `案内役: main-fix を起動する（commit ${sha}）`;
+export const mainFixLaunchedMarker = (sha, handle, launchedAt) => `案内役: main-fix を起動した（commit ${sha} / ターミナル ${handle} / ${launchedAt}）`;
+// 直せなかったときに main-fix のセッションが書く印の頭。理由が続く。
+export const mainFixFailedMarker = (sha) => `案内役: main-fix が直せなかった（commit ${sha}）`;
+export const mainFixTabTitle = (sha) => `main-fix ${sha.slice(0, 7)}`;
+// 修復の起動回数の上限。最後に緑だった commit より後の起動の印の数で数える（仮決め）。
+export const MAIN_FIX_LAUNCH_LIMIT = 2;
+const MAIN_FIX_LAUNCHED = /^案内役: main-fix を起動した（commit (\w+) \/ ターミナル (\S+) \/ ([^）]+)）/;
+
+const ownCommitComments = (main, viewer) => (main.commitComments ?? []).filter((c) => c.author === viewer && typeof c.body === "string");
+
+// 名前ごとの最新（id 最大）の check-run。再実行で同名の check-run が増えるため（main-state.mjs と同じ選び方）。
+const latestCheck = (checks, name) => checks.filter((c) => c.name === name).reduce((a, c) => (a === undefined || c.id > a.id ? c : a), undefined);
+
+// 落ちた必須チェックがすべて、再実行の印より後に落ち直したか。run の無い（Actions 以外の）チェックは再実行できないので落ち直したとみなす。
+function rerunStillFailing(main, viewer, failed) {
+  const markedAt = new Map((main.comments ?? []).filter((c) => c.author === viewer).map((c) => [c.body, c.createdAt]));
+  return failed.every((f) => {
+    if (f.runId === null) return true;
+    const at = markedAt.get(mainRerunMarker(f.runId));
+    const completedAt = latestCheck(main.checks, f.name)?.completedAt;
+    return at !== undefined && completedAt != null && Date.parse(completedAt) > Date.parse(at);
+  });
+}
+
+// run ごとに 1 回だけ再実行する。印のある run は、再実行でも落ちたままなら、その先の main-fix に進む。
+// main-fix は C ごとに 1 回、範囲（最後に緑だった commit より後）の起動の印が上限未満のときだけ。
 function decideMainRepair(snapshot, dispatched) {
   const { main, viewer } = snapshot;
   if (main === undefined) return [];
@@ -1348,8 +1380,44 @@ function decideMainRepair(snapshot, dispatched) {
   const marked = new Set(markers(main, viewer));
   const runs = [...new Set(failed.map((f) => f.runId).filter((r) => r !== null && !marked.has(mainRerunMarker(r))))];
   const key = `rerun-main:${main.sha}`;
-  if (runs.length === 0 || dispatched.has(key)) return [];
-  return [{ kind: "rerun-main", key, sha: main.sha, runs, checks: failed.map((f) => f.name) }];
+  if (runs.length > 0) return dispatched.has(key) ? [] : [{ kind: "rerun-main", key, sha: main.sha, runs, checks: failed.map((f) => f.name) }];
+  const fixKey = `main-fix:${main.sha}`;
+  if (marked.has(mainFixLaunchingMarker(main.sha)) || dispatched.has(fixKey) || !rerunStillFailing(main, viewer, failed)) return [];
+  const range = main.range ?? [];
+  const inRange = new Set(range.map((r) => r.sha));
+  const launches = ownCommitComments(main, viewer).filter((c) => inRange.has(c.sha) && c.body === mainFixLaunchingMarker(c.sha)).length;
+  if (launches >= MAIN_FIX_LAUNCH_LIMIT) return [];
+  const pullRequests = [...new Map(range.flatMap((r) => r.pullRequests).map((p) => [p.number, p])).values()];
+  return [{
+    kind: "main-fix", key: fixKey, sha: main.sha, checks: failed.map((f) => f.name),
+    runs: [...new Set(failed.map((f) => f.runId).filter((r) => r !== null))], lastGreen: main.lastGreen ?? null, pullRequests,
+  }];
+}
+
+// 閉じる候補の main-fix のタブ: main が緑で、起動した印（handle つき）があり、同じ commit に閉じた印が無いもの。
+export function mainFixTabsToClose(snapshot) {
+  const { main, viewer } = snapshot;
+  if (main === undefined || mainState(main).state !== "green") return [];
+  const own = ownCommitComments(main, viewer);
+  const closed = new Set(own.map((c) => `${c.sha} ${c.body}`));
+  return own
+    .map((c) => ({ sha: c.sha, m: MAIN_FIX_LAUNCHED.exec(c.body) }))
+    .filter(({ sha, m }) => m !== null && m[1] === sha && !closed.has(`${sha} ${closedTabMarker("main-fix", m[2])}`))
+    .map(({ sha, m }) => ({ sha, step: "main-fix", handle: m[2] }));
+}
+
+// 終わった main-fix のタブを閉じる。手の止まり方と見つからないタブの扱いは、工程のタブの片付けと同じ。印は C の commit comment に書く。
+function decideCloseMainFixTabs(snapshot, dispatched) {
+  const actions = [];
+  for (const { sha, step, handle } of mainFixTabsToClose(snapshot)) {
+    const observation = snapshot.sessions?.[handle];
+    const key = `close-tab:${handle}`;
+    if (observation === undefined || dispatched.has(key)) continue;
+    const gone = !observation.found;
+    if (!gone && !tabFinished(step, observation)) continue;
+    actions.push({ kind: "close-tab", key, sha, step, handle, gone });
+  }
+  return actions;
 }
 
 export function decide(snapshot) {
@@ -1418,6 +1486,7 @@ export function decide(snapshot) {
   // 閉じるのを先に出す。後ろの行動（仮決めの投稿など）が多い周でも、終わったタブ・スレッドが周の終わりまで残らないように。
   return [
     ...decideCloseTabs(snapshot, dispatched),
+    ...decideCloseMainFixTabs(snapshot, dispatched),
     ...decideArchiveThreads(snapshot, dispatched),
     ...decideMainRepair(snapshot, dispatched),
     ...actions,

@@ -1,12 +1,12 @@
 // snapshot.mjs のテスト。GitHub・Discord は偽物。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closedTabMarker, decide, mainRerunMarker, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
+import { closedTabMarker, decide, mainFixLaunchedMarker, mainRerunMarker, NO_QUESTION, QUESTION_HEADING } from "./decide.mjs";
 import { createReadSnapshot } from "./snapshot.mjs";
 import { REVIEW_FAILED, fixLaunchedMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 
 const VIEWER = "me";
-const NO_MAIN = () => ({ sha: "0".repeat(40), rules: [], checks: [], comments: [] });
+const NO_MAIN = () => ({ sha: "0".repeat(40), rules: [], checks: [], comments: [], commitComments: [] });
 const SENDING = "案内役: Discord に承認依頼を送る";
 const SENT = "案内役: Discord に承認依頼を送った（スレッド 555 / メッセージ 777）";
 const issue = (number, over = {}) => ({ number, title: "t", state: "OPEN", labels: ["spec"], body: "", comments: [], subIssues: [], ...over });
@@ -437,7 +437,7 @@ const reviewWorld = ({ tasks, prs, mergeRows = [MERGE], main = NO_MAIN, prChecks
   ];
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: main,
+    github: { readMain: main, readFirstParents: () => [], readCommitPullRequests: () => [],
       readIssues: () => issues,
       readPullRequests: () => prs ?? [prRow(70), prRow(71, "CLOSED"), prRow(80)],
       readComments: (n) => { reads.comments.push(n); return [{ author: VIEWER, body: `TAKT evaluation failed for head ${RF_HEAD}: x` }]; },
@@ -643,20 +643,79 @@ test("main: main の最新の commit の必須チェック（名前は ruleset �
     { id: 2, name: "ShellCheck (severity=error)", status: "completed", conclusion: "success", runId: 778 },
   ];
   const comments = [{ author: VIEWER, body: mainRerunMarker(777), createdAt: "2026-10-28T00:00:00Z" }];
+  const history = { readFirstParents: () => [SHA], readCommitPullRequests: () => [] };
   const read = createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: () => ({ sha: SHA, rules, checks, comments }), readIssues: () => [], readPullRequests: () => [] },
+    github: { readMain: () => ({ sha: SHA, rules, checks, comments, commitComments: [] }), ...history, readIssues: () => [], readPullRequests: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [],
   });
   const snap = await read();
-  assert.deepEqual(snap.main, { sha: SHA, required: ["Nix flake evaluation", "ShellCheck (severity=error)"], checks, comments });
+  assert.deepEqual(snap.main, { sha: SHA, required: ["Nix flake evaluation", "ShellCheck (severity=error)"], checks, comments, commitComments: [], lastGreen: null, range: [{ sha: SHA, pullRequests: [] }] });
   assert.deepEqual(decide(snap).filter((a) => a.kind === "rerun-main"), []);
   const unmarked = await createReadSnapshot({
     repo: "o/r", viewer: VIEWER, discordUserId: "U1",
-    github: { readMain: () => ({ sha: SHA, rules, checks, comments: [] }), readIssues: () => [], readPullRequests: () => [] },
+    github: { readMain: () => ({ sha: SHA, rules, checks, comments: [], commitComments: [] }), ...history, readIssues: () => [], readPullRequests: () => [] },
     discord: { readReactions: async () => [] },
     taktTasks: () => [],
   })();
   assert.deepEqual(decide(unmarked).filter((a) => a.kind === "rerun-main").map((a) => a.runs), [[777]]);
+});
+
+// main の修復の範囲: C ← B（赤）← A（緑）← Z の first-parent。
+const NIX = "Nix flake evaluation";
+const [C_SHA, B_SHA, A_SHA, Z_SHA] = ["c", "b", "a", "9"].map((x) => x.repeat(40));
+const RULES = [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: NIX }] } }];
+const nix = (conclusion, completedAt = "2026-10-28T10:05:00Z") => [{ id: 1, name: NIX, status: "completed", conclusion, runId: 777, completedAt }];
+const CHECKS_OF = { [B_SHA]: nix("failure"), [A_SHA]: nix("success"), [Z_SHA]: nix("success") };
+const PULLS_OF = { [C_SHA]: [{ number: 50, title: "feat: x", closes: [41] }], [B_SHA]: [{ number: 49, title: "fix: y", closes: [] }] };
+const rangeWorld = ({ checks = nix("failure"), comments = [], commitComments = [], sessions = {} } = {}) => {
+  const reads = { checks: [], pulls: [], observed: [] };
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: {
+      readMain: () => ({ sha: C_SHA, rules: RULES, checks, comments, commitComments }),
+      readFirstParents: (sha, limit) => { assert.deepEqual([sha, limit], [C_SHA, 30]); return [C_SHA, B_SHA, A_SHA, Z_SHA]; },
+      readChecks: (sha) => { reads.checks.push(sha); return CHECKS_OF[sha]; },
+      readCommitPullRequests: (sha) => { reads.pulls.push(sha); return PULLS_OF[sha] ?? []; },
+      readIssues: () => [], readPullRequests: () => [],
+    },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+    observeSession: async ({ handle }) => { reads.observed.push(handle); return sessions[handle]; },
+  });
+  return { read, reads };
+};
+
+test("main の修復の範囲: main が赤ければ、first-parent をさかのぼって最後に緑だった commit と、そこから C までの範囲の PR を読む", async () => {
+  const { read, reads } = rangeWorld();
+  const snap = await read();
+  assert.equal(snap.main.lastGreen, A_SHA);
+  assert.deepEqual(snap.main.range, [{ sha: C_SHA, pullRequests: PULLS_OF[C_SHA] }, { sha: B_SHA, pullRequests: PULLS_OF[B_SHA] }]);
+  // C の check-runs は readMain で読み済み。緑の A で止まり、その先（Z）は読まない
+  assert.deepEqual(reads.checks, [B_SHA, A_SHA]);
+  assert.deepEqual(reads.pulls, [C_SHA, B_SHA]);
+});
+
+test("main の修復の範囲: main が緑・未定なら範囲を読まない", async () => {
+  for (const checks of [nix("success"), []]) {
+    const { read, reads } = rangeWorld({ checks });
+    const snap = await read();
+    assert.deepEqual([snap.main.lastGreen, snap.main.range], [null, []]);
+    assert.deepEqual([reads.checks, reads.pulls], [[], []]);
+  }
+});
+
+test("main の修復の範囲: 読んだ範囲から、再実行でも落ちた C に main-fix を出す", async () => {
+  const comments = [{ author: VIEWER, body: mainRerunMarker(777), createdAt: "2026-10-28T10:00:00Z" }];
+  const snap = await rangeWorld({ comments }).read();
+  assert.deepEqual(decide(snap).filter((a) => a.kind === "main-fix").map((a) => [a.sha, a.lastGreen, a.pullRequests.map((p) => p.number)]), [[C_SHA, A_SHA, [50, 49]]]);
+});
+
+test("main-fix のタブ: main が緑なら、起動した印の handle を観測し、手が止まっていれば閉じる行動を出す", async () => {
+  const launched = { sha: B_SHA, author: VIEWER, body: mainFixLaunchedMarker(B_SHA, "term_m", "2026-10-28T10:10:00Z"), createdAt: "2026-10-28T10:10:00Z" };
+  const { read, reads } = rangeWorld({ checks: nix("success"), commitComments: [launched], sessions: { term_m: { found: true, waiting: false, idle: true, tail: [] } } });
+  const snap = await read();
+  assert.deepEqual(reads.observed, ["term_m"]);
+  assert.deepEqual(decide(snap).filter((a) => a.kind === "close-tab").map((a) => [a.sha, a.handle]), [[B_SHA, "term_m"]]);
 });

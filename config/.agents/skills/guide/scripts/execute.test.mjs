@@ -1702,3 +1702,44 @@ test("rerun-main: run ごとに、再実行の印を commit comment に書いて
     "rerun 702",
   ]);
 });
+
+test("main-fix: 起動の印を C の commit comment に書いてから起動し、handle と起動時刻の印を同じ commit に書く", async () => {
+  const calls = [];
+  const sha = "c".repeat(40);
+  const input = { kind: "main-fix", key: `main-fix:${sha}`, sha, checks: ["a"], runs: [701], lastGreen: "a".repeat(40), pullRequests: [{ number: 50, title: "t", closes: [41] }] };
+  const execute = createExecute({
+    github: { commitComment: (s, body) => calls.push(`commit-comment ${s.slice(0, 7)} ${body}`) },
+    cwd: "/x", repo: REPO, now: () => new Date("2026-10-28T10:00:00Z"),
+    launchMainFix: async (a) => { calls.push(`launch ${JSON.stringify(a)}`); return { handle: "term_m" }; },
+  });
+  await execute(input);
+  assert.deepEqual(calls, [
+    `commit-comment ccccccc 案内役: main-fix を起動する（commit ${sha}）`,
+    `launch ${JSON.stringify({ cwd: "/x", repo: REPO, sha, checks: ["a"], runs: [701], lastGreen: "a".repeat(40), pullRequests: input.pullRequests })}`,
+    `commit-comment ccccccc 案内役: main-fix を起動した（commit ${sha} / ターミナル term_m / 2026-10-28T10:00:00.000Z）`,
+  ]);
+});
+
+test("main-fix: 起動が失敗したら、起動前の印だけを残して例外にする（二重に起動しない）", async () => {
+  const calls = [];
+  const sha = "c".repeat(40);
+  const execute = createExecute({
+    github: { commitComment: (s, body) => calls.push(body) },
+    cwd: "/x", repo: REPO, now: () => new Date(0),
+    launchMainFix: async () => { throw new Error("orca down"); },
+  });
+  await assert.rejects(execute({ kind: "main-fix", key: "k", sha, checks: [], runs: [], lastGreen: null, pullRequests: [] }), /orca down/);
+  assert.deepEqual(calls, [`案内役: main-fix を起動する（commit ${sha}）`]);
+});
+
+test("close-tab: main-fix のタブ（sha つき）は、閉じた印を issue ではなく起動の印と同じ commit comment に書く", async () => {
+  const calls = [];
+  const sha = "b".repeat(40);
+  const execute = createExecute({
+    github: { commitComment: (s, body) => calls.push(`commit-comment ${s.slice(0, 7)} ${body}`), comment: () => assert.fail("issue には書かない") },
+    cwd: "/x", repo: REPO,
+    closeTab: async ({ handle }) => calls.push(`close ${handle}`),
+  });
+  await execute({ kind: "close-tab", key: "close-tab:term_m", sha, step: "main-fix", handle: "term_m", gone: false });
+  assert.deepEqual(calls, ["close term_m", "commit-comment bbbbbbb 案内役: main-fix のタブを閉じた（ターミナル term_m）"]);
+});

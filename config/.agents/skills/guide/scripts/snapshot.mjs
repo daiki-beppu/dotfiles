@@ -2,9 +2,23 @@
 // 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションと晴れた map の to-spec のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない。ただし工程と takt-sequence は、閉じる候補として閉じた印が付くまで観測する）。現在時刻 now と stallMinutes も渡す。
 // 渡した sub-issue の OPEN な PR は、コメントと現在の head の check-runs と merge タスクの記録を読む（review-fix の判定用。check-runs は main と同じチェックで落ちたかを見る）。その PR の修正のセッションも、結果が出ていなければ観測する。
 // main の最新の commit の必須チェック（名前は ruleset から読む）・check-runs・commit comment（main の修復の印）も読む。
+// main が赤ければ、first-parent をさかのぼって最後に緑だった commit と、そこから最新の commit までの範囲の PR も読む（main-fix の材料と起動回数の範囲）。
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
-import { requiredChecks } from "../../takt/scripts/main-state.mjs";
-import { awaitsReaction, decisionAnswersToRead, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, provisionalRejectionsToRead, reviewFixSessionsToObserve, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, tabsToClose, ticketSessionsToObserve } from "./decide.mjs";
+import { mainState, requiredChecks } from "../../takt/scripts/main-state.mjs";
+import { awaitsReaction, decisionAnswersToRead, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, mainFixTabsToClose, provisionalRejectionsToRead, reviewFixSessionsToObserve, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, tabsToClose, ticketSessionsToObserve } from "./decide.mjs";
+
+const RANGE_LIMIT = 30;
+
+// 範囲は最新の commit C から、最後に緑だった commit の手前まで（C を含む）。RANGE_LIMIT 件さかのぼって緑が無ければ lastGreen は null。
+function readRepairRange(github, main) {
+  if (mainState(main).state !== "red") return { lastGreen: null, range: [] };
+  const range = [];
+  for (const sha of github.readFirstParents(main.sha, RANGE_LIMIT)) {
+    if (sha !== main.sha && mainState({ required: main.required, checks: github.readChecks(sha) }).state === "green") return { lastGreen: sha, range };
+    range.push({ sha, pullRequests: github.readCommitPullRequests(sha) });
+  }
+  return { lastGreen: null, range };
+}
 
 export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, github, discord, taktTasks, mergeTasks, now = () => new Date(), stallMinutes, observeSession }) {
   return async () => {
@@ -16,8 +30,9 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
       }),
     );
     const tasks = taktTasks();
-    const { sha, rules, checks, comments } = github.readMain();
-    const main = { sha, required: requiredChecks(rules), checks, comments };
+    const { sha, rules, checks, comments, commitComments } = github.readMain();
+    const read = { sha, required: requiredChecks(rules), checks, comments, commitComments };
+    const main = { ...read, ...readRepairRange(github, read) };
     const observed = { repo, viewer, discordUserId, fromSpec, issues, taktIssues: tasks.map((t) => t.issue), taktTasks: tasks, pullRequests: github.readPullRequests(), main };
     // 渡した sub-issue の OPEN な PR だけ、コメントを読む（PR を持たない issue の読み取りは増やさない）。親の印は grilling の読み直しの影響を受けないので、観測より前に読む。
     // 修正のセッションの観測（2 段目の印の handle）にも、merge タスクの判定にも使う。
@@ -30,7 +45,7 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
       sessions[handle] = { ...(await observeSession({ handle })), startedAt };
     }
     // 結果が出て閉じる候補のタブ（停止の観測とは重ならない）。startedAt は使わない
-    for (const { handle } of tabsToClose(observed)) {
+    for (const { handle } of [...tabsToClose(observed), ...mainFixTabsToClose(observed)]) {
       if (!(handle in sessions)) sessions[handle] = await observeSession({ handle });
     }
     // 入力待ちの観測より前に書かれた「判断の問い」を拾うため、観測の後で対象の ticket のコメントだけを読み直す。

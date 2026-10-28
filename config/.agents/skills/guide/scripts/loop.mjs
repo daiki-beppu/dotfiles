@@ -32,7 +32,8 @@ const DESCRIBE = {
   "review-fix": (a) => `PR #${a.pr}（sub-issue #${a.issue}）の takt のレビューの失敗を直す review-fix を、head ブランチの worktree の Orca のタブで起動する`,
   "archive-thread": (a) => `閉じた${a.subject === "map" ? " map" : "仕様"} #${a.issue} の Discord スレッドをアーカイブする`,
   "rerun-main": (a) => `main の commit ${a.sha.slice(0, 7)} で落ちた必須チェック（${a.checks.join("、")}）の job を 1 回だけ再実行する（run ${a.runs.join(" ")}）`,
-  "close-tab": (a) => `終わった ${a.step} のタブ（#${a.issue}）を${a.gone ? "閉じた記録だけ残す（既に無い）" : "閉じる"}`,
+  "main-fix": (a) => `main の commit ${a.sha.slice(0, 7)} で再実行でも落ちた必須チェック（${a.checks.join("、")}）を直す main-fix を、origin/main から作った worktree の Orca のタブで起動する`,
+  "close-tab": (a) => `終わった ${a.step} のタブ（${a.sha === undefined ? `#${a.issue}` : `commit ${a.sha.slice(0, 7)}`}）を${a.gone ? "閉じた記録だけ残す（既に無い）" : "閉じる"}`,
   knowledge: (a) => `仕様 #${a.spec} の学びをまとめる knowledge を Orca のタブで起動する`,
 };
 const describe = (a) => DESCRIBE[a.kind](a);

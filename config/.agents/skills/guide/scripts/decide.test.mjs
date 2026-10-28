@@ -3843,3 +3843,91 @@ test("main が赤い間の review-fix: main が緑・未定・スナップショ
   assert.deepEqual(rfOnMain(mainOf([check(1, NIX, "failure")]), prChecks), [rfAction()]);
   assert.deepEqual(rfOnMain(undefined, prChecks), [rfAction()]);
 });
+
+// main-fix: C（MAIN_SHA）で再実行した run 701 が、再実行の印（10:00）より後に落ち直した状態を基準にする。
+const GREEN_SHA = "a".repeat(40);
+const MID_SHA = "b".repeat(40);
+const RERUN_AT = "2026-10-28T10:00:00Z";
+const failedAt = (completedAt, id = 1) => ({ ...check(id, NIX, "failure", "completed", 701), completedAt });
+const PRS_C = [{ number: 50, title: "feat: x", closes: [41] }];
+const PRS_MID = [{ number: 49, title: "fix: y", closes: [] }];
+const fixMain = ({ checks = [failedAt("2026-10-28T10:05:00Z"), check(2, SC, "success")], comments = [], commitComments = [] } = {}) => ({
+  ...mainOf(checks, [{ author: VIEWER, body: D.mainRerunMarker(701), createdAt: RERUN_AT }, ...comments]),
+  commitComments,
+  lastGreen: GREEN_SHA,
+  range: [{ sha: MAIN_SHA, pullRequests: PRS_C }, { sha: MID_SHA, pullRequests: [...PRS_MID, ...PRS_C] }],
+});
+const mainFixes = (main, over = {}) => decide(snapshot([], { main, ...over })).filter((a) => a.kind === "main-fix");
+const onCommit = (sha, body) => ({ sha, author: VIEWER, body, createdAt: RERUN_AT });
+
+test("main-fix: 再実行でも落ちれば、C・落ちたチェック・run・最後に緑だった commit・範囲の PR（重複なし）を持つ起動を 1 つ出す", () => {
+  assert.deepEqual(mainFixes(fixMain()), [{
+    kind: "main-fix", key: `main-fix:${MAIN_SHA}`, sha: MAIN_SHA, checks: [NIX], runs: [701], lastGreen: GREEN_SHA,
+    pullRequests: [...PRS_C, ...PRS_MID],
+  }]);
+  assert.deepEqual(reruns(fixMain()), []);
+});
+
+test("main-fix: 再実行が通れば（同名の新しい check-run が success）何も出ない", () => {
+  const passed = fixMain({ checks: [failedAt("2026-10-28T09:00:00Z"), check(5, NIX, "success"), check(2, SC, "success")] });
+  assert.deepEqual(decide(snapshot([], { main: passed })), []);
+});
+
+test("main-fix: 再実行の結果がまだ出ていない（落ちた check-run が再実行の印より前のまま）なら出さない", () => {
+  assert.deepEqual(mainFixes(fixMain({ checks: [failedAt("2026-10-28T09:59:00Z"), check(2, SC, "success")] })), []);
+  assert.deepEqual(mainFixes(fixMain({ checks: [failedAt(null), check(2, SC, "success")] })), []);
+});
+
+test("main-fix: 再実行の印が無ければ、先に再実行だけを出す", () => {
+  const unmarked = { ...fixMain(), comments: [] };
+  assert.deepEqual(decide(snapshot([], { main: unmarked })).map((a) => a.kind), ["rerun-main"]);
+});
+
+test("main-fix: 同じ C に起動の印があれば出さない。viewer 以外の印は数えない", () => {
+  assert.deepEqual(mainFixes(fixMain({ comments: [byViewer(D.mainFixLaunchingMarker(MAIN_SHA))] })), []);
+  assert.equal(mainFixes(fixMain({ comments: [{ author: "someone", body: D.mainFixLaunchingMarker(MAIN_SHA) }] })).length, 1);
+});
+
+test("main-fix: 範囲（最後に緑だった commit より後）の起動の印が上限に達していれば出さない。範囲の外の印は数えない", () => {
+  assert.equal(D.MAIN_FIX_LAUNCH_LIMIT, 2);
+  const one = [onCommit(MID_SHA, D.mainFixLaunchingMarker(MID_SHA))];
+  assert.equal(mainFixes(fixMain({ commitComments: one })).length, 1);
+  const outside = [...one, onCommit(GREEN_SHA, D.mainFixLaunchingMarker(GREEN_SHA))];
+  assert.equal(mainFixes(fixMain({ commitComments: outside })).length, 1);
+  // C の印は commitComments にだけある形で数える（C の comments に載っていれば、同じ C の起動の印として先に止まる）
+  const full = [...one, onCommit(MAIN_SHA, D.mainFixLaunchingMarker(MAIN_SHA))];
+  assert.deepEqual(mainFixes(fixMain({ commitComments: full })), []);
+});
+
+test("main-fix: 同じスナップショットで 2 周しても二重に出さない（dispatched）", () => {
+  const [first] = mainFixes(fixMain());
+  assert.deepEqual(mainFixes(fixMain(), { dispatched: [first.key] }), []);
+});
+
+test("main-fix: 印の文言（2 段の起動・直せなかった・タブの題名）", () => {
+  assert.equal(D.mainFixLaunchingMarker(MAIN_SHA), `案内役: main-fix を起動する（commit ${MAIN_SHA}）`);
+  assert.equal(D.mainFixLaunchedMarker(MAIN_SHA, "term_m", RERUN_AT), `案内役: main-fix を起動した（commit ${MAIN_SHA} / ターミナル term_m / ${RERUN_AT}）`);
+  assert.equal(D.mainFixFailedMarker(MAIN_SHA), `案内役: main-fix が直せなかった（commit ${MAIN_SHA}）`);
+  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix ccccccc");
+});
+
+// main が緑に戻った後: 前の失敗した commit（MID_SHA）に起動した印がある。
+const GREEN_MAIN = (commitComments) => ({ ...mainOf([check(1, NIX, "success"), check(2, SC, "success")]), commitComments, lastGreen: null, range: [] });
+const LAUNCHED_MID = onCommit(MID_SHA, D.mainFixLaunchedMarker(MID_SHA, "term_m", RERUN_AT));
+const idleTab = { term_m: { found: true, waiting: false, idle: true, tail: [] } };
+const mainFixCloses = (main, over = {}) => decide(snapshot([], { main, sessions: idleTab, ...over })).filter((a) => a.kind === "close-tab");
+
+test("main-fix のタブ: main が緑に戻り、手が止まっていれば、起動の印と同じ commit に閉じる行動を出す", () => {
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID])), [{ kind: "close-tab", key: "close-tab:term_m", sha: MID_SHA, step: "main-fix", handle: "term_m", gone: false }]);
+  assert.deepEqual(D.mainFixTabsToClose(snapshot([], { main: GREEN_MAIN([LAUNCHED_MID]) })), [{ sha: MID_SHA, step: "main-fix", handle: "term_m" }]);
+});
+
+test("main-fix のタブ: main が赤いまま・手が動いている・入力待ち・閉じた印がある・2 周目なら出さない。見つからないタブは印だけ（gone）", () => {
+  const red = { ...fixMain({ comments: [byViewer(D.mainFixLaunchingMarker(MAIN_SHA))] }), commitComments: [LAUNCHED_MID] };
+  assert.deepEqual(mainFixCloses(red), []);
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { sessions: { term_m: { found: true, waiting: false, idle: false, tail: [] } } }), []);
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { sessions: { term_m: { found: true, waiting: true, idle: true, tail: [] } } }), []);
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID, onCommit(MID_SHA, D.closedTabMarker("main-fix", "term_m"))])), []);
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { dispatched: ["close-tab:term_m"] }), []);
+  assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { sessions: { term_m: { found: false, waiting: false, idle: false, tail: [] } } }).map((a) => a.gone), [true]);
+});

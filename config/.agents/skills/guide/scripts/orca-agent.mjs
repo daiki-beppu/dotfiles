@@ -22,6 +22,21 @@ export function handleOf(reply, command = "orca agent launch", path = "result.ou
   return handle;
 }
 
+// orca worktree create --json の応答 { ok, result: { worktree: { path } } } から path を取る。
+export function worktreePath(reply) {
+  let parsed;
+  try {
+    parsed = JSON.parse(reply);
+  } catch {
+    throw new Error(`orca worktree create の応答から result.worktree.path が取れない（JSON ではない）: ${String(reply).trim().slice(0, 200)}`);
+  }
+  const path = parsed?.result?.worktree?.path;
+  if (typeof path !== "string" || path === "") {
+    throw new Error(`orca worktree create の応答から result.worktree.path が取れない: ${String(reply).trim().slice(0, 200)}`);
+  }
+  return path;
+}
+
 export function launchAgent({ cwd, prompt, title }, run = runOrca) {
   const reply = run(["agent", "launch", "--agent", "claude", "--worktree", `path:${cwd}`, "--prompt", prompt, "--json"], { cwd });
   const handle = handleOf(reply);

@@ -2,6 +2,14 @@
 // 参照の解析やマーカーの判定は decide.mjs の責務で、ここでは取得対象を絞るだけにする。
 import { execFileSync } from "node:child_process";
 
+const COMMIT_PULLS_QUERY = `query($owner: String!, $name: String!, $oid: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $oid) {
+      ... on Commit { associatedPullRequests(first: 10) { nodes { number title state closingIssuesReferences(first: 20) { nodes { number } } } } }
+    }
+  }
+}`;
+
 export function createGithub({ repo, cwd, execFile = execFileSync }) {
   // 失敗したら gh の stderr の 1 行目をメッセージの 1 行目に足す（案内役は止まるとき 1 行目だけを出すので、原因が見えるように）。
   const gh = (args) => {
@@ -16,13 +24,13 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
   const paged = (path) => JSON.parse(gh(["api", path, "--paginate", "--slurp"])).flat();
   const commentsAt = (path) => paged(path).map((c) => ({ author: c.user?.login, body: c.body ?? "", createdAt: c.created_at }));
   const readComments = (number) => commentsAt(`repos/${repo}/issues/${number}/comments?per_page=100`);
-  // commit の check-runs。run の番号は details_url から取る（再実行に使う）。
+  // commit の check-runs。run の番号は Actions の details_url から取る（再実行に使う。Actions 以外のチェックは null）。
   const readChecks = (sha) =>
     paged(`repos/${repo}/commits/${sha}/check-runs?per_page=100`)
       .flatMap((p) => p.check_runs)
       .map((c) => {
         const run = /\/actions\/runs\/(\d+)/.exec(c.details_url ?? "");
-        return { id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, runId: run ? Number(run[1]) : null };
+        return { id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, runId: run ? Number(run[1]) : null, completedAt: c.completed_at ?? null };
       });
 
   return {
@@ -84,7 +92,7 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
       }));
     },
 
-    // main の最新の commit と、その判定の材料（ruleset・check-runs・commit comment）。判定は takt の main-state.mjs が行う。
+    // main の最新の commit と、その判定の材料（ruleset・check-runs・commit comment）と、repo の全 commit comment。判定は takt の main-state.mjs が行う。
     readMain() {
       const sha = JSON.parse(gh(["api", `repos/${repo}/commits/main`])).sha;
       const checks = readChecks(sha);
@@ -93,7 +101,27 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
         rules: paged(`repos/${repo}/rules/branches/main`),
         checks,
         comments: commentsAt(`repos/${repo}/commits/${sha}/comments?per_page=100`),
+        // repo の全 commit の commit comment。main-fix の起動回数と閉じるタブを、どの commit の印かによらず読むため。
+        commitComments: paged(`repos/${repo}/comments?per_page=100`).map((c) => ({ sha: c.commit_id, author: c.user?.login, body: c.body ?? "", createdAt: c.created_at })),
       };
+    },
+
+    // sha から first-parent をたどった commit の sha の列（sha 自身が先頭）。最大 limit 件。
+    readFirstParents(sha, limit) {
+      const commits = JSON.parse(gh(["api", `repos/${repo}/commits?sha=${sha}&per_page=${limit}`]));
+      const parentOf = new Map(commits.map((c) => [c.sha, c.parents?.[0]?.sha]));
+      const shas = [];
+      for (let at = sha; at !== undefined && parentOf.has(at) && shas.length < limit; at = parentOf.get(at)) shas.push(at);
+      return shas;
+    },
+
+    // commit を main に入れたマージ済みの PR（番号・題・閉じた issue）。
+    readCommitPullRequests(sha) {
+      const [owner, name] = repo.split("/");
+      const reply = JSON.parse(gh(["api", "graphql", "-f", `query=${COMMIT_PULLS_QUERY}`, "-F", `owner=${owner}`, "-F", `name=${name}`, "-F", `oid=${sha}`]));
+      return (reply.data?.repository?.object?.associatedPullRequests?.nodes ?? [])
+        .filter((p) => p.state === "MERGED")
+        .map((p) => ({ number: p.number, title: p.title, closes: (p.closingIssuesReferences?.nodes ?? []).map((i) => i.number) }));
     },
 
     commitComment(sha, body) {
