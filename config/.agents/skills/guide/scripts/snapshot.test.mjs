@@ -719,3 +719,15 @@ test("main-fix のタブ: main が緑なら、起動した印の handle を観�
   assert.deepEqual(reads.observed, ["term_m"]);
   assert.deepEqual(decide(snap).filter((a) => a.kind === "close-tab").map((a) => [a.sha, a.handle]), [[B_SHA, "term_m"]]);
 });
+
+test("main-fix の停止: main が赤く、C に起動した印があれば、その handle を起動時刻つきで観測し、見つからなければ判断依頼を出す", async () => {
+  const comments = [
+    { author: VIEWER, body: mainRerunMarker(777), createdAt: "2026-10-28T10:00:00Z" },
+    { author: VIEWER, body: mainFixLaunchedMarker(C_SHA, "term_m", "2026-10-28T10:10:00Z"), createdAt: "2026-10-28T10:10:00Z" },
+  ];
+  const { read, reads } = rangeWorld({ comments, sessions: { term_m: { found: false, waiting: false, idle: false, tail: [] } } });
+  const snap = await read();
+  assert.deepEqual(reads.observed, ["term_m"]);
+  assert.equal(snap.sessions.term_m.startedAt, "2026-10-28T10:10:00Z");
+  assert.deepEqual(decide(snap).filter((a) => a.kind === "request-main-decision").map((a) => [a.sha, a.cause]), [[C_SHA, "main-fix のセッションの停止"]]);
+});

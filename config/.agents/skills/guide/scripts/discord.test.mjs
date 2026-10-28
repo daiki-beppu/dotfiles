@@ -627,3 +627,49 @@ test("アーカイブ: 404 以外の失敗（権限不足など）は例外に�
   const { discord } = adapter({ "PATCH /api/v10/channels/T1": json({ message: "Missing Permissions" }, 403) });
   await assert.rejects(discord.archiveThread({ threadId: "T1" }), /PATCH \/channels\/T1 が 403/);
 });
+
+// ---- main の判断依頼 ----
+
+const C_SHA = "c".repeat(40);
+const mainDecision = (over = {}) => ({
+  threadId: "T1", repo: "o/r", sha: C_SHA, cause: "main の修復", reason: "main-fix の起動が上限（2 回）に達した",
+  checks: ["Nix flake evaluation"], runs: [701], lastGreen: "a".repeat(40), pullRequests: [{ number: 50, title: "feat: x", closes: [41] }], ...over,
+});
+
+test("main の判断依頼: 先頭で本人だけをメンションし、C・最後に緑だった commit・落ちたチェック・run の URL・理由・範囲の PR を送る", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  assert.deepEqual(await discord.sendMainDecisionRequest(mainDecision()), { messageId: "M1" });
+  const { content, allowed_mentions } = calls[0].body;
+  assert.deepEqual(allowed_mentions, { parse: [], users: [OWNER] });
+  assert.equal(content, [
+    `<@${OWNER}> 判断依頼: main の修復が進まない（main の修復）`,
+    `失敗した commit C: ${C_SHA} https://github.com/o/r/commit/${C_SHA}`,
+    `最後に緑だった commit: ${"a".repeat(40)}`,
+    "落ちたチェック: Nix flake evaluation",
+    "失敗した run: https://github.com/o/r/actions/runs/701",
+    "理由: main-fix の起動が上限（2 回）に達した",
+    "範囲の PR（最後に緑だった commit より後、C まで）:",
+    "  - #50 feat: x https://github.com/o/r/pull/50 閉じた issue: #41",
+  ].join("\n"));
+});
+
+test("main の判断依頼: 最後に緑だった commit・run・範囲の PR が無ければ、無いことを書く", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendMainDecisionRequest(mainDecision({ lastGreen: null, runs: [], pullRequests: [] }));
+  const { content } = calls[0].body;
+  assert.match(content, /最後に緑だった commit: （さかのぼった範囲に無い）/);
+  assert.match(content, /失敗した run: （Actions の run が無い）/);
+  assert.match(content, /\n {2}- （無い）$/);
+});
+
+test("main の判断依頼: 2000 文字を超えたら、先頭を残して末尾（範囲の PR の一覧の側）を切り、… を付ける", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  const pullRequests = Array.from({ length: 100 }, (_, i) => ({ number: i + 1, title: "t".repeat(30), closes: [] }));
+  await discord.sendMainDecisionRequest(mainDecision({ pullRequests }));
+  const { content } = calls[0].body;
+  assert.equal(content.length, 2000);
+  assert.ok(content.endsWith("…"));
+  assert.ok(content.startsWith(`<@${OWNER}> 判断依頼: main の修復が進まない（main の修復）`));
+  assert.match(content, /理由: main-fix の起動が上限/);
+  assert.match(content, /#1 t+ https/);
+});

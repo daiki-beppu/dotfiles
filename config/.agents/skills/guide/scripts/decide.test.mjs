@@ -3931,3 +3931,92 @@ test("main-fix のタブ: main が赤いまま・手が動いている・入力�
   assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { dispatched: ["close-tab:term_m"] }), []);
   assert.deepEqual(mainFixCloses(GREEN_MAIN([LAUNCHED_MID]), { sessions: { term_m: { found: false, waiting: false, idle: false, tail: [] } } }).map((a) => a.gone), [true]);
 });
+
+// main の判断依頼: main-fix で直らない C（MAIN_SHA）。範囲の PR は #50（C、#41 を閉じた）と #49（MID）。
+const mainDecisions = (main, over = {}, issues = []) => decide(snapshot(issues, { main, ...over })).filter((a) => a.kind === "request-main-decision");
+const LIMIT_REACHED = [onCommit(MID_SHA, D.mainFixLaunchingMarker(MID_SHA)), onCommit(MAIN_SHA, D.mainFixLaunchingMarker(MAIN_SHA))];
+const mainDecisionOf = (cause, reason, target = { spec: null, threadId: null }) => ({
+  kind: "request-main-decision", key: `request-main-decision:${MAIN_SHA}:${cause}`, sha: MAIN_SHA, cause, reason,
+  checks: [NIX], runs: [701], lastGreen: GREEN_SHA, pullRequests: [...PRS_C, ...PRS_MID], ...target,
+});
+const FAILED_ON_C = [byViewer(D.mainFixLaunchingMarker(MAIN_SHA)), byViewer(`${D.mainFixFailedMarker(MAIN_SHA)}: revert すべきか判断が要る`)];
+// main-fix を C で起動した（RERUN_AT）セッション term_m。
+const LAUNCHED_ON_C = [byViewer(D.mainFixLaunchingMarker(MAIN_SHA)), byViewer(D.mainFixLaunchedMarker(MAIN_SHA, "term_m", RERUN_AT))];
+const goneTab = { term_m: { found: false, waiting: false, idle: false, tail: [] } };
+const STALL = D.stallCause("main-fix");
+
+test("main の判断依頼: 範囲の起動の印が上限に達していれば、main-fix の代わりに原因 main の修復の判断依頼を出す", () => {
+  assert.deepEqual(mainDecisions(fixMain({ commitComments: LIMIT_REACHED })), [mainDecisionOf(D.CAUSE_MAIN_REPAIR, "main-fix の起動が上限（2 回）に達した")]);
+  assert.deepEqual(mainFixes(fixMain({ commitComments: LIMIT_REACHED })), []);
+  assert.deepEqual(mainDecisions(fixMain()), []);
+});
+
+test("main の判断依頼: C に直せなかった印があれば、印の理由を入れた判断依頼を出す。viewer 以外の印・前の commit の印では出さない", () => {
+  assert.deepEqual(mainDecisions(fixMain({ comments: FAILED_ON_C })), [mainDecisionOf(D.CAUSE_MAIN_REPAIR, "main-fix が直せなかった: revert すべきか判断が要る")]);
+  const others = [byViewer(D.mainFixLaunchingMarker(MAIN_SHA)), { author: "someone", body: `${D.mainFixFailedMarker(MAIN_SHA)}: x` }, byViewer(`${D.mainFixFailedMarker(MID_SHA)}: x`)];
+  assert.deepEqual(mainDecisions(fixMain({ comments: others })), []);
+});
+
+test("main の判断依頼: 止まった main-fix のセッションに、原因 main-fix のセッションの停止の判断依頼を 1 度だけ出す", () => {
+  const main = fixMain({ comments: LAUNCHED_ON_C });
+  assert.deepEqual(D.mainFixSessionsToObserve(snapshot([], { main })), [{ sha: MAIN_SHA, step: "main-fix", handle: "term_m", startedAt: RERUN_AT }]);
+  const [sent] = mainDecisions(main, { sessions: goneTab });
+  assert.deepEqual(sent, mainDecisionOf(STALL, "起動したセッションが Orca に見つからない"));
+  // 送り済みの印（C の commit comment）か dispatched があれば出さず、観測もしない
+  const marked = fixMain({ comments: [...LAUNCHED_ON_C, byViewer(D.mainDecisionMarker(MAIN_SHA, STALL))] });
+  assert.deepEqual(mainDecisions(marked, { sessions: goneTab }), []);
+  assert.deepEqual(D.mainFixSessionsToObserve(snapshot([], { main: marked })), []);
+  assert.deepEqual(mainDecisions(main, { sessions: goneTab, dispatched: [sent.key] }), []);
+  // 手が動いていて、時間も経っていなければ止まった扱いにしない
+  const running = { term_m: { found: true, waiting: false, idle: false, tail: [] } };
+  assert.deepEqual(mainDecisions(main, { sessions: running, now: "2026-10-28T10:30:00Z", stallMinutes: 60 }), []);
+  assert.equal(mainDecisions(main, { sessions: running, now: "2026-10-28T11:00:00Z", stallMinutes: 60 })[0].cause, STALL);
+});
+
+test("main の判断依頼: main の新しい commit が来ていれば（起動の印が前の commit にある）、止まった扱いにしない。直せなかった印があっても停止は見ない", () => {
+  const moved = fixMain({ commitComments: [onCommit(MID_SHA, D.mainFixLaunchedMarker(MID_SHA, "term_m", RERUN_AT))] });
+  assert.deepEqual(D.mainFixSessionsToObserve(snapshot([], { main: moved })), []);
+  assert.deepEqual(mainDecisions(moved, { sessions: goneTab }), []);
+  const failed = fixMain({ comments: [...LAUNCHED_ON_C, FAILED_ON_C[1]] });
+  assert.deepEqual(D.mainFixSessionsToObserve(snapshot([], { main: failed })), []);
+  assert.deepEqual(mainDecisions(failed, { sessions: goneTab }).map((a) => a.cause), [D.CAUSE_MAIN_REPAIR]);
+});
+
+test("main の判断依頼: 送り先は、範囲の PR が閉じた issue の仕様のスレッド。複数あれば新しい PR から。たどれなければ repo のチャンネル", () => {
+  const prs = [{ number: 50, title: "feat: x", closes: [41] }];
+  const older = [{ number: 49, title: "fix: y", closes: [46] }];
+  const main = { ...fixMain({ comments: FAILED_ON_C }), range: [{ sha: MAIN_SHA, pullRequests: prs }, { sha: MID_SHA, pullRequests: older }] };
+  const spec12 = spec(12, { comments: [APPROVAL_SENT_555] });
+  const spec30 = spec(30, { comments: [byViewer(SENT("556", "778"))] });
+  const world = [spec12, spec30, issue(40, { body: "仕様: #12", subIssues: [{ number: 41, state: "CLOSED" }] }), issue(45, { body: "仕様: #30", subIssues: [{ number: 46, state: "CLOSED" }] })];
+  const targetOf = (issues) => mainDecisions(main, {}, issues).map((a) => [a.spec, a.threadId]);
+  assert.deepEqual(targetOf(world), [[12, "555"]]);
+  // 新しい PR の仕様に承認依頼のスレッドが無ければ、次の PR の仕様へ
+  assert.deepEqual(targetOf([spec(12), ...world.slice(1)]), [[30, "556"]]);
+  // どの PR からも仕様にたどれなければ repo のチャンネル
+  assert.deepEqual(targetOf([spec12, spec30]), [[null, null]]);
+  assert.deepEqual(targetOf([]), [[null, null]]);
+});
+
+test("main の判断依頼: 判断依頼の印が、C の commit comment か仕様の issue にあれば出さない", () => {
+  const marker = D.mainDecisionMarker(MAIN_SHA, D.CAUSE_MAIN_REPAIR);
+  assert.deepEqual(mainDecisions(fixMain({ comments: [...FAILED_ON_C, byViewer(marker)] })), []);
+  assert.deepEqual(mainDecisions(fixMain({ comments: FAILED_ON_C }), {}, [spec(12, { comments: [APPROVAL_SENT_555, byViewer(marker)] })]), []);
+  // 原因の違う印、前の commit の印、viewer 以外の印では止まらない
+  for (const other of [byViewer(D.mainDecisionMarker(MAIN_SHA, STALL)), byViewer(D.mainDecisionMarker(MID_SHA, D.CAUSE_MAIN_REPAIR)), { author: "someone", body: marker }]) {
+    assert.equal(mainDecisions(fixMain({ comments: [...FAILED_ON_C, other] })).length, 1);
+  }
+  assert.deepEqual(D.sentMainDecisions(snapshot([], { main: fixMain({ comments: [byViewer(marker)] }) })), [D.CAUSE_MAIN_REPAIR]);
+});
+
+test("main の判断依頼: 同じスナップショットで 2 周しても二重に出さない（dispatched）", () => {
+  for (const main of [fixMain({ commitComments: LIMIT_REACHED }), fixMain({ comments: FAILED_ON_C })]) {
+    const [first] = mainDecisions(main);
+    assert.deepEqual(mainDecisions(main, { dispatched: [first.key] }), []);
+  }
+});
+
+test("main の判断依頼: 印の文言", () => {
+  assert.equal(D.mainDecisionMarker(MAIN_SHA, D.CAUSE_MAIN_REPAIR), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main の修復）`);
+  assert.equal(D.mainDecisionMarker(MAIN_SHA, STALL), `案内役: Discord に判断依頼を送る（commit ${MAIN_SHA} main-fix のセッションの停止）`);
+});

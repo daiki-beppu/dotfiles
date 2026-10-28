@@ -161,6 +161,27 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       return { messageId: message.id };
     },
 
+    // main の修復が進まないときの判断依頼。送り先は仕様のスレッドか repo のチャンネル（threadId にどちらかの ID が来る）。メンションは sendDecisionRequest と同じ。
+    // 答えの読み取りの対象外なので ANSWER_GUIDE は付けない。2000 文字を超えたら末尾（範囲の PR の一覧の側）を切る。
+    async sendMainDecisionRequest({ threadId, repo, sha, cause, reason, checks, runs, lastGreen, pullRequests }) {
+      const pullLine = (p) => `  - #${p.number} ${p.title} https://github.com/${repo}/pull/${p.number}${p.closes.length > 0 ? ` 閉じた issue: ${p.closes.map((n) => `#${n}`).join(" ")}` : ""}`;
+      const content = [
+        `<@${userId}> 判断依頼: main の修復が進まない（${cause}）`,
+        `失敗した commit C: ${sha} https://github.com/${repo}/commit/${sha}`,
+        `最後に緑だった commit: ${lastGreen ?? "（さかのぼった範囲に無い）"}`,
+        `落ちたチェック: ${checks.join("、")}`,
+        `失敗した run: ${runs.length > 0 ? runs.map((r) => `https://github.com/${repo}/actions/runs/${r}`).join(" ") : "（Actions の run が無い）"}`,
+        `理由: ${reason}`,
+        "範囲の PR（最後に緑だった commit より後、C まで）:",
+        ...(pullRequests.length > 0 ? pullRequests.map(pullLine) : ["  - （無い）"]),
+      ].join("\n");
+      const message = await call("POST", `/channels/${threadId}/messages`, {
+        content: content.length > MAX_CONTENT ? `${content.slice(0, MAX_CONTENT - 1)}…` : content,
+        allowed_mentions: { parse: [], users: [userId] },
+      });
+      return { messageId: message.id };
+    },
+
     // スレッドをアーカイブする（チャンネルの一覧から消える。人が戻せる）。人が消したスレッド（404）は済んだものとして扱う。
     async archiveThread({ threadId }) {
       await call("PATCH", `/channels/${threadId}`, { archived: true }).catch((e) => {

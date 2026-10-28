@@ -520,6 +520,24 @@ test("dry-run: レビュー失敗の判断依頼の行動も例外にせず、PR
   assert.ok(logs.some((l) => l.includes("仕様 #12 のスレッドに PR #70（sub-issue #21）")), logs.join("\n"));
 });
 
+test("dry-run: main の判断依頼の行動も例外にせず、送り先と commit と原因を log に表示する（実行はしない）", async () => {
+  const sha = "c".repeat(40);
+  const logs = [];
+  const nix = { id: 1, name: "Nix flake evaluation", status: "completed", conclusion: "failure", runId: 701, completedAt: "2026-10-28T10:05:00Z" };
+  const main = {
+    sha, required: [nix.name], checks: [nix], commitComments: [], lastGreen: null, range: [],
+    comments: [
+      { author: VIEWER, body: "案内役: main の失敗した job を再実行する（run 701）", createdAt: "2026-10-28T10:00:00Z" },
+      { author: VIEWER, body: `案内役: main-fix を起動する（commit ${sha}）` },
+      { author: VIEWER, body: `案内役: main-fix が直せなかった（commit ${sha}）: 原因が分からない` },
+    ],
+  };
+  const snap = { repo: REPO, viewer: VIEWER, issues: [], taktIssues: [], main };
+  const actions = await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.ok(actions.some((a) => a.kind === "request-main-decision"));
+  assert.ok(logs.some((l) => l.includes("repo のチャンネルに main の commit ccccccc（main の修復）の判断依頼を送る")), logs.join("\n"));
+});
+
 // ---- 表示: 行動の行・状況の一覧・今の段階 ----
 
 test("行動の行は内部の key を頭に付けず、内容から始まる", async () => {

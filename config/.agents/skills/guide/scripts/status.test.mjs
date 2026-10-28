@@ -213,3 +213,17 @@ test("main の行: C に viewer の main-fix の起動の印があれば、段�
   const other = snapshot([], { main: { ...mainOf("failure", "success"), comments: [{ ...launching, author: "someone" }] } });
   assert.equal(mainLineOf(other), "main: 赤（Nix flake evaluation）・再実行中");
 });
+
+test("main の行: C に判断依頼を送っていれば（C の commit comment か仕様の issue の印）、段階を判断待ちにする。修正中より優先する", () => {
+  const C = "c".repeat(40);
+  const launching = { author: VIEWER, body: `案内役: main-fix を起動する（commit ${C}）` };
+  const decided = { author: VIEWER, body: `案内役: Discord に判断依頼を送る（commit ${C} main の修復）` };
+  const onCommit = snapshot([], { main: { ...mainOf("failure", "success"), comments: [launching, decided] } });
+  assert.equal(mainLineOf(onCommit), "main: 赤（Nix flake evaluation）・判断待ち");
+  const stalled = { author: VIEWER, body: `案内役: Discord に判断依頼を送る（commit ${C} main-fix のセッションの停止）` };
+  const onSpec = snapshot([issue(12, { labels: ["spec"], comments: [stalled] })], { main: { ...mainOf("failure", "success"), comments: [launching] } });
+  assert.equal(mainLineOf(onSpec), "main: 赤（Nix flake evaluation）・判断待ち");
+  // 前の commit への判断依頼は今の C の段階に数えない
+  const old = { author: VIEWER, body: `案内役: Discord に判断依頼を送る（commit ${"b".repeat(40)} main の修復）` };
+  assert.equal(mainLineOf(snapshot([], { main: { ...mainOf("failure", "success"), comments: [old] } })), "main: 赤（Nix flake evaluation）・再実行中");
+});
