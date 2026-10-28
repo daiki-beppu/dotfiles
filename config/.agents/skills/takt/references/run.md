@@ -50,10 +50,10 @@ watch のタブが消えている・プロセスが無いのに `running` が残
 複数の issue を順に積み、PR の自動マージまで見届けて次を積むよう頼まれたら、`takt-wait.mjs` の代わりに repo root で次を流して takt-sequence を起動する。watch は別に動いている前提。
 
 ```sh
-node <skill>/scripts/start-sequence.mjs <issue>... [--workflow <name>] [--base main] [--interval 30] [--fix-wait 10] [--concurrency N]
+node <skill>/scripts/start-sequence.mjs <issue>... [--workflow <name>] [--base main] [--interval 30] [--fix-wait 10]
 ```
 
-同時に進める issue の数は `--concurrency`（既定は takt の設定の `concurrency`。takt-sequence を起動した環境の `TAKT_CONCURRENCY` も効く）まで。watch を `TAKT_CONCURRENCY=2 takt watch` で立てたなら `--concurrency 2` を渡す。空きがあれば、並びの中の積める issue を並びの順に積む。1 件が止まっても、ほかの進行中の issue は見届け、進行中も積める issue も無くなったときに終わる。
+同時に進める issue の数は、watch と同じ takt の設定の `concurrency` まで（起動直後に `並列数: N` の行を出す）。並列で回すなら、watch の環境変数（`TAKT_CONCURRENCY=2 takt watch`）ではなく repo の `.takt/config.yaml` に `concurrency: 2` と書く。start-sequence は新しいペインで起動するので、watch にだけ渡した環境変数は sequence に届かない。空きがあれば、並びの中の積める issue を並びの順に積む。1 件が止まっても、ほかの進行中の issue は見届け、進行中も積める issue も無くなったときに終わる。
 
 repo root で案内役が desk のペイン（コマンド行に `--terminal <handle>`）で動いていれば、そのペインの下に分割して開く。案内役がいなければ repo root の align-behind のペインの下、それも無ければ takt watch のペインの右に分割して開き（desk と同じく watch の右の列に並ぶ）、どれも無いときだけ Orca の新しいタブ（題名 `takt sequence <owner/repo>`）に開く。align-behind と takt watch のペインは、そのプロセスの環境変数 `ORCA_TERMINAL_HANDLE` で見つける。どこで開いたかと handle を 1 行出して終わる。repo に takt-sequence が既に動いていれば、ペインを増やさず、その takt-sequence の並びの後ろに issue を足して、足した先の handle を 1 行出す（オプションは動いている方のものを使う）。受け口は git の共通ディレクトリの `takt-sequence-inbox/`（[sequence-inbox.mjs](../scripts/sequence-inbox.mjs)）。takt-sequence は毎周そこに届いた issue を「追加」の行を出して並びに入れ、終わる前に受け口を閉じる。
 
