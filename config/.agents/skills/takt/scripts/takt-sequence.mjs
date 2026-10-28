@@ -13,6 +13,8 @@
 //   印があれば修正中として待ち、push で head が変われば新しい head をレビューする。やり直しの印があれば失敗を数え直してレビューし直す（head ごとに 1 回）。
 //   やり直しの後の失敗・現在の head で 2 回落ちた・起動の印が上限・待ち時間切れは止める。判定は review-stage.mjs。
 //   自動マージを予約済みの PR は、レビューを済ませたものとして扱う。
+// - issue が終わったら（マージ済みか issue が閉じた）、その issue のタスクを片付ける（task-cleanup.mjs。run の報告書を main checkout の
+//   .takt/runs へ写してから、クローン・worktree-session・タスクの記録を消す）。開発ログは写した run を素材にする。
 // - 予約済みで BEHIND の PR は揃えない。align-behind.mjs を別のタブで常駐させておく（揃える仕組みはそちらに一本化した）。
 // - 積む前に main checkout（base ブランチでクリーンなこと）を ff-only で最新化し、空きディスク 8GiB を確かめる。
 // - 投入は takt MCP の takt_enqueue_task（enqueue.md と同じ入力）。応答が不明なら積み直さずに止める。
@@ -34,6 +36,7 @@ import { tasksFor, issueOf } from "./takt-list.mjs";
 import { DEFAULT_FIX_WAIT_MINUTES, reviewStage as decideReview } from "./review-stage.mjs";
 import { closeInbox, inboxDirOf, openInbox, takeFromInbox } from "./sequence-inbox.mjs";
 import { planRound } from "./sequence-plan.mjs";
+import { cleanupTask } from "./task-cleanup.mjs";
 
 const LAUNCHER_ENV = "TAKT_SEQUENCE_LAUNCHER";
 if (!process.env[LAUNCHER_ENV]) {
@@ -96,12 +99,32 @@ const { TaskRunner } = await import(join(process.env.TAKT_ROOT, "dist/infra/task
 const { deleteBranch } = await import(join(process.env.TAKT_ROOT, "dist/features/tasks/list/taskBranchLifecycleActions.js"));
 // merge タスクの merge_task・pr_number は `takt list --format json` に出ないので、TaskRunner から直接読む
 const listTasks = () => new TaskRunner(cwd).listAllTaskItems();
+const taskOps = { runner: new TaskRunner(cwd, {}), deleteBranch };
 const client = new Client({ name: "takt-sequence", version: "1.0" });
 await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(process.env.TAKT_ROOT, "dist/app/mcp/index.js")], cwd, stderr: "inherit" }));
+
+// 終わった issue。片付けでタスクの記録が消えた後に、出来事（マージ完了か issue クローズか）を読み違えないよう、この実行の間は読み直さない
+const finished = new Set();
 
 // issue 1 件の今の段階を返す。done: マージ済みか issue が閉じた / waiting: 進行中 / manual: 人が引き取った PR がある /
 // stuck: 人の手が要る / new: 未投入
 function stage(n, tasks) {
+  if (finished.has(n)) return "done";
+  const s = observe(n, tasks);
+  if (s === "done") { finished.add(n); tidy(n, tasks); }
+  return s;
+}
+
+// 終わった issue のタスクを片付ける。積み直しに残す failed のクローンも、issue が終われば要らない
+function tidy(n, tasks) {
+  const left = tasksFor(tasks, n).filter((t) => !active(t));
+  if (left.length === 0) return;
+  const failed = left.filter((t) => !cleanupTask(cwd, t, taskOps));
+  if (failed.length === 0) log(`片付け: ${label(n)}（run は .takt/runs に写した）`);
+  else log(`片付け失敗: ${label(n)} ${failed.map((t) => t.name).join(" ")}（takt-cleanup で片付ける）`);
+}
+
+function observe(n, tasks) {
   const t = tasksFor(tasks, n)[0];
   // タスクが failed でも、差分を人が引き取って PR にし、マージで issue が閉じていれば終わっている（run.md の「打ち切り」）
   const issue = gh(["issue", "view", n, "--json", "state,closedByPullRequestsReferences"]);
@@ -152,10 +175,7 @@ function reviewStage(n, pr, url, tasks) {
   });
   if (stage === "reviewed") {
     // 成功しても takt は未マージの merge タスクを failed と記録し、クローンを残すので、予約の前に片付ける（報告書は repo の .takt/runs に残る）
-    for (const m of merges) {
-      if (m.worktreePath) deleteBranch(cwd, m);
-      new TaskRunner(cwd, {}).deleteTask(m.name, m.kind);
-    }
+    for (const m of merges) cleanupTask(cwd, m, taskOps);
     return "reviewed";
   }
   if (stage === "stuck") { event(n, `レビュー失敗: ${label(n)} ${url} ${reason}`); return "stuck"; }

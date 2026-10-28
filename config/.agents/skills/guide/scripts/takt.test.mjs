@@ -9,20 +9,35 @@ import { mergeTasks, startTaktSequence, taktRunDirs, taktTasks } from "./takt.mj
 // レビュー失敗の判断依頼で読むレポートの読み取り（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
 import * as T from "./takt.mjs";
 
-test("taktRunDirs: 対象 issue のタスクのうち、実在する run のディレクトリだけを重複なく返す", () => {
+test("taktRunDirs: main checkout に写した run と、片付けていないクローンの run を、対象 issue の分だけ slug の順に返す", () => {
   const root = mkdtempSync(join(tmpdir(), "takt-run-dirs-"));
-  const [a, b, c] = ["A", "B", "C"].map((n) => join(root, n));
-  mkdirSync(join(a, ".takt", "runs"), { recursive: true });
-  mkdirSync(join(c, ".takt", "runs"), { recursive: true });
-  mkdirSync(b, { recursive: true });
+  const repo = join(root, "repo");
+  const run = (base, slug, file = "trace.md") => {
+    const d = join(base, ".takt", "runs", slug);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, file), "x");
+    return d;
+  };
+  const archived = run(repo, "20261028-010000-issue-21-a");
+  run(repo, "20261028-020000-issue-21-b", "interventions.jsonl");
+  run(repo, "20261028-030000-issue-99-c");
+  run(repo, "20261028-040000-merge-pr-70-d");
+  const [a, b] = ["A", "B"].map((n) => join(root, n));
+  run(a, "20261028-010000-issue-21-a");
+  const unarchived = run(a, "20261028-050000-issue-22-e");
+  mkdirSync(join(b, ".takt", "runs", "20261028-060000-issue-21-f", "reports"), { recursive: true });
   const tasks = [
     { issueNumber: 21, worktreePath: a },
     { data: { issue: 22 }, worktreePath: a },
     { issueNumber: 21, worktreePath: b },
-    { issueNumber: 99, worktreePath: c },
+    { issueNumber: 21, worktreePath: join(root, "gone") },
     { issueNumber: 21 },
   ];
-  assert.deepEqual(taktRunDirs("/x", [21, 22], (cwd) => (assert.equal(cwd, "/x"), tasks)), [join(a, ".takt", "runs")]);
+  assert.deepEqual(taktRunDirs(repo, [21, 22], (cwd) => (assert.equal(cwd, repo), tasks)), [
+    archived,
+    unarchived,
+    join(b, ".takt", "runs", "20261028-060000-issue-21-f"),
+  ]);
 });
 
 test("taktTasks: タスクを issue・kind・createdAt・step・error・worktreePath・prUrl に正規化し、issue が整数にならないものは除く", () => {

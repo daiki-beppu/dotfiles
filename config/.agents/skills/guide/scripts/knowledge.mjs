@@ -14,7 +14,7 @@ export const prompt = ({ spec, parents, subIssues, runDirs }) =>
     `- 親 issue: ${nums(parents)}`,
     `- 閉じた sub-issue: ${nums(subIssues)}（それぞれを閉じた PR は gh で辿り、差分と resolution コメントを読む）`,
     runDirs.length > 0
-      ? `- takt の run: ${runDirs.map((d) => `${d}（各 run の trace.md と reports/）`).join("、")}`
+      ? `- takt の run: ${runDirs.map((d) => `${d}（trace.md と reports/）`).join("、")}`
       : "- takt の run: なし（issue と PR だけを素材にする）",
     "",
     `できた PR の本文には、「${KNOWLEDGE_SPEC_PREFIX}${spec}」だけの行を必ず 1 行書く（二重に作らないための記録）。PR の自動マージの予約は呼び出し側が行うので、ここでは行わない。`,

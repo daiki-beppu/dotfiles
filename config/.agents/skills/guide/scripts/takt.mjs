@@ -75,14 +75,26 @@ function appendToRunning(cwd, issues) {
   return dir === null ? null : appendToInbox(dir, issues);
 }
 
-// 対象 issue の takt タスクの worktree にある `.takt/runs`（実在するものだけ）。knowledge に素材として渡す。
+// 対象 issue の takt の run のディレクトリ（trace.md か reports/ があるものだけ）。knowledge に素材として渡す。
+// takt-sequence はマージした issue のクローンを消す前に run を main checkout（cwd）の .takt/runs へ写すので、そこを名前（-issue-<n>-）で探す。
+// まだ片付けていないタスクのクローンの run も足す。同じ slug は main checkout のものを使う。
 export function taktRunDirs(cwd, issues, list = listTasks) {
   const wanted = new Set(issues.map(Number));
-  const dirs = list(cwd)
+  const runsIn = (root) => {
+    const dir = join(root, ".takt", "runs");
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .map((slug) => join(dir, slug))
+      .filter((d) => existsSync(join(d, "trace.md")) || existsSync(join(d, "reports")));
+  };
+  const issueOfRun = (d) => Number(/-issue-(\d+)-/.exec(d.split("/").at(-1))?.[1]);
+  const archived = runsIn(cwd).filter((d) => wanted.has(issueOfRun(d)));
+  const clones = list(cwd)
     .filter((t) => wanted.has(Number(t.issueNumber ?? t.data?.issue)) && t.worktreePath)
-    .map((t) => join(t.worktreePath, ".takt", "runs"))
-    .filter((d) => existsSync(d));
-  return [...new Set(dirs)];
+    .flatMap((t) => runsIn(t.worktreePath));
+  // 後に入れた main checkout のものが同じ slug のクローンのものを上書きする
+  const bySlug = new Map([...clones, ...archived].map((d) => [d.split("/").at(-1), d]));
+  return [...bySlug.keys()].sort().map((k) => bySlug.get(k));
 }
 
 const NO_VERDICT = "（レポートに判定が無い）";
