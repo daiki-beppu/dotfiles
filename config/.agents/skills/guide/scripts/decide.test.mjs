@@ -3773,7 +3773,7 @@ test("アーカイブ: close-tab の次、他の行動より先に出す", () =>
   assert.ok(kinds.includes("request-approval"));
 });
 
-const MAIN_SHA = "c".repeat(40);
+const MAIN_SHA = "e".repeat(40);
 const NIX = "Nix flake evaluation";
 const SC = "ShellCheck (severity=error)";
 const check = (id, name, conclusion, status = "completed", runId = 700 + id) => ({ id, name, status, conclusion, runId });
@@ -3908,7 +3908,7 @@ test("main-fix: 印の文言（2 段の起動・直せなかった・タブの�
   assert.equal(D.mainFixLaunchingMarker(MAIN_SHA), `案内役: main-fix を起動する（commit ${MAIN_SHA}）`);
   assert.equal(D.mainFixLaunchedMarker(MAIN_SHA, "term_m", RERUN_AT), `案内役: main-fix を起動した（commit ${MAIN_SHA} / ターミナル term_m / ${RERUN_AT}）`);
   assert.equal(D.mainFixFailedMarker(MAIN_SHA), `案内役: main-fix が直せなかった（commit ${MAIN_SHA}）`);
-  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix ccccccc");
+  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix eeeeeee");
 });
 
 // main が緑に戻った後: 前の失敗した commit（MID_SHA）に起動した印がある。
