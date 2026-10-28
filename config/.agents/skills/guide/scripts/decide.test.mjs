@@ -4023,5 +4023,5 @@ test("main の判断依頼: 印の文言", () => {
 
 // #411 の検証の訓練。drill-main-fix-b と合わさると main で落ちる（ADR 0004）。
 test("drill #411: main-fix のタブの題名は MAIN_SHA の先頭 7 桁", () => {
-  assert.equal(D.mainFixTabTitle(MAIN_SHA), "main-fix ccccccc");
+  assert.equal(D.mainFixTabTitle(MAIN_SHA), `main-fix ${MAIN_SHA.slice(0, 7)}`);
 });
