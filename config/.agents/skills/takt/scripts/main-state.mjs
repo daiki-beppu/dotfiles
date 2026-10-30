@@ -12,6 +12,11 @@ export function requiredChecks(rules) {
   return [...new Set(names)];
 }
 
+// 同じ応答で、必須チェックが strict（PR が main に追いついていないとマージできない）なら true。
+export function strictRequired(rules) {
+  return rules.some((r) => r.type === "required_status_checks" && r.parameters?.strict_required_status_checks_policy === true);
+}
+
 // required: 必須チェックの名前 / checks: commit の check-runs [{ id, name, status, conclusion, runId }]
 // 戻り値: { state: "red" | "green" | "undetermined", failed: [{ name, runId }] }
 // 必須のどれかが未登録・実行中なら undetermined（次の周で読み直す）。再実行で同名の check-run が増えるので、名前ごとに最新（id 最大）を採る。
