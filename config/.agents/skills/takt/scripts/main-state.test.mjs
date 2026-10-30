@@ -1,7 +1,7 @@
 // main-state.mjs の判定テスト。gh は呼ばない。
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { failsLikeMain, mainState, requiredChecks } from "./main-state.mjs";
+import { failsLikeMain, mainState, requiredChecks, strictRequired } from "./main-state.mjs";
 
 const NIX = "Nix flake evaluation";
 const SC = "ShellCheck (severity=error)";
@@ -15,6 +15,14 @@ test("requiredChecks: ruleset の応答の required_status_checks から名前�
   assert.deepEqual(requiredChecks(RULES), [NIX, SC]);
   assert.deepEqual(requiredChecks([{ type: "deletion" }]), []);
   assert.deepEqual(requiredChecks([]), []);
+});
+
+test("strictRequired: required_status_checks のどれかが strict なら true、strict でないか、そのルールが無ければ false", () => {
+  const checks = (strict) => ({ type: "required_status_checks", parameters: { strict_required_status_checks_policy: strict, required_status_checks: [{ context: NIX }] } });
+  assert.equal(strictRequired([{ type: "deletion", parameters: {} }, checks(false), checks(true)]), true);
+  assert.equal(strictRequired([checks(false)]), false);
+  assert.equal(strictRequired([{ type: "deletion", parameters: {} }]), false);
+  assert.equal(strictRequired([]), false);
 });
 
 const run = (id, name, conclusion, status = "completed") => ({ id, name, status, conclusion, runId: id * 10 });

@@ -21,10 +21,10 @@ const fakeOrca = () => {
 
 const runningOf = (pids = {}) => (kind) => pids[kind] ?? [];
 const opt = (args, name) => args[args.indexOf(name) + 1];
-const desk = (pids, guideArgs = ["--from", "5", "--interval", "30"], { withGuide = true, panes = {} } = {}) => {
+const desk = (pids, guideArgs = ["--from", "5", "--interval", "30"], { withGuide = true, strict = true, panes = {} } = {}) => {
   const { calls, run } = fakeOrca();
   const lines = [];
-  const code = buildDesk({ root: "/repo", repo: "o/r", guideArgs, withGuide, running: runningOf(pids), pane: (kind) => panes[kind], run, log: (s) => lines.push(s) });
+  const code = buildDesk({ root: "/repo", repo: "o/r", guideArgs, withGuide, strict, running: runningOf(pids), pane: (kind) => panes[kind], run, log: (s) => lines.push(s) });
   return { code, calls, lines };
 };
 
@@ -96,6 +96,20 @@ test("buildDesk: align-behind が動いていれば align-behind のペインを
   assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["terminal create", "terminal split", "terminal send"]);
   assert.ok(!calls.some((c) => String(opt(c.args, "--command")).includes("align-behind")));
   assert.ok(lines.some((l) => l.includes("222")));
+});
+
+test("buildDesk: main の ruleset が strict でなければ、watch と案内役だけ作り、align-behind のペインは作らない", () => {
+  const { code, calls, lines } = desk({}, [], { strict: false });
+  assert.equal(code, 0);
+  assert.deepEqual(calls.map((c) => c.args.slice(0, 2).join(" ")), ["terminal create", "terminal split", "terminal send"]);
+  assert.ok(!calls.some((c) => String(opt(c.args, "--command")).includes("align-behind")));
+  assert.ok(lines.some((l) => l.includes("strict")));
+});
+
+test("buildDesk: strict でなく案内役なしなら、watch のペインだけ作る", () => {
+  const { code, calls } = desk({}, [], { withGuide: false, strict: false });
+  assert.equal(code, 0);
+  assert.deepEqual(calls.map((c) => [c.args[1], opt(c.args, "--command")]), [["create", "takt watch"]]);
 });
 
 test("buildDesk: 案内役が動いていれば何も作らず、PID を出して終了コード 2", () => {

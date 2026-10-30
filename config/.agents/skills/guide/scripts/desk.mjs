@@ -1,4 +1,5 @@
 // repo ごとの常駐（takt watch・案内役・align-behind）を、Orca の 1 つのタブにペインで並べて起動する。
+// align-behind は main の ruleset の必須チェックが strict な repo でだけ立てる（strict でなければ BEHIND の PR もそのままマージできる）。
 // 使い方（対象 repo の main checkout の root で）: node desk.mjs <owner/repo> [案内役の引数…（--from・--interval など。--terminal は除く）]
 //                                                  node desk.mjs <owner/repo> --no-guide（案内役を立てない。右の列は align-behind から始まる）
 //
@@ -7,12 +8,12 @@
 //   │            ├─────────────────┤
 //   │ takt watch │ takt-sequence   │ ← 案内役が仕様ごとに自分のペインの下へ足す（--terminal）
 //   │            ├─────────────────┤
-//   │            │ align-behind    │
+//   │            │ align-behind    │ ← strict な repo だけ
 //   └────────────┴─────────────────┘
 //
 // 既に動いているものは二重に起動しない（cwd が repo root のプロセスを pgrep と lsof で見る。takt の references/run.md と同じ確かめ方）。
 // takt watch が動いていれば左のペインを作らず、そのペイン（環境変数 ORCA_TERMINAL_HANDLE）の右に足す。ペインが分からなければ新しいタブに足す。
-// align-behind が動いていれば、そのペインを作らない。案内役が動いていれば何も作らず、PID を出して終了コード 2 で止める。
+// strict でないか align-behind が動いていれば、そのペインを作らない。案内役が動いていれば何も作らず、PID を出して終了コード 2 で止める。
 // takt-sequence は takt の start-sequence.mjs が、案内役か align-behind のペインの下に足す。
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
@@ -20,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "./args.mjs";
 import { handleOf, runOrca } from "./orca-agent.mjs";
 import { SPLIT_DOWN, SPLIT_RIGHT } from "./pane.mjs";
+import { strictRequired } from "../../takt/scripts/main-state.mjs";
 
 const GUIDE = fileURLToPath(new URL("./guide.mjs", import.meta.url));
 const ALIGN_BEHIND = fileURLToPath(new URL("../../takt/scripts/align-behind.mjs", import.meta.url));
@@ -70,9 +72,9 @@ export function paneOf(kind, root) {
 }
 
 // タブを組み立てる。running(kind) は動いているプロセスの PID の配列（kind は PROCESS_PATTERNS のキー）、pane(kind) はそのペインの handle（無ければ undefined）、
-// run は orca の実行（テストでは偽物）。withGuide が false なら案内役を立てず、右の列を align-behind から始める。
+// run は orca の実行（テストでは偽物）。withGuide が false なら案内役を立てず、右の列を align-behind から始める。strict は main の ruleset の必須チェックが strict か（false なら align-behind を立てない）。
 // 戻り値は終了コード。log は出力（作ったペインの handle と、飛ばした理由）。
-export function buildDesk({ root, repo, guideArgs = [], withGuide = true, running, pane = () => undefined, run = runOrca, log = console.log }) {
+export function buildDesk({ root, repo, guideArgs = [], withGuide = true, strict, running, pane = () => undefined, run = runOrca, log = console.log }) {
   const guidePids = withGuide ? running("guide") : [];
   if (guidePids.length > 0) {
     log(`案内役が既に動いている（PID ${guidePids.join(" ")}）。何も作らない。止めてから流し直す`);
@@ -102,6 +104,10 @@ export function buildDesk({ root, repo, guideArgs = [], withGuide = true, runnin
     const command = ["node", GUIDE, repo, "--terminal", top, ...guideArgs].map(q).join(" ");
     orca(["terminal", "send", "--terminal", top, "--text", command, "--enter", "--json"]);
     log(`案内役: ${top}`);
+  }
+  if (!strict) {
+    log("main の ruleset が strict でないので align-behind のペインは作らない");
+    return 0;
   }
   const alignPids = running("alignBehind");
   if (alignPids.length > 0) {
@@ -137,5 +143,6 @@ if (isMain) {
     console.error(`cwd の repo (${actual}) が引数 (${repo}) と違う。対象 repo の main checkout で流す`);
     process.exit(2);
   }
-  process.exit(buildDesk({ root, repo, guideArgs, withGuide, running: (kind) => runningIn({ pattern: PROCESS_PATTERNS[kind], root }), pane: (kind) => paneOf(kind, root) }));
+  const strict = strictRequired(JSON.parse(sh("gh", ["api", `repos/${actual}/rules/branches/main`])));
+  process.exit(buildDesk({ root, repo, guideArgs, withGuide, strict, running: (kind) => runningIn({ pattern: PROCESS_PATTERNS[kind], root }), pane: (kind) => paneOf(kind, root) }));
 }
