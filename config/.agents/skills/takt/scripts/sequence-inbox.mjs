@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync
 import { dirname, join, resolve } from "node:path";
 
 const OWNER = "owner.json";
+let appended = 0;
 
 // cwd の repo の受け口。worktree からでも同じ場所になるよう、git の共通ディレクトリの下に置く。git が読めなければ null。
 export function inboxDirOf(cwd) {
@@ -52,7 +53,8 @@ export function openInbox(dir, { pid, handle }, alive = isAlive) {
 export function appendToInbox(dir, issues, alive = isAlive) {
   const owner = readOwner(dir);
   if (owner === null || !owner.handle || !alive(owner.pid)) return null;
-  const name = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}.json`;
+  // 同じ 1 ms に足しても届いた順に並ぶよう、時刻の次にプロセス内の通し番号を置く。
+  const name = `${Date.now()}-${String(appended++).padStart(9, "0")}-${process.pid}-${Math.random().toString(36).slice(2)}.json`;
   const tmp = join(dirname(dir), `.${name}`);
   writeFileSync(tmp, JSON.stringify(issues.map(String)));
   try {
