@@ -247,8 +247,8 @@ check_agent_skills() {
 
 # ---------------------------------------------------------------------------
 # Check: guide
-# Runs the pure decision and loop tests of the guide skill. They inject fakes and
-# must pass without gh, takt, claude or orca on PATH.
+# Runs every tracked *.test.mjs (guide, takt and other skills). They inject fakes
+# and must pass without gh, takt, claude or orca on PATH.
 # ---------------------------------------------------------------------------
 check_guide() {
   echo "== guide =="
@@ -257,25 +257,12 @@ check_guide() {
     echo "node is required for the guide check" >&2
     return 1
   }
-  PATH="$(dirname "$node_bin"):/usr/bin:/bin" node --test \
-    config/.agents/skills/guide/scripts/decide.test.mjs \
-    config/.agents/skills/guide/scripts/loop.test.mjs \
-    config/.agents/skills/guide/scripts/execute.test.mjs \
-    config/.agents/skills/guide/scripts/discord.test.mjs \
-    config/.agents/skills/guide/scripts/keychain.test.mjs \
-    config/.agents/skills/guide/scripts/snapshot.test.mjs \
-    config/.agents/skills/guide/scripts/orca-agent.test.mjs \
-    config/.agents/skills/guide/scripts/args.test.mjs \
-    config/.agents/skills/guide/scripts/github.test.mjs \
-    config/.agents/skills/guide/scripts/takt.test.mjs \
-    config/.agents/skills/guide/scripts/wayfinder.test.mjs \
-    config/.agents/skills/guide/scripts/review-fix.test.mjs \
-    config/.agents/skills/guide/scripts/desk.test.mjs \
-    config/.agents/skills/takt/scripts/align-decide.test.mjs \
-    config/.agents/skills/takt/scripts/lint-issue.test.mjs \
-    config/.agents/skills/takt/scripts/review-stage.test.mjs \
-    config/.agents/skills/takt/scripts/start-sequence.test.mjs \
-    config/.agents/skills/takt/scripts/takt-sequence.test.mjs
+  local tests=()
+  local f
+  while IFS= read -r f; do
+    tests+=("$f")
+  done < <(git ls-files '*.test.mjs')
+  PATH="$(dirname "$node_bin"):/usr/bin:/bin" node --test "${tests[@]}"
 }
 
 # ---------------------------------------------------------------------------
