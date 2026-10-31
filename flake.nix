@@ -236,6 +236,7 @@
                     "font-hackgen"
                     "google-chrome"
                     "google-drive"
+                    "grok-bot"
                     "nani"
                     "notion"
                     "nvidia-geforce-now"
