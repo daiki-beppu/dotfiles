@@ -5,6 +5,8 @@ import { execFileSync } from "node:child_process";
 export const runOrca = (args, { cwd }) =>
   execFileSync("orca", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 60_000 });
 
+const runGit = (args, { cwd }) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000 });
+
 const head = (text) => String(text).trim().slice(0, 200);
 
 // orca の --json の応答から handle を取る。command は例外の文言に、path は応答の中の handle の場所（`result.outcome.handle` など）。
@@ -46,6 +48,20 @@ export function launchAgent({ cwd, prompt, title }, run = runOrca) {
     throw new Error(`orca terminal rename が失敗した（ターミナル ${handle}）: ${e.message}`, { cause: e });
   }
   return { handle };
+}
+
+// 既存の PR の head ブランチを checkout した Orca の worktree で起動する（review-fix・deps-finish）。
+// 手順: fetch → 他の worktree が head ブランチを持っているか確かめる → origin/<head ブランチ> から worktree を作る → worktree で切り替える → 起動。
+// 持ち主がいなければ head ブランチを checkout する。いれば（前回の worktree など）ブランチを共有せず、origin/<head ブランチ> の commit に detach する。
+// 確認・作成・切り替えの失敗は例外にして、別のブランチの worktree では起動しない。
+export function launchOnHeadBranch({ cwd, branch, name, prompt, title }, run = runOrca, git = runGit) {
+  git(["fetch", "origin"], { cwd });
+  const owned = String(git(["worktree", "list", "--porcelain"], { cwd })).split("\n").includes(`branch refs/heads/${branch}`);
+  const reply = run(["worktree", "create", "--repo", `path:${cwd}`, "--name", name, "--base-branch", `origin/${branch}`, "--json"], { cwd });
+  const where = worktreePath(reply);
+  // 他の worktree が head ブランチを持っていれば、そのブランチを共有もリセットもせず origin/<ブランチ> に detach する。持ち主がいなければ追従させて checkout する
+  git(owned ? ["switch", "--detach", `origin/${branch}`] : ["switch", "--track", "-C", branch, `origin/${branch}`], { cwd: where });
+  return launchAgent({ cwd: where, prompt, title }, run);
 }
 
 const TAIL_LINES = 10;
