@@ -29,9 +29,9 @@ test("readPullRequests: REST の auto_merge が null かどうかを autoMerge �
   );
   const prs = createGithub({ repo: "o/r", cwd: "/x", execFile }).readPullRequests();
   assert.deepEqual(prs, [
-    { number: 1, state: "OPEN", author: "v", body: "b", autoMerge: true, head: "s1", headBranch: "r1" },
-    { number: 2, state: "OPEN", author: "v", body: "", autoMerge: false, head: "s2", headBranch: "r2" },
-    { number: 3, state: "MERGED", author: "v", body: "", autoMerge: false, head: "s3", headBranch: "r3" },
+    { number: 1, title: undefined, state: "OPEN", author: "v", body: "b", autoMerge: true, head: "s1", headBranch: "r1", labels: [] },
+    { number: 2, title: undefined, state: "OPEN", author: "v", body: "", autoMerge: false, head: "s2", headBranch: "r2", labels: [] },
+    { number: 3, title: undefined, state: "MERGED", author: "v", body: "", autoMerge: false, head: "s3", headBranch: "r3", labels: [] },
   ]);
   assert.equal(calls[0].args[1], "repos/o/r/pulls?state=all&per_page=100");
 });
@@ -205,6 +205,16 @@ test("readPullRequests: head の sha と head ブランチを head・headBranch 
   const [pr] = createGithub({ repo: "o/r", cwd: "/x", execFile }).readPullRequests();
   assert.equal(pr.head, "a".repeat(40));
   assert.equal(pr.headBranch, "feat/1");
+  assert.equal(calls.length, 1);
+});
+
+test("readPullRequests: 題とラベルの名前を title・labels に写す（deps-finish の対象の判定用。読み取りの回数は増やさない）", () => {
+  const { calls, execFile } = fakeGh(() =>
+    JSON.stringify([[{ number: 7, title: "chore(deps): update vite", state: "open", merged_at: null, user: { login: "renovate[bot]" }, body: "", auto_merge: null, head: { sha: "s7", ref: "renovate/vite" }, labels: [{ name: "deps:finish" }, { name: "dependencies" }] }]]),
+  );
+  const [pr] = createGithub({ repo: "o/r", cwd: "/x", execFile }).readPullRequests();
+  assert.equal(pr.title, "chore(deps): update vite");
+  assert.deepEqual(pr.labels, ["deps:finish", "dependencies"]);
   assert.equal(calls.length, 1);
 });
 

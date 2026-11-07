@@ -79,16 +79,18 @@ export function createGithub({ repo, cwd, execFile = execFileSync }) {
       return issues.map(({ commentsRead, ...issue }) => issue);
     },
 
-    // 全状態の PR。学びの PR の照合（decide.mjs の knowledgePrOf）に使う。
+    // 全状態の PR。学びの PR の照合（decide.mjs の knowledgePrOf）と、依存の PR の仕上げ（deps-finish）の対象の判定に使う。
     readPullRequests() {
       return paged(`repos/${repo}/pulls?state=all&per_page=100`).map((p) => ({
         number: p.number,
+        title: p.title,
         state: p.merged_at ? "MERGED" : p.state.toUpperCase(),
         author: p.user?.login,
         body: p.body ?? "",
         autoMerge: p.auto_merge != null,
         head: p.head?.sha,
         headBranch: p.head?.ref,
+        labels: (p.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)),
       }));
     },
 

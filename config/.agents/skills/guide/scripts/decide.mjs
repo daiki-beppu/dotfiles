@@ -1,5 +1,5 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
-// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合と、main-state.mjs の main の状態の判定だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
+// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合と、main-state.mjs の main の状態の判定と、deps-finish-stage.mjs の依存の PR の仕上げの判定だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
 //
 // snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
 //             reactions: [{ emoji, userId }], assignees: [login], blockedBy: [{ number, state }] }]
@@ -50,6 +50,8 @@
 //        snapshot.main: { sha, required, checks, comments, commitComments: [{ sha, author, body, createdAt }], lastGreen, range: [{ sha, pullRequests: [{ number, title, closes }] }] }）
 //     | { kind: "main-fix", key, sha, checks, runs, lastGreen, pullRequests }
 //       （再実行の印より後に同じ必須チェックが落ち直し、C に main-fix の起動の印が無く、範囲の起動の印が上限未満。印は C の commit comment に書く）
+//     | { kind: "deps-finish", key, pr, title, head, branch, group }
+//       （判定と印は deps-finish-stage.mjs。snapshot.depsPullRequests: [{ number, title, state, head, headBranch, labels, autoMerge, comments, checks }]）
 //     | { kind: "close-tab", key, sha, step: "main-fix", handle, gone }
 //       （main が緑に戻り、main-fix のタブの手が止まっている。閉じた印は起動の印と同じ commit comment に書く）
 //     | { kind: "request-main-decision", key, sha, cause, reason, checks, runs, lastGreen, pullRequests, spec, threadId }
@@ -63,6 +65,7 @@
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
 import { failsLikeMain, mainState } from "../../takt/scripts/main-state.mjs";
+import { decideDepsFinish } from "./deps-finish-stage.mjs";
 import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
 
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
@@ -1574,5 +1577,6 @@ export function decide(snapshot) {
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
     ...decideReviewFixStalls(snapshot, dispatched),
+    ...decideDepsFinish(snapshot, dispatched),
   ];
 }

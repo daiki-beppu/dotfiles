@@ -17,6 +17,7 @@ import { closeTab, observeSession, sendToSession } from "./orca-agent.mjs";
 import { launchFormalSpec } from "./formal-spec.mjs";
 import { launchToSpec } from "./to-spec.mjs";
 import { launchToTickets } from "./to-tickets.mjs";
+import { launchDepsFinish } from "./deps-finish.mjs";
 import { launchMainFix } from "./main-fix.mjs";
 import { launchReviewFix } from "./review-fix.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
@@ -82,7 +83,7 @@ const readSnapshot = createReadSnapshot({
   observeSession: ({ handle }) => observeSession({ cwd, handle }),
 });
 
-const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence: (args) => startTaktSequence({ ...args, terminal }), launchKnowledge, launchWayfinder, launchReviewFix, launchMainFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
+const execute = createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now: () => new Date(), startTaktSequence: (args) => startTaktSequence({ ...args, terminal }), launchKnowledge, launchWayfinder, launchReviewFix, launchDepsFinish, launchMainFix, taktRunDirs, readReviewReport, sendToSession: ({ handle, text }) => sendToSession({ cwd, handle, text }), closeTab: ({ handle }) => closeTab({ cwd, handle }) });
 
 const deps = { readSnapshot, execute, log, board };
 try {
