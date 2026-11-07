@@ -1,5 +1,5 @@
 // 行動の実行。マーカーのコメントを起動より先に書く（起動の成否が不明なときに、流し直しても二重に起動しないため）。
-// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・main-fix・タブを閉じる）は注入する。
+// 外部の操作（GitHub・Discord・formal-spec・to-tickets・knowledge・takt-sequence・review-fix・deps-finish・main-fix・タブを閉じる）は注入する。
 // 行動は失敗すれば例外で止まる。やり直してよい失敗だけは { retry: 理由 } を返し、ループはその行動を済んだ扱いにしない。
 import {
   MARKER_APPROVAL_SENDING,
@@ -33,9 +33,10 @@ import {
   provisionalSendingMarker,
   provisionalSentMarker,
 } from "./decide.mjs";
+import { depsFinishLaunchedMarker, depsFinishLaunchingMarker } from "./deps-finish-stage.mjs";
 import { fixLaunchedMarker, fixLaunchingMarker } from "../../takt/scripts/review-stage.mjs";
 
-export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, launchMainFix, taktRunDirs, readReviewReport, sendToSession, closeTab }) {
+export function createExecute({ github, discord, cwd, repo, launchToTickets, launchToSpec, launchFormalSpec, now, startTaktSequence, launchKnowledge, launchWayfinder, launchReviewFix, launchDepsFinish, launchMainFix, taktRunDirs, readReviewReport, sendToSession, closeTab }) {
   return async (action) => {
     if (action.kind === "request-approval") {
       // チャンネルの確保は繰り返しても安全なので、マーカーより先に行う（失敗しても流し直せる）。マーカーは二重送信の防止用。
@@ -89,6 +90,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       const launchedAt = now().toISOString();
       const { handle } = await launchReviewFix({ cwd, repo, pr: action.pr, issue: action.issue, head: action.head, branch: action.branch, reports: action.reports });
       github.comment(action.pr, fixLaunchedMarker(action.head, handle, launchedAt));
+    } else if (action.kind === "deps-finish") {
+      // review-fix と同じ 2 段の印を PR に書く。起動前の印が先なので、起動が失敗しても次の周で起動し直さない。
+      github.comment(action.pr, depsFinishLaunchingMarker(action.head));
+      const launchedAt = now().toISOString();
+      const { handle } = await launchDepsFinish({ cwd, repo, pr: action.pr, title: action.title, head: action.head, branch: action.branch, group: action.group });
+      github.comment(action.pr, depsFinishLaunchedMarker(action.head, handle, launchedAt));
     } else if (action.kind === "merge-auto") {
       github.mergeAuto(action.pr);
     } else if (action.kind === "request-decision") {

@@ -12,6 +12,8 @@ import { launchToTickets } from "./to-tickets.mjs";
 import { launchWayfinder } from "./wayfinder.mjs";
 import { REVIEW_FAILED, fixLaunchedMarker, fixLaunchingMarker, redoMarker } from "../../takt/scripts/review-stage.mjs";
 import { launchReviewFix } from "./review-fix.mjs";
+import { launchDepsFinish } from "./deps-finish.mjs";
+import { depsFinishLaunchedMarker, depsFinishLaunchingMarker } from "./deps-finish-stage.mjs";
 // readReviewReport（新しい公開物）は名前空間で読む（未実装でも他のテストは動かす）。
 import * as T from "./takt.mjs";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -1808,4 +1810,53 @@ test("main の判断依頼: 送信が失敗しても印は残る（流し直し�
   });
   await assert.rejects(execute(mainDecisionAction()), /discord down/);
   assert.deepEqual(calls, [`comment #12 案内役: Discord に判断依頼を送る（commit ${MAIN_C} main の修復）`]);
+});
+
+// ---- deps-finish: 依存の PR を仕上げるセッションを起動する ----
+
+const DF_HEAD = "e".repeat(40);
+// PR #90 は deps:finish のラベル付き。comment の書き込みは PR のコメント列に足し、次の周のスナップショットに入れる。
+const dfWorld = (over = {}) => {
+  const pr = { number: 90, title: "chore(deps): update vite", state: "OPEN", head: DF_HEAD, headBranch: "renovate/vite", labels: ["deps:finish"], autoMerge: false, comments: [], checks: [] };
+  const calls = [];
+  const git = (args, opts) => calls.push(`git ${args.join(" ")} @${opts?.cwd}`);
+  const github = { comment: (n, body) => { calls.push(`comment #${n} ${body}`); if (n === 90) pr.comments.push({ author: VIEWER, body }); } };
+  const deps = { github, cwd: "/x", repo: REPO, now: NOW, launchDepsFinish: (a) => launchDepsFinish(a, fakeOrca(calls), git), ...over };
+  const round = (dispatched = new Set()) =>
+    runRound(
+      {
+        readSnapshot: async () => ({ repo: REPO, viewer: VIEWER, issues: [], taktIssues: [], depsPullRequests: [{ ...pr, comments: [...pr.comments] }] }),
+        execute: createExecute(deps),
+        log: () => {},
+      },
+      dispatched,
+    );
+  return { calls, round, pr };
+};
+const DF_BEFORE = `comment #90 ${depsFinishLaunchingMarker(DF_HEAD)}`;
+const DF_AFTER = `comment #90 ${depsFinishLaunchedMarker(DF_HEAD, "term_1", LAUNCHED_AT)}`;
+
+test("deps-finish: PR に起動前の印 → head ブランチの worktree で起動 → handle と時刻つきの印の順に書く。新しい dispatched で 2 周しても起動は 1 回", async () => {
+  const { calls, round } = dfWorld();
+  await round();
+  const launch = calls.findIndex((c) => c.startsWith("orca agent launch "));
+  assert.equal(calls[0], DF_BEFORE);
+  assert.ok(calls.some((c) => c.startsWith("orca worktree create ") && c.includes("--base-branch origin/renovate/vite")), calls.join("\n"));
+  assert.ok(calls[launch].includes("--worktree path:/wt/new"), calls[launch]);
+  assert.equal(calls.at(-1), DF_AFTER);
+  assert.ok(0 < launch && launch < calls.indexOf(DF_AFTER));
+  const count = calls.length;
+  await round(new Set());
+  await round();
+  assert.equal(calls.length, count);
+});
+
+test("deps-finish: 起動が失敗したら 2 段目の印を書かずに例外になり、流し直しても起動前の印があるので起動し直さない", async () => {
+  const { calls, round, pr } = dfWorld({ launchDepsFinish: (a) => launchDepsFinish(a, fakeOrca([], { launch: new Error("orca down") }), () => {}) });
+  await assert.rejects(round(), /orca down/);
+  assert.deepEqual(calls, [DF_BEFORE]);
+  const again = dfWorld();
+  again.pr.comments.push(...pr.comments);
+  await again.round(new Set());
+  assert.deepEqual(again.calls, []);
 });

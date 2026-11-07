@@ -731,3 +731,44 @@ test("main-fix の停止: main が赤く、C に起動した印があれば、�
   assert.equal(snap.sessions.term_m.startedAt, "2026-10-28T10:10:00Z");
   assert.deepEqual(decide(snap).filter((a) => a.kind === "request-main-decision").map((a) => [a.sha, a.cause]), [[C_SHA, "main-fix のセッションの停止"]]);
 });
+
+// ---- 依存の PR（deps-finish）の読み取り ----
+
+const DEPS_HEAD = "d".repeat(40);
+const depsWorld = (prs) => {
+  const reads = { comments: [], checks: [] };
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readMain: NO_MAIN, readFirstParents: () => [], readCommitPullRequests: () => [],
+      readIssues: () => [],
+      readPullRequests: () => prs,
+      readComments: (n) => { reads.comments.push(n); return []; },
+      readChecks: (sha) => { reads.checks.push(sha); return []; },
+    },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+    mergeTasks: async () => [],
+    observeSession: async () => ({ found: true, waiting: false, idle: true, tail: [] }),
+    now: () => new Date(T0),
+  });
+  return { read, reads };
+};
+
+test("depsPullRequests: deps:finish のラベル付きか renovate/ のブランチの OPEN な PR だけ、コメントと現在の head の check-runs を読む", async () => {
+  const row = (number, over) => ({ number, title: `t${number}`, state: "OPEN", author: "x", body: "", autoMerge: false, head: `${number}`.padEnd(40, "0"), headBranch: `feat/${number}`, labels: [], ...over });
+  const { read, reads } = depsWorld([
+    row(9, { headBranch: "renovate/vite" }), row(3, { labels: ["deps:finish"] }), row(4), row(5, { labels: ["deps:finish"], state: "CLOSED" }), row(6, { headBranch: "renovate/x", state: "MERGED" }),
+  ]);
+  const snap = await read();
+  assert.deepEqual(snap.depsPullRequests.map((p) => p.number), [3, 9]);
+  assert.deepEqual(reads.comments, [3, 9]);
+  assert.deepEqual(reads.checks, [row(3).head, row(9).head]);
+  assert.deepEqual(snap.depsPullRequests[0].comments, []);
+  assert.deepEqual(snap.depsPullRequests[0].checks, []);
+});
+
+test("depsPullRequests: 読んだ結果から decide が deps-finish を 1 件出す（スナップショットから判定まで通る）", async () => {
+  const { read } = depsWorld([{ number: 3, title: "t", state: "OPEN", author: "x", body: "", autoMerge: false, head: DEPS_HEAD, headBranch: "renovate/vite", labels: ["deps:finish"] }]);
+  const actions = decide({ ...(await read()), dispatched: [] }).filter((a) => a.kind === "deps-finish");
+  assert.deepEqual(actions, [{ kind: "deps-finish", key: "deps-finish:3:1", pr: 3, title: "t", head: DEPS_HEAD, branch: "renovate/vite", group: "vite" }]);
+});
