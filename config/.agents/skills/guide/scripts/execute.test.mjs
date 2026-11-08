@@ -1860,3 +1860,35 @@ test("deps-finish: 起動が失敗したら 2 段目の印を書かずに例外�
   await again.round(new Set());
   assert.deepEqual(again.calls, []);
 });
+
+// ---- 依存の PR の判断依頼 ----
+
+const depsDecisionAction = (over = {}) => ({
+  kind: "request-deps-decision", key: "request-deps-decision:90:deps-finish のセッションの停止", pr: 90, title: "chore(deps): update vite",
+  cause: "deps-finish のセッションの停止", reason: "起動したセッションが Orca に見つからない", tab: "deps-finish #90", tail: ["最後の行"], ...over,
+});
+
+test("依存の PR の判断依頼: repo のチャンネルを確保し、PR に印を書いてから、PR の URL・タブ・理由・画面を送る", async () => {
+  const { calls, execute } = mainDecisionWorld();
+  await execute(depsDecisionAction());
+  assert.deepEqual(calls.slice(0, 2), [
+    "discord GET /api/v10/guilds/g/channels",
+    "comment #90 案内役: Discord に判断依頼を送る（#90 deps-finish のセッションの停止）",
+  ]);
+  assert.equal(calls.length, 3);
+  assert.ok(calls[2].startsWith("discord POST /api/v10/channels/C1/messages "), calls[2]);
+  for (const part of ["依存の PR #90 chore(deps): update vite（deps-finish のセッションの停止）", "https://github.com/o/r/pull/90", "タブ: deps-finish #90", "起動したセッションが Orca に見つからない", "最後の行"]) {
+    assert.ok(calls[2].includes(part), `本文に ${part} が無い: ${calls[2]}`);
+  }
+});
+
+test("依存の PR の判断依頼: 送信が失敗しても印は残る（流し直しても二度送らない）", async () => {
+  const calls = [];
+  const execute = createExecute({
+    github: { comment: (n, body) => calls.push(`comment #${n} ${body}`) },
+    discord: { ensureChannel: async () => "C1", sendDepsDecisionRequest: async () => { throw new Error("discord down"); } },
+    cwd: "/x", repo: REPO,
+  });
+  await assert.rejects(execute(depsDecisionAction()), /discord down/);
+  assert.deepEqual(calls, ["comment #90 案内役: Discord に判断依頼を送る（#90 deps-finish のセッションの停止）"]);
+});

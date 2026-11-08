@@ -772,3 +772,40 @@ test("depsPullRequests: 読んだ結果から decide が deps-finish を 1 件�
   const actions = decide({ ...(await read()), dispatched: [] }).filter((a) => a.kind === "deps-finish");
   assert.deepEqual(actions, [{ kind: "deps-finish", key: "deps-finish:3:1", pr: 3, title: "t", head: DEPS_HEAD, branch: "renovate/vite", group: "vite" }]);
 });
+
+test("depsPullRequests: 動いている deps-finish のセッションを観測し、問いの判断依頼をまだ送っていない hook の入力待ちの PR だけコメントを読み直す", async () => {
+  const launched = (handle) => ({ author: VIEWER, body: `案内役: deps-finish を起動した（head ${DEPS_HEAD} / ターミナル ${handle} / ${T0}）`, createdAt: T0 });
+  const launching = { author: VIEWER, body: `案内役: deps-finish を起動する（head ${DEPS_HEAD}）`, createdAt: T0 };
+  const question = { author: VIEWER, body: `${QUESTION_HEADING}\n\nA と B のどちらにするか`, createdAt: T0 };
+  const comments = { 3: [launching, launched("term_3")], 5: [launching, launched("term_5")] };
+  const reads = [];
+  const observed = [];
+  const row = (number) => ({ number, title: `t${number}`, state: "OPEN", author: "x", body: "", autoMerge: false, head: DEPS_HEAD, headBranch: `renovate/g${number}`, labels: ["deps:finish"] });
+  const read = createReadSnapshot({
+    repo: "o/r", viewer: VIEWER, discordUserId: "U1",
+    github: { readMain: NO_MAIN, readFirstParents: () => [], readCommitPullRequests: () => [],
+      readIssues: () => [],
+      readPullRequests: () => [row(3), row(5)],
+      readComments: (n) => {
+        reads.push(n);
+        // 観測の後の読み直しでは、入力待ちの直前に書かれた問いが読める
+        return reads.filter((r) => r === n).length > 1 ? [...comments[n], question] : comments[n];
+      },
+      readChecks: () => [],
+    },
+    discord: { readReactions: async () => [] },
+    taktTasks: () => [],
+    mergeTasks: async () => [],
+    observeSession: async ({ handle }) => {
+      observed.push(handle);
+      return handle === "term_3" ? { found: true, waiting: true, waitSource: "hook", waitSince: "111", idle: true, tail: [] } : { found: true, waiting: false, idle: false, tail: [] };
+    },
+    now: () => new Date(T0),
+  });
+  const snap = await read();
+  assert.deepEqual(observed, ["term_3", "term_5"]);
+  assert.deepEqual(reads, [3, 5, 3]);
+  const asks = decide({ ...snap, dispatched: [] }).filter((a) => a.kind === "request-deps-decision");
+  assert.deepEqual(asks.map((a) => [a.pr, a.cause, a.question]), [[3, "deps-finish の問い 111", "A と B のどちらにするか"]]);
+  assert.notEqual(asks[0].question, NO_QUESTION);
+});

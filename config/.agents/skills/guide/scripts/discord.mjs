@@ -182,6 +182,36 @@ export function createDiscord({ token, guildId, userId, fetch = globalThis.fetch
       return { messageId: message.id };
     },
 
+    // 依存の PR（deps-finish）の判断依頼。送り先は repo のチャンネル。メンションは sendDecisionRequest と同じ。
+    // 答えは読まない（印は PR に書くだけ）。問いがあればタブで答えるよう、無ければ案内役が起動し直さないことを添える。
+    // 2000 文字の上限で切れるのは問い・理由・画面だけにする（PR・工程・タブ・URL・案内を必ず残す）。
+    async sendDepsDecisionRequest({ threadId, repo, pr, title, cause, reason, tab, tail, question }) {
+      const head = `<@${userId}> 判断依頼: 依存の PR #${pr} ${title}（${cause}）\nhttps://github.com/${repo}/pull/${pr}\n工程: deps-finish / タブ: ${tab}\n`;
+      const guide =
+        question === undefined
+          ? "\n案内役はこの PR を起動し直しません。やり直すときは、この PR の案内役の印（起動の印と判断依頼の印）を消してください。"
+          : "\nタブ（上のタブの名前）で本人が答えてください。案内役は Discord の返信を読みません。";
+      const questionLabel = question === undefined ? "" : "問い:\n\n";
+      const clip = (text, max) => (text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text);
+      const room = Math.max(0, MAX_CONTENT - head.length - guide.length - questionLabel.length - "理由: ".length);
+      const shownQuestion = question === undefined ? "" : clip(question, Math.floor(room / 2));
+      const afterQuestion = room - shownQuestion.length;
+      const hasScreen = tail !== undefined && tail.length > 0;
+      const shownReason = clip(reason, hasScreen ? Math.floor(afterQuestion / 2) : afterQuestion);
+      let screen = "";
+      if (hasScreen) {
+        const fence = "```";
+        const left = afterQuestion - shownReason.length - `\n画面の最後の行:\n${fence}\n\n${fence}`.length;
+        // 画面の中に ``` が出てもコードブロックが崩れないよう、画面の中の ``` は ˋˋˋ に置き換える。
+        if (left > 0) screen = `\n画面の最後の行:\n${fence}\n${clip(tail.join("\n").replaceAll(fence, "ˋˋˋ"), left)}\n${fence}`;
+      }
+      const message = await call("POST", `/channels/${threadId}/messages`, {
+        content: `${head}${question === undefined ? "" : `${questionLabel.slice(0, -1)}${shownQuestion}\n`}理由: ${shownReason}${screen}${guide}`,
+        allowed_mentions: { parse: [], users: [userId] },
+      });
+      return { messageId: message.id };
+    },
+
     // スレッドをアーカイブする（チャンネルの一覧から消える。人が戻せる）。人が消したスレッド（404）は済んだものとして扱う。
     async archiveThread({ threadId }) {
       await call("PATCH", `/channels/${threadId}`, { archived: true }).catch((e) => {

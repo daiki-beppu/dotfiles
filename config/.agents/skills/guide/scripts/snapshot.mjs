@@ -1,12 +1,12 @@
 // スナップショットの組み立て。GitHub の issue に、承認依頼を送り済みの OPEN な仕様（承認済みを含む）の Discord リアクションを足す。
 // 起動した工程のセッションと takt-sequence のタブ、wayfinder で起動した ticket のセッションと晴れた map の to-spec のセッションは Orca で観測して sessions に入れる（結果が GitHub に出たものは観測しない。ただし工程と takt-sequence は、閉じる候補として閉じた印が付くまで観測する）。現在時刻 now と stallMinutes も渡す。
 // 渡した sub-issue の OPEN な PR は、コメントと現在の head の check-runs と merge タスクの記録を読む（review-fix の判定用。check-runs は main と同じチェックで落ちたかを見る）。その PR の修正のセッションも、結果が出ていなければ観測する。
-// 依存の PR（deps:finish のラベル付きか renovate/ のブランチの OPEN な PR）は、コメントと現在の head の check-runs を読む（deps-finish の判定用）。
+// 依存の PR（deps:finish のラベル付きか renovate/ のブランチの OPEN な PR）は、コメントと現在の head の check-runs を読む（deps-finish の判定用）。その PR の deps-finish のセッションも、結果が出ていなければ観測する。
 // main の最新の commit の必須チェック（名前は ruleset から読む）・check-runs・commit comment（main の修復の印）も読む。
 // main が赤ければ、first-parent をさかのぼって最後に緑だった commit と、そこから最新の commit までの範囲の PR も読む（main-fix の材料と起動回数の範囲）。C で起動した main-fix のセッションも、結果が出ていなければ観測する。
 // 読み取りだけで、書き込みはしない。リアクションの取得失敗は例外にして、呼び出し側の再試行に任せる。
 import { mainState, requiredChecks } from "../../takt/scripts/main-state.mjs";
-import { depsPullRequestsToRead } from "./deps-finish-stage.mjs";
+import { depsPullRequestsToRead, depsQuestionsToRefresh, depsSessionsToObserve } from "./deps-finish-stage.mjs";
 import { awaitsReaction, decisionAnswersToRead, grillingQuestionsToRefresh, mapSessionsToObserve, grillingRepliesToRead, mainFixSessionsToObserve, mainFixTabsToClose, provisionalRejectionsToRead, reviewFixSessionsToObserve, reviewPullRequestsToRead, sentApprovalRequest, sequencesToObserve, sessionsToObserve, tabsToClose, ticketSessionsToObserve } from "./decide.mjs";
 
 const RANGE_LIMIT = 30;
@@ -43,7 +43,7 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     const depsPullRequests = depsPullRequestsToRead(observed).map((pr) => ({ ...pr, comments: github.readComments(pr.number), checks: github.readChecks(pr.head) }));
     const merges = targets.length > 0 ? await mergeTasks() : [];
     const sessions = {};
-    const toObserve = [...sessionsToObserve(observed), ...sequencesToObserve(observed), ...ticketSessionsToObserve(observed), ...mapSessionsToObserve(observed), ...reviewFixSessionsToObserve({ ...observed, reviewPullRequests }), ...mainFixSessionsToObserve(observed)];
+    const toObserve = [...sessionsToObserve(observed), ...sequencesToObserve(observed), ...ticketSessionsToObserve(observed), ...mapSessionsToObserve(observed), ...reviewFixSessionsToObserve({ ...observed, reviewPullRequests }), ...mainFixSessionsToObserve(observed), ...depsSessionsToObserve({ ...observed, depsPullRequests })];
     for (const { handle, startedAt } of toObserve) {
       sessions[handle] = { ...(await observeSession({ handle })), startedAt };
     }
@@ -55,6 +55,9 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     const refreshed = new Map();
     for (const ticket of grillingQuestionsToRefresh({ ...observed, sessions })) refreshed.set(ticket, github.readComments(ticket));
     const base = { ...observed, issues: observed.issues.map((i) => (refreshed.has(i.number) ? { ...i, comments: refreshed.get(i.number) } : i)) };
+    // 依存の PR も同じく、問いの判断依頼をまだ送っていない hook の入力待ちの PR だけ読み直す。
+    const depsRefresh = new Set(depsQuestionsToRefresh({ ...observed, depsPullRequests, sessions }));
+    const depsRead = depsPullRequests.map((pr) => (depsRefresh.has(pr.number) ? { ...pr, comments: github.readComments(pr.number) } : pr));
     // 判断依頼を送り済みで書き戻し前の grilling だけ、本人の返信を読む（メッセージの ID をキーに入れる）。
     const decisionReplies = {};
     for (const { threadId, messageId } of grillingRepliesToRead(base)) {
@@ -70,6 +73,6 @@ export function createReadSnapshot({ repo, viewer, discordUserId, fromSpec, gith
     for (const { threadId, messageId } of decisionAnswersToRead(base)) {
       decisionAnswers[messageId] = { replies: await discord.readReplies({ threadId, messageId }), reactions: await discord.readReactions({ threadId, messageId }) };
     }
-    return { ...base, reviewPullRequests, depsPullRequests, mergeTasks: merges, now: now().toISOString(), stallMinutes, sessions, decisionReplies, provisionalReactions, decisionAnswers };
+    return { ...base, reviewPullRequests, depsPullRequests: depsRead, mergeTasks: merges, now: now().toISOString(), stallMinutes, sessions, decisionReplies, provisionalReactions, decisionAnswers };
   };
 }
