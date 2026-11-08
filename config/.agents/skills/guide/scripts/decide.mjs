@@ -1,5 +1,5 @@
 // 案内役の判定。tracker と takt の状態のスナップショットから、次にやることの一覧を返す純粋関数。
-// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合と、main-state.mjs の main の状態の判定と、deps-finish-stage.mjs の依存の PR の仕上げの判定だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
+// I/O・時刻・環境変数は読まない（import は takt の review-stage.mjs の印の文言と照合と、main-state.mjs の main の状態の判定と、deps-finish-stage.mjs の依存の PR の仕上げの判定と、session-watch.mjs のセッションの見張りの印と停止の判定だけ。依存の向きは案内役 → takt）。LLM も使わず、ラベルと状態だけで決める。
 //
 // snapshot: { repo, viewer, discordUserId, fromSpec?, issues: [{ number, title, state, labels, body, comments: [{ author, body }], subIssues: [{ number, state }],
 //             reactions: [{ emoji, userId }], assignees: [login], blockedBy: [{ number, state }] }]
@@ -66,6 +66,8 @@
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
 import { failsLikeMain, mainState } from "../../takt/scripts/main-state.mjs";
 import { decideDepsFinish } from "./deps-finish-stage.mjs";
+import { MARKER_DECISION_PREFIX, awaitsHookInput, decisionMarker, lastQuestion, markers, stallCause, stallReason, tabTitle } from "./session-watch.mjs";
+export { MARKER_DECISION_PREFIX, NO_QUESTION, QUESTION_HEADING, decisionMarker, markers, stallCause, tabTitle } from "./session-watch.mjs";
 import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
 
 export const MARKER_TO_TICKETS_LAUNCHING = "案内役: to-tickets を起動する";
@@ -76,8 +78,6 @@ export const MARKER_FORMAL_SPEC_LAUNCHING = "案内役: formal-spec を起動す
 const FORMAL_SPEC_LAUNCHED_PREFIX = "案内役: formal-spec を起動した";
 export const launchedMarker = (step, handle, launchedAt) => `案内役: ${step} を起動した（ターミナル ${handle} / ${launchedAt}）`;
 const LAUNCHED = /^案内役: (\S+) を起動した（ターミナル (\S+) \/ ([^）]+)）/;
-// Orca のタブの題名。起動時にタブへ付け、セッションが見つからないときの判断依頼でも同じ値を使う。
-export const tabTitle = (step, spec) => `${step} #${spec}`;
 // map が晴れたときの to-spec の印も 2 段（起動前 / launchedMarker("to-spec", …)）。どちらも map の issue に書く。
 // 起動したセッションの停止の観測は mapSessionsToObserve が行う。結果は、この map を指す仕様の issue ができたこと。
 export const MARKER_TO_SPEC_LAUNCHING = "案内役: to-spec を起動する";
@@ -111,15 +111,11 @@ export const MARKER_APPROVAL_SENDING = "案内役: Discord に承認依頼を送
 export const MARKER_APPROVAL_SENT_PREFIX = "案内役: Discord に承認依頼を送った";
 export const MARKER_REJECTED = "案内役: Discord で差し戻された";
 
-// 判断依頼: 送る前に仕様の issue へ書く。閉じ括弧まで含めて照合する（#2 が #21 に前方一致しないように）。
-export const MARKER_DECISION_PREFIX = "案内役: Discord に判断依頼を送る";
 export const CAUSE_ABORT = "takt の ABORT";
 export const CAUSE_FORMAL_SPEC = "formal-spec の検証失敗";
 export const CAUSE_REVIEW_FAILED = "takt のレビュー失敗";
-export const stallCause = (step) => `${step} のセッションの停止`;
 // 子がすべて閉じたのに霧が残った map の判断依頼の原因。
 export const FOG_CAUSE = "霧の残り";
-export const decisionMarker = (issue, cause) => `${MARKER_DECISION_PREFIX}（#${issue} ${cause}）`;
 // decisionMarker の読み戻し（番号と原因）。
 const DECISION_MARK = /^案内役: Discord に判断依頼を送る（#(\d+) (.+)）$/;
 // 送った後の印（2 段目。メッセージの ID は本人の返信・✅ を読むのに使う）と、答えた印。どちらも送る前の印と同じ issue に書く。
@@ -161,9 +157,6 @@ const GRILLING_SENDING = /^案内役: Discord に判断依頼を送る（#(\d+) 
 const GRILLING_SENT = /^案内役: Discord に判断依頼を送った（#(\d+) grilling の問い (\d+) \/ スレッド ([^\s/）]+) \/ メッセージ ([^\s/）]+)）$/;
 const GRILLING_WRITTEN = /^案内役: Discord の回答を書き戻した（#(\d+) grilling の問い (\d+)）(?:\r?\n\r?\n([\s\S]*))?$/;
 const GRILLING_INJECT = /^案内役: 回答をタブに流し込む（#(\d+) grilling の問い (\d+)）$/;
-// grilling が AskUserQuestion の前に ticket へ書く問いのコメントの 1 行目。判断依頼の本文に載せる。
-export const QUESTION_HEADING = "## 判断の問い";
-export const NO_QUESTION = "（問いの記録が ticket に無い）";
 
 // formal-spec が仕様の issue に書くコメントの 1 行目。末尾が「で failed）」なら検証失敗。
 const FORMAL_SPEC_HEADING = "## Formal Spec（";
@@ -204,10 +197,6 @@ export function knowledgePrOf(pullRequests, viewer, spec) {
     ) ?? null
   );
 }
-
-// viewer が書き、本文が接頭辞で始まるコメントだけをマーカーとして数える
-export const markers = (issue, viewer) =>
-  (issue.comments ?? []).filter((c) => c.author === viewer && typeof c.body === "string").map((c) => c.body);
 
 const hasLabel = (issue, name) => (issue.labels ?? []).includes(name);
 const isSpec = (issue) => hasLabel(issue, "spec");
@@ -545,8 +534,6 @@ const RESULT_OF = {
 // 工程の結果が GitHub に出ているか。表に無い工程は false。
 export const hasStepResult = (snapshot, spec, step) => RESULT_OF[step]?.(snapshot, spec) ?? false;
 
-const DEFAULT_STALL_MINUTES = 60;
-
 // 起動の印に handle があり、結果がまだ無く、判断依頼を送っていない工程。承認依頼を送り済みで fromSpec の範囲内の仕様だけ。
 // 同じ工程の印が複数あれば最後の印を使う（印を消して流し直した後の、新しい handle を見るため）。
 export function sessionsToObserve(snapshot) {
@@ -590,17 +577,6 @@ export function mapSessionsToObserve(snapshot) {
     targets.push({ map: map.number, step: "to-spec", handle: launched[2], startedAt: launched[3] });
   }
   return targets;
-}
-
-// 止まった理由を 1 つだけ選ぶ（見つからない → 入力待ち → 時間切れ）。止まっていなければ null。
-function stallReason(observation, startedAt, snapshot) {
-  if (!observation.found) return "起動したセッションが Orca に見つからない";
-  if (observation.waiting) return "セッションが入力待ち（確認・許可）で止まっている";
-  const minutes = snapshot.stallMinutes ?? DEFAULT_STALL_MINUTES;
-  if (Date.parse(snapshot.now) - Date.parse(startedAt) >= minutes * 60_000) {
-    return `起動から ${minutes} 分経っても結果が GitHub に出ていない`;
-  }
-  return null;
 }
 
 // 起動したセッションが結果を出さないまま止まったときの判断依頼。送り先は承認依頼のスレッド。
@@ -827,18 +803,6 @@ function currentCycle(ticket, viewer) {
   }
   return { marks: all.slice(last + 1), cycle };
 }
-
-// viewer の最後の「判断の問い」コメント（1 行目が見出し）の 2 行目以降。無ければ NO_QUESTION。
-function lastQuestion(ticket, viewer) {
-  const body = markers(ticket, viewer)
-    .filter((b) => b.split(/\r?\n/)[0].trimEnd() === QUESTION_HEADING)
-    .at(-1);
-  const text = body === undefined ? "" : body.split(/\r?\n/).slice(1).join("\n").trim();
-  return text === "" ? NO_QUESTION : text;
-}
-
-// セッションが hook の入力待ち（停止の識別子つき）か。
-const awaitsHookInput = (observation) => Boolean(observation?.found && observation.waitSource === "hook" && observation.waitSince);
 
 // 観測の後に、ticket のコメントを読み直すべき grilling の ticket の番号。hook の入力待ちで、その停止の判断依頼をまだ送っていない（送る前の印も無い）もの。
 export function grillingQuestionsToRefresh(snapshot) {
