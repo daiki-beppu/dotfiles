@@ -538,6 +538,19 @@ test("dry-run: main の判断依頼の行動も例外にせず、送り先と co
   assert.ok(logs.some((l) => l.includes("repo のチャンネルに main の commit ccccccc（main の修復）の判断依頼を送る")), logs.join("\n"));
 });
 
+test("dry-run: 依存の PR の判断依頼の行動も例外にせず、PR と原因を log に表示する（実行はしない）", async () => {
+  const logs = [];
+  const comments = [
+    { author: VIEWER, body: `案内役: deps-finish を起動する（head ${"d".repeat(40)}）` },
+    { author: VIEWER, body: "案内役: deps-finish が直せなかった（PR #90）: Evals の差が大きい" },
+  ];
+  const depsPullRequests = [{ number: 90, title: "t", state: "OPEN", head: "d".repeat(40), headBranch: "renovate/vite", labels: ["deps:finish"], autoMerge: false, comments, checks: [] }];
+  const snap = { repo: REPO, viewer: VIEWER, issues: [], taktIssues: [], depsPullRequests };
+  const actions = await runRound({ readSnapshot: async () => snap, execute: async () => assert.fail("dry-run では execute を呼ばない"), log: (l) => logs.push(l), dryRun: true }, new Set());
+  assert.ok(actions.some((a) => a.kind === "request-deps-decision"));
+  assert.ok(logs.some((l) => l.includes("repo のチャンネルに依存の PR #90（deps-finish が直せなかった）の判断依頼を送る")), logs.join("\n"));
+});
+
 // ---- 表示: 行動の行・状況の一覧・今の段階 ----
 
 test("行動の行は内部の key を頭に付けず、内容から始まる", async () => {

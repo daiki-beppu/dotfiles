@@ -31,6 +31,7 @@ const DESCRIBE = {
   "inject-answer": (a) => `ticket #${a.ticket} の回答をタブ ${shortHandle(a.handle)} に orca terminal send で流し込む`,
   "review-fix": (a) => `PR #${a.pr}（sub-issue #${a.issue}）の takt のレビューの失敗を直す review-fix を、head ブランチの worktree の Orca のタブで起動する`,
   "deps-finish": (a) => `依存の PR #${a.pr}（${a.group ?? "グループ未定"}）を仕上げる deps-finish を、head ブランチの worktree の Orca のタブで起動する`,
+  "request-deps-decision": (a) => `repo のチャンネルに依存の PR #${a.pr}（${a.cause}）の判断依頼を送る`,
   "archive-thread": (a) => `閉じた${a.subject === "map" ? " map" : "仕様"} #${a.issue} の Discord スレッドをアーカイブする`,
   "rerun-main": (a) => `main の commit ${a.sha.slice(0, 7)} で落ちた必須チェック（${a.checks.join("、")}）の job を 1 回だけ再実行する（run ${a.runs.join(" ")}）`,
   "main-fix": (a) => `main の commit ${a.sha.slice(0, 7)} で再実行でも落ちた必須チェック（${a.checks.join("、")}）を直す main-fix を、origin/main から作った worktree の Orca のタブで起動する`,

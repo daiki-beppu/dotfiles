@@ -252,6 +252,12 @@ export function createExecute({ github, discord, cwd, repo, launchToTickets, lau
       else github.commitComment(action.sha, mainDecisionMarker(action.sha, action.cause));
       const { sha, cause, reason, checks, runs, lastGreen, pullRequests } = action;
       await discord.sendMainDecisionRequest({ threadId, repo, sha, cause, reason, checks, runs, lastGreen, pullRequests });
+    } else if (action.kind === "request-deps-decision") {
+      // 送り先は main と同じ repo のチャンネル。確保は繰り返しても安全なので印より先。印は PR に、送信より先に書く。
+      const threadId = await discord.ensureChannel(repo.split("/")[1].toLowerCase());
+      github.comment(action.pr, decisionMarker(action.pr, action.cause));
+      const { pr, title, cause, reason, tab, tail, question } = action;
+      await discord.sendDepsDecisionRequest({ threadId, repo, pr, title, cause, reason, tab, tail, question });
     } else if (action.kind === "takt-sequence") {
       // to-tickets と同じ 2 段の印を親に書く。handle は、タブが消えたか終わったかを次の周以降に観測するため。
       github.comment(action.parent, `${MARKER_HANDED_PREFIX} ${action.issues.map((n) => `#${n}`).join(" ")}`);

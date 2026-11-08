@@ -673,3 +673,42 @@ test("main の判断依頼: 2000 文字を超えたら、先頭を残して末�
   assert.match(content, /理由: main-fix の起動が上限/);
   assert.match(content, /#1 t+ https/);
 });
+
+// ---- 依存の PR の判断依頼 ----
+
+const depsDecision = (over = {}) => ({
+  threadId: "T1", repo: "o/r", pr: 90, title: "chore(deps): update vite", cause: "deps-finish が直せなかった", reason: "Evals の差が大きい", tab: "deps-finish #90", ...over,
+});
+
+test("依存の PR の判断依頼: 本人だけをメンションし、PR・原因・URL・タブ・理由と、起動し直さないことを送る", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  assert.deepEqual(await discord.sendDepsDecisionRequest(depsDecision()), { messageId: "M1" });
+  const { content, allowed_mentions } = calls[0].body;
+  assert.deepEqual(allowed_mentions, { parse: [], users: [OWNER] });
+  assert.equal(content, [
+    `<@${OWNER}> 判断依頼: 依存の PR #90 chore(deps): update vite（deps-finish が直せなかった）`,
+    "https://github.com/o/r/pull/90",
+    "工程: deps-finish / タブ: deps-finish #90",
+    "理由: Evals の差が大きい",
+    "案内役はこの PR を起動し直しません。やり直すときは、この PR の案内役の印（起動の印と判断依頼の印）を消してください。",
+  ].join("\n"));
+});
+
+test("依存の PR の判断依頼: 問いがあれば問いを載せ、タブで答えるよう添える", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendDepsDecisionRequest(depsDecision({ cause: "deps-finish の問い 111", reason: "セッションが本人の判断（AskUserQuestion）を待っている", question: "A と B のどちらにするか" }));
+  const { content } = calls[0].body;
+  assert.match(content, /\n問い:\nA と B のどちらにするか\n理由: セッションが本人の判断/);
+  assert.ok(content.endsWith("タブ（上のタブの名前）で本人が答えてください。案内役は Discord の返信を読みません。"), content);
+  assert.doesNotMatch(content, /起動し直しません/);
+});
+
+test("依存の PR の判断依頼: 長い問い・理由・画面は 2000 文字に収まるよう切り、PR・URL・タブ・案内は残す。画面の ``` は置き換える", async () => {
+  const { calls, discord } = adapter({ "POST /api/v10/channels/T1/messages": json({ id: "M1" }) });
+  await discord.sendDepsDecisionRequest(depsDecision({ question: "q".repeat(3000), reason: "r".repeat(3000), tail: ["```", "t".repeat(3000)] }));
+  const { content } = calls[0].body;
+  assert.ok(content.length <= 2000, String(content.length));
+  for (const part of ["依存の PR #90", "https://github.com/o/r/pull/90", "タブ: deps-finish #90", "問い:\nq", "理由: r", "画面の最後の行:\n```\nˋˋˋ\nt", "で本人が答えてください。"]) {
+    assert.ok(content.includes(part), `本文に ${part} が無い`);
+  }
+});

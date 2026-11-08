@@ -52,6 +52,8 @@
 //       （再実行の印より後に同じ必須チェックが落ち直し、C に main-fix の起動の印が無く、範囲の起動の印が上限未満。印は C の commit comment に書く）
 //     | { kind: "deps-finish", key, pr, title, head, branch, group }
 //       （判定と印は deps-finish-stage.mjs。snapshot.depsPullRequests: [{ number, title, state, head, headBranch, labels, autoMerge, comments, checks }]）
+//     | { kind: "request-deps-decision", key, pr, title, cause, reason, tab, tail?, question?, since? }
+//       （deps-finish のセッションの停止・起動が上限・直せなかった印は PR ごとに 1 度、AskUserQuestion の hook の入力待ちは停止ごとに 1 度。repo のチャンネルへ送る。印は PR に書く。判定は deps-finish-stage.mjs）
 //     | { kind: "close-tab", key, sha, step: "main-fix", handle, gone }
 //       （main が緑に戻り、main-fix のタブの手が止まっている。閉じた印は起動の印と同じ commit comment に書く）
 //     | { kind: "request-main-decision", key, sha, cause, reason, checks, runs, lastGreen, pullRequests, spec, threadId }
@@ -65,7 +67,7 @@
 // 終わりは印ではなく、仕様を指す親 issue ができたかで判定する。
 // 古い版の印（handle なしの「起動した」と「終わった（exit n）」）は読み取りだけ残す。
 import { failsLikeMain, mainState } from "../../takt/scripts/main-state.mjs";
-import { decideDepsFinish } from "./deps-finish-stage.mjs";
+import { decideDeps } from "./deps-finish-stage.mjs";
 import { MARKER_DECISION_PREFIX, awaitsHookInput, decisionMarker, lastQuestion, markers, stallCause, stallReason, tabTitle } from "./session-watch.mjs";
 export { MARKER_DECISION_PREFIX, NO_QUESTION, QUESTION_HEADING, decisionMarker, markers, stallCause, tabTitle } from "./session-watch.mjs";
 import { FIX_LAUNCH_LIMIT, REVIEWED, REVIEW_FAILED, fixLaunchedHead, fixLaunchedOf, fixLaunchingHead, redoHead } from "../../takt/scripts/review-stage.mjs";
@@ -1541,6 +1543,6 @@ export function decide(snapshot) {
     ...decideSequenceStalls(snapshot, dispatched),
     ...decideReviewFixes(snapshot, dispatched),
     ...decideReviewFixStalls(snapshot, dispatched),
-    ...decideDepsFinish(snapshot, dispatched),
+    ...decideDeps(snapshot, dispatched),
   ];
 }
